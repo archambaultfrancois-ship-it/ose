@@ -22,4 +22,4 @@ COPY --from=builder /wheels /wheels
 RUN python -m pip install --no-cache-dir --no-index --find-links=/wheels ose && rm -rf /wheels
 COPY --from=builder --chown=10001:10001 /app /app
 USER 10001:10001
-ENTRYPOINT ["ose-ctl"]
+ENTRYPOINT ["ose"]

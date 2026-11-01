@@ -23,7 +23,7 @@ On Android/Termux, keep the host awake during real-time/distributed tests with
 `termux-wake-lock`, then release it with `termux-wake-unlock` afterwards. Host
 suspension expires worker leases by design.
 
-The pinned framework (`cf5bb67`, including internal recording points, current
+The pinned framework (`40e9990`, including internal recording points, current
 application measurements and Bash completion) lives in `deps/sdl-ose`; for
 framework development, set
 `FRAMEWORK_ROOT=/absolute/path/to/sdl-ose`. Build artifacts and prepared absolute
@@ -46,7 +46,7 @@ The application environment selects Vibration Watch as `OSE_APP_ROOT` and source
 another checkout. `app-run` builds and runs until Ctrl+C;
 `app-run DURATION=60` limits the run. `record` prepares missing recording/filter
 dependencies and opens the external console. `ose-env` lists the shortcuts.
-Interactive Bash terminals also enable `ose-ctl` completion for commands,
+Interactive Bash terminals also enable `ose` completion for commands,
 subcommands, options and option choices. Source `./setenv.sh`, then press Tab.
 `record-inspect FILE` displays all recorded messages; use `--limit N` to show
 only the first N selected messages.
@@ -128,7 +128,7 @@ app-run
 
 # Second terminal, from the same directory:
 source ./setenv.sh
-ose-ctl measure 'analyzer_*.vibration.rms' --watch
+ose measure 'analyzer_*.vibration.rms' --watch
 ```
 
 The report shows `analyzer_1` and `analyzer_2` separately. Omit `--watch` for a
@@ -293,7 +293,7 @@ limits can be adjusted with `--max-json-size BYTES` and
 The application commands validate business constraints before submitting values:
 1–131072 samples, a nonzero uint32 seed, sample rate 1–1e9 Hz, vibration frequency
 0–half the sample rate, amplitude/noise/ramp 0–1e6 and RMS threshold 1e-12–1e12.
-The generic `params-set` / `ose-ctl parameter set` commands check SDL types;
+The generic `params-set` / `ose parameter set` commands check SDL types;
 writers using those interfaces must also respect these business constraints.
 
 An update applies at a subsequent callback, without restarting the component.
@@ -311,7 +311,7 @@ in broker/coordinator memory; restarting it restores the built initial values.
 Captures contain signal messages, not parameter updates: replay uses the replay
 plan's settings. Reproducing a session with changed settings requires supplying
 those settings separately. Deterministic simulations can schedule complete block
-updates using `ose-ctl run --mode simulated --scenario FILE`, as described in the
+updates using `ose run --mode simulated --scenario FILE`, as described in the
 [framework parameter guide](deps/sdl-ose/ose/docs/parameters.md).
 
 The same commands accept `--host`, `--port` and `--plan`; use
@@ -321,13 +321,13 @@ use `--distributed --tls-ca build/pki/ca.crt --tls-cert build/pki/operator.crt
 --tls-key build/pki/operator.key` with an explicit host and port. `make certs`
 generates the development operator credentials. Cluster access authenticates the
 `operator` certificate identity; it does not use the local development token.
-The ordinary `ose-ctl parameter get PATH --client operator` still returns a
+The ordinary `ose parameter get PATH --client operator` still returns a
 bare block for existing scripts; the shell shortcut returns a path-keyed export.
 See [cluster deployment](deploy/README.md) for credentials and connectivity.
 
 ## Replay captured signals
 
-The pinned framework provides `ose-ctl replay`. During framework development,
+The pinned framework provides `ose replay`. During framework development,
 set `FRAMEWORK_ROOT=/absolute/path/to/sdl-ose` to select another checkout. In that
 case, source that checkout's `setenv.sh` from the application directory instead
 of the application environment below.
@@ -353,7 +353,7 @@ make test-replay
 
 `replay` builds a separate model under `build/replay/`: the C sensors are removed
 and their subscriptions are connected to external topics. The workflow invokes
-`ose-ctl replay` with `sensor_1.signal=replay.signal_1` and
+`ose replay` with `sensor_1.signal=replay.signal_1` and
 `sensor_2.signal=replay.signal_2`. It accepts PCAPNG or MCAP captures; both sensor
 topics must contain messages. `tools/vibration.py replay --recording FILE`
 also accepts `--start-ns` and `--end-ns` for a recorded log-time range.
@@ -371,9 +371,9 @@ For live replay, build the model without sensors and start it separately:
 
 ```sh
 make replay-build
-ose-ctl run --plan build/replay/plan.json
+ose run --plan build/replay/plan.json
 # In a second terminal with the same framework environment:
-ose-ctl replay signals.pcapng --mode realtime --plan build/replay/plan.json \
+ose replay signals.pcapng --mode realtime --plan build/replay/plan.json \
   --map sensor_1.signal=replay.signal_1 --map sensor_2.signal=replay.signal_2 \
   --speed 1 --interactive
 ```

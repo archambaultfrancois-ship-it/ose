@@ -53,7 +53,7 @@ deploy: render certs
 help:
 	@echo 'make validate build run simulate demo-distributed test'
 	@echo 'make replay RECORDING=signals.pcapng DURATION=3; make test-replay'
-	@echo 'make replay-build PROFILE=local (or cluster), then ose-ctl replay --mode realtime'
+	@echo 'make replay-build PROFILE=local (or cluster), then ose replay --mode realtime'
 	@echo 'make demo-distributed FAIL_NODE=analyzer_1 DURATION=8'
 	@echo 'make run PARAMS_SYNC=1 PARAMS_DIR=parameters DURATION=60'
 	@echo 'make demo-distributed PARAMS_SYNC=1 PARAMS_DIR=parameters DURATION=60'

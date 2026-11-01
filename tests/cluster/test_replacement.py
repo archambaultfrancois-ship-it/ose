@@ -43,7 +43,7 @@ class ClusterReplacementTests(unittest.TestCase):
             coordinator = after["ose-coordinator"]["metadata"]["name"]
             deadline = time.monotonic() + 30
             while time.monotonic() < deadline:
-                status = json.loads(kubectl("-n", namespace, "exec", coordinator, "--", "ose-ctl", "cluster-status",
+                status = json.loads(kubectl("-n", namespace, "exec", coordinator, "--", "ose", "cluster-status",
                     "--tls-ca", "/run/ose-tls/ca.crt", "--tls-cert", "/run/ose-tls/tls.crt", "--tls-key", "/run/ose-tls/tls.key"))
                 metrics = status["components"].get("analyzer_1", {}).get("metrics", {})
                 if metrics.get("direct_bytes_received", 0) > 0:

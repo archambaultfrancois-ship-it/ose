@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Application workflow using the public ose-ctl CLI and reproducible inputs."""
+"""Application workflow using the public ose CLI and reproducible inputs."""
 import argparse
 import base64
 from contextlib import contextmanager, nullcontext

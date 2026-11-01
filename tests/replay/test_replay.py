@@ -1,4 +1,4 @@
-"""Capture real sensor outputs and reproduce their alarms through ose-ctl replay."""
+"""Capture real sensor outputs and reproduce their alarms through ose replay."""
 import asyncio
 import json
 import os
