@@ -30,12 +30,12 @@ jobs:
         run: python -m pip install .
       - name: Select SDL project
         run: echo "SDL_ROOT=$PWD/build/sdl-dependency/${{ steps.sdl.outputs.subdirectory }}" >> "$GITHUB_ENV"
+      - name: Prepare recording dependencies for replay tests
+        run: make -C "$SDL_ROOT" recording-deps
       - name: Test
         run: make test
-      - name: Prepare optional recording and filtering services
-        run: |
-          make -C "$SDL_ROOT" recording-deps
-          make -C "$SDL_ROOT" filter-python
+      - name: Prepare optional filtering service
+        run: make -C "$SDL_ROOT" filter-python
       - name: Verify interactive recording
         run: make test-recording
       - name: Installed SDK smoke test
@@ -63,6 +63,8 @@ jobs:
           token: ${{ secrets.SDL_ACCESS_TOKEN || github.token }}
       - name: Select SDL project
         run: echo "SDL_ROOT=$PWD/build/sdl-dependency/${{ steps.sdl.outputs.subdirectory }}" >> "$GITHUB_ENV"
+      - name: Prepare recording dependencies for replay tests
+        run: make -C "$SDL_ROOT" recording-deps
       - run: make test-java
       - name: Verify shared parameters on Java 7
         run: PYTHONPATH="$PWD/src" TEST_LANGUAGES=java python -m unittest discover -s tests/integration -p 'test_parameters.py' -k java -v
