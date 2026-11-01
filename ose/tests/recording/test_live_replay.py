@@ -96,13 +96,15 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
     async def test_compatible_distributed_replay_and_preflight_rejection(self):
         coordinator, _ = await self.cluster()
         source = CAT[:-1] + '3?:string:extra;}'
-        for format in ('pcapng', 'mcap'):
+        for index, format in enumerate(('pcapng', 'mcap'), 1):
             result = await run(self.capture(format, catalogue=source), self.plan_path,
                 mappings=['source.value=external.signal'], host='127.0.0.1', port=coordinator.port,
                 speed=0, insecure=True, schema_policy='compatible')
             self.assertEqual(result['refused'], 0)
             self.assertEqual(result['replay']['schema_adaptation']['adapted_messages'], 3)
-        await self.until(lambda: len(self.values()) == 6)
+            # A new publisher fences the previous generation. Drain this
+            # session before opening the next one, even at unlimited speed.
+            await self.until(lambda: len(self.values()) == 3 * index)
         self.assertEqual(self.values(), [[i, float(i)] for i in (1, 2, 3)] * 2)
         with patch('ose.recording.live_replay.publisher') as publisher:
             for policy, catalogue in (('exact', source), ('compatible', CAT.replace('fl64', 'fl32'))):
