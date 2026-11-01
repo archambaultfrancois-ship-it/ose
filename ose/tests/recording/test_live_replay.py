@@ -59,14 +59,58 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
             task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
 
-    def capture(self, format="pcapng", offsets=(0, 40_000_000, 80_000_000)):
+    def capture(self, format="pcapng", offsets=(0, 40_000_000, 80_000_000), *, catalogue=CAT):
         path = self.root / ("capture." + format)
-        with RecordingWriter(path, format=format) as writer:
-            channel = writer.register_channel(topic="source.value", catalogue=CAT, root_type="Value")
+        from ose.codec.catalogue import CatalogueTypes
+        types = CatalogueTypes(self.codec.api, catalogue)
+        with RecordingWriter(path, format=format, overwrite=True) as writer:
+            channel = writer.register_channel(topic="source.value", catalogue=catalogue, root_type="Value")
             for sequence, offset in enumerate(offsets, 1):
-                writer.write_encoded(channel, b"\x01" + struct.pack(">Qd", sequence, float(sequence)),
+                message = types.types['Value'](sequence=sequence, value=float(sequence))
+                writer.write_encoded(channel, self.codec.api.encode(types.context, message),
                                      log_time_ns=1_800_000_000_000_000_000 + offset)
         return path
+
+    async def test_compatible_local_cli_replay_delivers_target_envelopes(self):
+        self.plan_path.write_text(json.dumps(self.plan))
+        from ose.execution.broker import Broker
+        from ose.execution.adapter import Adapter
+        broker = Broker(self.plan)
+        await broker.start()
+        self.addAsyncCleanup(broker.close)
+        self.tasks.append(asyncio.create_task(Adapter(self.plan, 'sink').run('127.0.0.1', broker.port)))
+        await self.until(lambda: 'sink' in broker.ready)
+        broker.enabled = True
+        source = 'SDL2|Earlier{1:bool:unused;}|Value{1:uint64:sequence;2:fl64:value;3?:string:extra;}'
+        for format in ('pcapng', 'mcap'):
+            process = await asyncio.create_subprocess_exec(sys.executable, '-m', 'ose.cli', 'replay',
+                str(self.capture(format, catalogue=source)), '--mode', 'realtime', '--plan', str(self.plan_path),
+                '--host', '127.0.0.1', '--port', str(broker.port), '--speed', '0', '--schema-policy', 'compatible',
+                '--map', 'source.value=external.signal', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout, stderr = await asyncio.wait_for(process.communicate(), 20)
+            self.assertEqual(process.returncode, 0, stderr.decode())
+            self.assertEqual(json.loads(stdout)['replay']['schema_adaptation']['adapted_messages'], 3)
+        await self.until(lambda: len(self.values()) == 6)
+        self.assertEqual(self.values(), [[i, float(i)] for i in (1, 2, 3)] * 2)
+
+    async def test_compatible_distributed_replay_and_preflight_rejection(self):
+        coordinator, _ = await self.cluster()
+        source = CAT[:-1] + '3?:string:extra;}'
+        for format in ('pcapng', 'mcap'):
+            result = await run(self.capture(format, catalogue=source), self.plan_path,
+                mappings=['source.value=external.signal'], host='127.0.0.1', port=coordinator.port,
+                speed=0, insecure=True, schema_policy='compatible')
+            self.assertEqual(result['refused'], 0)
+            self.assertEqual(result['replay']['schema_adaptation']['adapted_messages'], 3)
+        await self.until(lambda: len(self.values()) == 6)
+        self.assertEqual(self.values(), [[i, float(i)] for i in (1, 2, 3)] * 2)
+        with patch('ose.recording.live_replay.publisher') as publisher:
+            for policy, catalogue in (('exact', source), ('compatible', CAT.replace('fl64', 'fl32'))):
+                with self.subTest(policy=policy), self.assertRaises(ValueError):
+                    await run(self.capture(catalogue=catalogue), self.plan_path, mappings=['source.value=external.signal'],
+                        host='127.0.0.1', port=coordinator.port, insecure=True, schema_policy=policy)
+            publisher.assert_not_called()
+        self.assertEqual(coordinator.metrics['external_publications'], 6)
 
     def values(self):
         return [json.loads(line) for line in self.path.read_text().splitlines()] if self.path.exists() else []

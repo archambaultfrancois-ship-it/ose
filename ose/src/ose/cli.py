@@ -64,6 +64,8 @@ def main():
     command.add_argument("--map", dest="mappings", action="append", required=True,
                          metavar="RECORDED_TOPIC=EXTERNAL_TOPIC", help="select and map a topic; repeat for each input")
     command.add_argument("--mode", choices=("simulated", "realtime"), default="simulated")
+    command.add_argument("--schema-policy", choices=("exact", "compatible"), default="exact",
+                         help="recorded schema policy (default: exact; compatible adapts messages to the target contract)")
     command.add_argument("--loops", type=int, default=1, help="total playback passes (default: 1; 0: infinite)")
     command.add_argument("--duration", type=float, help="recorded-time horizon in seconds; required for simulation")
     command.add_argument("--workers", type=int)
@@ -196,7 +198,8 @@ def main():
                     raise ValueError("speed, replay commands, interactive controls and connection options require --mode realtime")
                 summary = asyncio.run(run(args.recording, args.plan, args.duration, mappings=args.mappings,
                     start_ns=args.start_ns, end_ns=args.end_ns,
-                    workers=1 if args.workers is None else args.workers, trace=args.trace, loops=args.loops))
+                    workers=1 if args.workers is None else args.workers, trace=args.trace, loops=args.loops,
+                    schema_policy=args.schema_policy))
             else:
                 from ose.recording.live_replay import run
                 if args.workers is not None or args.trace is not None:
@@ -206,7 +209,8 @@ def main():
                         start_ns=args.start_ns, end_ns=args.end_ns, speed=1 if args.speed is None else args.speed,
                         endpoint=args.endpoint, host=args.host, port=args.port, distributed=args.distributed,
                         tls_ca=args.tls_ca, tls_cert=args.tls_cert, tls_key=args.tls_key,
-                        insecure=args.insecure, interactive=args.interactive, commands=args.command, loops=args.loops))
+                        insecure=args.insecure, interactive=args.interactive, commands=args.command, loops=args.loops,
+                        schema_policy=args.schema_policy))
                     loop = asyncio.get_running_loop()
                     for sig in (signal.SIGINT, signal.SIGTERM):
                         loop.add_signal_handler(sig, task.cancel)

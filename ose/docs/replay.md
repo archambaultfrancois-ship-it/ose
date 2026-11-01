@@ -143,12 +143,13 @@ speed, pauses and backpressure.
 ## Validation and results
 
 Before starting simulation components or opening a live publisher, replay scans the complete container for integrity,
-validates selected payloads, and checks their root types and catalogue identities
-against the external topics. This version requires the declared catalogue;
-alternative recorded catalogue versions are rejected. Missing topics, empty
+validates selected payloads, and checks their root types and catalogues
+against the external topics. The default `--schema-policy exact` requires the
+declared catalogue. Use `--schema-policy compatible` for compatible schema
+evolution, as described below. Missing topics, empty
 selections, oversized envelopes and invalid recordings fail explicitly.
 
-Selected envelopes are copied to temporary files, fingerprinted and checked
+Prepared envelopes are written to temporary files, fingerprinted and checked
 again when injected. Temporary data is removed on completion or failure. RAM
 stores event metadata rather than the complete capture; temporary disk space is
 proportional to selected payloads.
@@ -167,3 +168,66 @@ a bounded input can still drop messages or refuse admission.
 topic mapping, validation failures and identical traces across worker counts.
 It also covers live pacing, interactive and scripted controls, local and distributed
 publications, TLS identities, cancellation, refusals and generation fencing.
+
+## Compatible recorded schemas
+
+Use an older capture with a compatible current contract by selecting:
+
+```sh
+ose-ctl replay old-signals.pcapng --plan build/plan.json \
+  --map sensor_1.signal=external.signal_1 --duration 3 \
+  --schema-policy compatible
+```
+
+The option applies to all mappings, in simulation and live local/distributed
+replay, for PCAPNG and MCAP. It requires no historical `.sdl` files or generated
+bindings: the capture contains the source catalogue and the plan contains the
+target catalogue. Omitting the option, or selecting `--schema-policy exact`,
+keeps strict replay.
+
+Compatibility is directional: the recorded catalogue is the publisher and the
+declared external topic is the consumer. SDL checks the selected root with
+`require_required=True`. The root name must stay the same. Common fields match by
+SDL field ID, allowing field renames. Extra source fields are discarded; missing
+target optional fields become absent and missing target repeated/packed fields
+become empty. Missing required target fields, incompatible types, dimensions or
+cardinality, and source enum values unknown to a retained consumer field are
+rejected. The whole contract is checked, even when the capture happens not to use
+an incompatible enum value. Unrelated message declarations need not match.
+Business migrations such as unit conversion or renaming a root are not provided.
+
+For example, a capture of `Measurement` with fields `1:sequence`, `2:old_value`
+and `3:legacy_label` can feed a current `Measurement` contract containing the same
+types at IDs 1 and 2, renamed to `sequence` and `value`, and an optional field at
+ID 4. The legacy label is removed and the new optional field is absent.
+
+Each selected payload is validated against its source catalogue, decoded into the
+target types and reencoded with the target catalogue before injection. Both its
+original and adapted envelope must fit the component frame limit. An identical
+catalogue uses the original bytes. A different compatible catalogue can change
+payload bytes, message IDs and representation, so replacing only the envelope
+header would be incorrect. Values are transferred through SDL objects, without a
+JSON round trip. Lossy target wire representations apply their normal SDL
+quantization; compatibility does not promise identical numerical values across
+different quantization settings.
+
+Several catalogue versions for the same recorded topic are checked independently.
+An LRU cache retains at most 64 prepared adapters and keys them by full catalogue
+texts and root, rather than the short wire catalogue ID. All selected messages
+are prepared before starting simulation components or opening a live publisher.
+An incompatibility reports source/target topics, root, selected-message position,
+log timestamp and the SDL diagnostic with its field path. Temporary adapted data
+is removed on success or failure.
+
+Scheduling timestamps, timestamp tie ordering, selection and loop behavior stay
+the same. Simulation traces and fingerprints describe the adapted envelopes that
+were actually injected. Payload timestamp and sequence fields are transferred as
+ordinary retained SDL fields; source fields absent from the target are discarded.
+
+The final `replay` summary adds `schema_policy` and `schema_adaptation`, containing
+`unchanged_messages`, `adapted_messages` and a `catalogues` list. Each entry names
+the source/target topics, root, full catalogue SHA-256 fingerprints, adaptation
+(`exact` or `adapted`) and message count. These are selection counts for one pass,
+including selected messages beyond the execution horizon; loops do not multiply
+them. `unchanged_messages` counts identical catalogues, even if a conversion
+between different catalogues could coincidentally keep the same payload bytes.

@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from ose.codec.sdl2 import SDL2
+from ose.codec.catalogue import CatalogueTypes
 from ose.delivery.policies import SubscriptionPolicy
 from ose.recording.replay import recording_events, run
 from sdl_recording import RecordingWriter
@@ -59,6 +60,93 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
                 writer.write_encoded(channel, body, log_time_ns=base + offset)
             writer.write_encoded(ignored, b"\x01" + struct.pack(">Qd", 99, 99.), log_time_ns=base - 10)
         return path, base
+
+    def evolved_capture(self, format='pcapng', catalogues=(CAT, OTHER)):
+        path = self.root / ('evolved.' + format)
+        with RecordingWriter(path, format=format) as writer:
+            for index, catalogue in enumerate(catalogues):
+                types = CatalogueTypes(self.codec.api, catalogue)
+                channel = writer.register_channel(topic='source.value', catalogue=catalogue, root_type='Value')
+                fields = types.messages['Value']
+                message = types.types['Value'](**{fields[0]['name']: index + 1, fields[1]['name']: float(index + 1)})
+                writer.write_encoded(channel, self.codec.api.encode(types.context, message), log_time_ns=100 + index)
+        return path
+
+    async def test_compatible_versions_preserve_timing_loops_and_parallel_traces(self):
+        shifted = 'SDL2|Earlier{1:bool:unused;}|Value{1:uint64:sequence;2:fl64:old_value;3?:string:extra;}'
+        for format in ('pcapng', 'mcap'):
+            path = self.evolved_capture(format, (CAT, OTHER, shifted))
+            reference = None
+            for workers in (1, 4):
+                trace = self.root / 'compatible-trace.jsonl'
+                summary = await run(path, self.plan_path, 1, mappings=['source.value=external.signal'],
+                                    workers=workers, trace=trace, loops=2, schema_policy='compatible')
+                outputs = [json.loads(line) for line in trace.read_text().splitlines()
+                           if json.loads(line).get('topic') == 'sink.out']
+                expected = [self.codec.wrap(CAT, b'\x01' + struct.pack('>Qd', i, float(i))) for i in (1, 2, 3)]
+                self.assertEqual([e['time_ns'] for e in outputs], [0, 1, 2, 3, 4, 5])
+                self.assertEqual([e['sha256'] for e in outputs], [hashlib.sha256(b).hexdigest() for b in expected] * 2)
+                selection = summary['replay']
+                self.assertEqual(selection['schema_policy'], 'compatible')
+                self.assertEqual(selection['schema_adaptation']['unchanged_messages'], 1)
+                self.assertEqual(selection['schema_adaptation']['adapted_messages'], 2)
+                self.assertEqual(len(selection['schema_adaptation']['catalogues']), 3)
+                self.assertEqual(selection['schema_adaptation']['catalogues'][2]['source_sha256'],
+                                 hashlib.sha256(shifted.encode()).hexdigest())
+                self.assertEqual(summary['completed_loops'], 2)
+                if reference is None:
+                    reference = trace.read_bytes()
+                self.assertEqual(trace.read_bytes(), reference)
+
+    async def test_late_incompatibility_cleans_prepared_files_without_starting_components(self):
+        incompatible = CAT.replace('fl64', 'fl32')
+        path = self.evolved_capture(catalogues=(CAT, incompatible))
+        from ose.execution.simulation.scenario import Event
+        with patch('ose.recording.replay.Event', wraps=Event) as events, patch('ose.execution.simulation.run') as simulate:
+            with self.assertRaisesRegex(ValueError, r'source.value -> external.signal.*selected message 2.*101.*FIELD_TYPE_MISMATCH.*Value.value'):
+                await run(path, self.plan_path, 1, mappings=['source.value=external.signal'], schema_policy='compatible')
+            simulate.assert_not_called()
+            self.assertEqual(events.call_count, 1)
+            self.assertFalse(events.call_args.args[3].exists())
+
+    async def test_adapted_size_limit_is_checked_before_starting_components(self):
+        path, _ = self.capture(offsets=(0,))
+        self.topics['external.signal']['catalogue'] = CAT[:-1] + '3?:bool:flag;}'
+        self.plan_path.write_text(json.dumps(self.plan))
+        original_size = len(self.codec.wrap(CAT, b'\x01' + struct.pack('>Qd', 1, 1.)))
+        with patch('ose.recording.replay.MAX_SIZE', original_size), patch('ose.execution.simulation.run') as simulate:
+            with self.assertRaisesRegex(ValueError, 'adapted replay envelope exceeds'):
+                await run(path, self.plan_path, 1, mappings=['source.value=external.signal'], schema_policy='compatible')
+            simulate.assert_not_called()
+
+    async def test_compatible_preflight_keeps_range_validation_and_integrity_checks(self):
+        for format in ('pcapng', 'mcap'):
+            path = self.evolved_capture(format)
+            with recording_events(path, self.topics, self.mapping, self.codec,
+                                  start_ns=101, end_ns=102, schema_policy='compatible') as (events, summary):
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0].at, 0)
+                self.assertEqual(summary['origin_log_time_ns'], 101)
+                self.assertEqual(summary['schema_adaptation']['adapted_messages'], 1)
+            path.write_bytes(path.read_bytes()[:-1])
+            with patch('ose.execution.simulation.run') as simulate:
+                with self.assertRaises(ValueError):
+                    await run(path, self.plan_path, 1, mappings=['source.value=external.signal'],
+                              schema_policy='compatible', start_ns=100, end_ns=101)
+                simulate.assert_not_called()
+
+    async def test_cli_selects_schema_policy_and_default_remains_exact(self):
+        path, _ = self.capture(catalogue=OTHER)
+        command = [sys.executable, '-m', 'ose.cli', 'replay', str(path), '--plan', str(self.plan_path),
+                   '--map', 'source.value=external.signal', '--duration', '.001']
+        for options, code in (([], 1), (['--schema-policy', 'exact'], 1), (['--schema-policy', 'compatible'], 0)):
+            result = await asyncio.to_thread(subprocess.run, command + options, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, code, result.stderr)
+            if code == 0:
+                selection = json.loads(result.stdout)['replay']
+                self.assertEqual(selection['schema_adaptation']['adapted_messages'], 3)
+            else:
+                self.assertIn('schema policy exact', result.stderr)
 
     async def test_both_formats_preserve_payloads_nanoseconds_and_stable_ties(self):
         for format in ("pcapng", "mcap"):
@@ -167,3 +255,9 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
             capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["replay"]["message_count"], 3)
+
+    async def test_generated_python_c_and_rust_containers_decode_adapted_messages(self):
+        from tests.replay_schema import check_generated_replay
+        for language in ('python', 'c', 'rust'):
+            with self.subTest(language=language):
+                await check_generated_replay(self, self.root / language, self.codec.root, language)

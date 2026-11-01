@@ -1,23 +1,16 @@
 """JSON conversion using the same SDL catalogue and codecs as typed components."""
-from enum import IntEnum
 import math
+from ose.codec.catalogue import CatalogueTypes
 
 
 class Values:
     def __init__(self, api, catalogue, root):
         self.api, self.catalogue, self.root = api, catalogue, root
-        shape = api.prepare(catalogue)
-        if root not in api.message_names(shape):
+        shape = CatalogueTypes(api, catalogue)
+        if root not in shape.messages:
             raise ValueError(f"unknown parameter root: {root}")
         self.messages, self.enums = shape.messages, shape.enums
-        namespace = {name: IntEnum('ParameterEnum', {label: value for value, label in pairs.items()})
-                     for name, pairs in self.enums.items()}
-        for name, fields in self.messages.items():
-            namespace[name] = type('ParameterMessage', (api.SdlMessage,), {
-                '_SDL_NAME': name, '_SDL_DESCRIPTOR': catalogue, '_SDL_TYPES': namespace,
-                '_SDL_FIELDS': tuple((f['id'], f['name'], f['modifier'], f['type'], tuple(f['dimensions'])) for f in fields)})
-        self.types = namespace
-        self.context = api.prepare(catalogue, [namespace[name] for name in self.messages])
+        self.types, self.context = shape.types, shape.context
 
     def _value(self, name, value, dimensions=()):
         if dimensions:

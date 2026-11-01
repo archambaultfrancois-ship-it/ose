@@ -181,7 +181,7 @@ async def play(events, publish, *, speed=1, duration=None, loops=1, interactive=
 
 async def run(path, plan_path, duration=None, *, mappings, speed=1, start_ns=None, end_ns=None,
               endpoint=None, host=None, port=None, distributed=False, tls_ca=None, tls_cert=None,
-              tls_key=None, insecure=False, interactive=False, commands=None, loops=1):
+              tls_key=None, insecure=False, interactive=False, commands=None, loops=1, schema_policy='exact'):
     playback_speed(speed)
     loop_count(loops)
     if duration is not None:
@@ -204,7 +204,8 @@ async def run(path, plan_path, duration=None, *, mappings, speed=1, start_ns=Non
     if type(port) is not int or not 0 < port < 65536:
         raise ValueError("port must be 1..65535")
     context = contexts(tls_ca, tls_cert, tls_key, insecure=insecure, hosts=[host])[1] if distributed else None
-    with recording_events(path, topics, mapping, codec, start_ns=start_ns, end_ns=end_ns) as (events, selection):
+    with recording_events(path, topics, mapping, codec, start_ns=start_ns, end_ns=end_ns,
+                          schema_policy=schema_policy) as (events, selection):
         async with publisher(plan, mapping.values(), host=host, port=port,
                              distributed=distributed, context=context) as publish:
             result = await play(events, publish, speed=speed, duration=duration, loops=loops,

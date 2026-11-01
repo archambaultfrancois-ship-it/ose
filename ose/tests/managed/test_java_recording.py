@@ -13,3 +13,10 @@ class JavaRecordingTests(unittest.TestCase):
     def test_context_registry_and_live_activation(self):
         with tempfile.TemporaryDirectory() as root:
             check_component(self, build_component(root, "java", SDL_ROOT), SDL2(SDL_ROOT))
+
+
+class JavaReplayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_compatible_recorded_schema(self):
+        from tests.replay_schema import check_generated_replay
+        with tempfile.TemporaryDirectory() as root:
+            await check_generated_replay(self, root, SDL_ROOT, 'java')

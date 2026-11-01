@@ -12,6 +12,7 @@ from ose.codec.sdl2 import SDL2
 from ose.execution.ipc import MAX_SIZE
 from ose.execution.simulation.clock import MAX_NS, seconds_ns
 from ose.execution.simulation.scenario import Event
+from ose.recording.schema_adapter import SchemaAdapters
 
 
 def loop_count(value):
@@ -86,7 +87,8 @@ def recording_reader(codec):
 
 
 @contextmanager
-def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None):
+def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None, schema_policy='exact'):
+    adapters = SchemaAdapters(codec, schema_policy)
     for name, value in (("start-ns", start_ns), ("end-ns", end_ns)):
         if value is not None and (type(value) is not int or not 0 <= value <= MAX_NS):
             raise ValueError(f"{name} must be an unsigned 64-bit nanosecond timestamp")
@@ -94,21 +96,35 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
         raise ValueError("end-ns must be at or after start-ns")
     reader = recording_reader(codec)(path)
     with tempfile.TemporaryDirectory(prefix="ose-replay-") as temporary:
-        events, counts = [], Counter()
+        events, counts, schemas = [], Counter(), {}
+        unchanged, adapted = 0, 0
         # Exhaust the reader before starting components: this checks the entire
         # container, including CRCs and EOF, even for a narrow selection.
         for record in reader.iter_records(topics=mapping, start_time_ns=start_ns, end_time_ns=end_ns):
             source = record.channel.topic
             target = mapping[source]
             desc = topics[target]
-            if record.channel.root_type != desc["root"]:
-                raise ValueError(f"{source}: recorded root does not match {target}")
-            if record.channel.catalogue_id != codec.identity(desc["catalogue"]):
-                raise ValueError(f"{source}: recorded catalogue must match the external topic {target}")
-            if len(record.payload) + codec.api.ENVELOPE_HEADER_SIZE > MAX_SIZE:
-                raise ValueError(f"{source}: replay envelope exceeds the component frame limit")
-            body = codec.wrap(record.channel.catalogue, record.payload)
-            codec.validate(desc["catalogue"], desc["root"], body)
+            try:
+                if record.channel.root_type != desc["root"]:
+                    raise ValueError('recorded root does not match the external topic')
+                if len(record.payload) + codec.api.ENVELOPE_HEADER_SIZE > MAX_SIZE:
+                    raise ValueError('replay envelope exceeds the component frame limit')
+                adapter = adapters.get(record.channel.catalogue, desc['catalogue'], desc['root'])
+                body = adapter.adapt(record.payload)
+                if len(body) > MAX_SIZE:
+                    raise ValueError('adapted replay envelope exceeds the component frame limit')
+            except ValueError as error:
+                raise ValueError(f"{source} -> {target}, root {desc['root']}, selected message {len(events) + 1}, "
+                                 f"log_time_ns {record.log_time_ns}: {error}") from error
+            source_hash, target_hash = adapter.source_sha256, adapter.target_sha256
+            key = source, target, source_hash, target_hash
+            if key not in schemas:
+                schemas[key] = dict(source_topic=source, target_topic=target, root=desc['root'],
+                    source_sha256=source_hash, target_sha256=target_hash,
+                    adaptation='exact' if adapter.exact else 'adapted', message_count=0)
+            schemas[key]['message_count'] += 1
+            unchanged += int(adapter.exact)
+            adapted += int(not adapter.exact)
             index = len(events)
             envelope = Path(temporary) / f"{index}.s2ps"
             envelope.write_bytes(body)
@@ -122,11 +138,14 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
                          for event in events), key=lambda event: (event.at, event.index))
         yield events, {"source": str(Path(path).resolve()), "mapping": mapping,
                        "origin_log_time_ns": origin, "message_count": len(events),
-                       "message_count_by_topic": dict(sorted(counts.items()))}
+                       "message_count_by_topic": dict(sorted(counts.items())),
+                       "schema_policy": schema_policy,
+                       "schema_adaptation": dict(unchanged_messages=unchanged, adapted_messages=adapted,
+                                                 catalogues=list(schemas.values()))}
 
 
 async def run(path, plan_path, duration, *, mappings, start_ns=None, end_ns=None,
-              workers=1, trace=None, loops=1):
+              workers=1, trace=None, loops=1, schema_policy='exact'):
     from ose.execution.simulation import run as simulate
     horizon = seconds_ns(duration, positive=True)
     loop_count(loops)
@@ -143,7 +162,8 @@ async def run(path, plan_path, duration, *, mappings, start_ns=None, end_ns=None
     topics = plan.get("external_topics", {})
     mapping = topic_mapping(mappings, topics)
     codec = SDL2(plan["sdl_root"])
-    with recording_events(path, topics, mapping, codec, start_ns=start_ns, end_ns=end_ns) as (events, selection):
+    with recording_events(path, topics, mapping, codec, start_ns=start_ns, end_ns=end_ns,
+                          schema_policy=schema_policy) as (events, selection):
         repeated = RepeatedEvents(events, loops, horizon=horizon)
         summary = await simulate(plan_path, duration, workers=workers, events=repeated, trace=trace)
         summary.update(loops=loops, completed_loops=summary["external_events"] // len(events))
