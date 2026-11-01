@@ -44,6 +44,11 @@ printf '%s\\n' "${COMPREPLY[@]}"
             (('parameter', 'get', '--ex'), '--export'),
             (('parameter', 'sync', '--de'), '--debounce'),
             (('run', '--du'), '--duration'),
+            (('app', ''), 'run'),
+            (('app', '--root', 'run', 'parameter', ''), 'get'),
+            (('app', 'parameter', 'get', '--ex'), '--export'),
+            (('app', 'record', ''), 'inspect'),
+            (('app', 'record', 'inspect', '--fo'), '--format'),
             (('record', '--label', 'run', '--ca'), '--capacity'),
             (('parameter', 'get', '--client', 'sync', '--ex'), '--export'),
             (('parameter', 'get', '--client=sync', '--ex'), '--export'),
@@ -62,6 +67,8 @@ printf '%s\\n' "${COMPREPLY[@]}"
             (('parameter', 'sync', '--initial', 'a'), ['app']),
             (('top', '--format', 'j'), ['jsonl']),
             (('completion', 'b'), ['bash']),
+            (('app', 'parameter', 'sync', '--initial', 'a'), ['app']),
+            (('app', 'record', 'inspect', '--format', 'j'), ['json']),
         ]:
             with self.subTest(words=words):
                 self.assertEqual(self.complete(*words), expected)
@@ -80,14 +87,8 @@ printf '%s\\n' "${COMPREPLY[@]}"
                        OSE_PARAMETER_TOKEN='test-only-explicit-token', PS1='', PS2='')
             script = '''
 set -eu
-alias ose-ctl='_ose_env_cli'
-_ose_ctl_complete() { :; }
-complete -F _ose_ctl_complete ose-ctl
 source "$FRAMEWORK_ENV" >/dev/null
 source "$FRAMEWORK_ENV" >/dev/null
-if alias ose-ctl >/dev/null 2>&1; then exit 1; fi
-if complete -p ose-ctl >/dev/null 2>&1; then exit 1; fi
-if declare -F _ose_ctl_complete >/dev/null; then exit 1; fi
 complete -p ose
 alias ose
 # Completion uses the generated script even with Python unavailable afterwards.

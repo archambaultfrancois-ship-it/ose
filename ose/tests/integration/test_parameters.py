@@ -456,18 +456,18 @@ def on_tick(ctx):
             env.pop('OSE_PARAMETER_TOKEN', None)
             env.pop('OSE_PARAMETER_CLIENT', None)
             script = ('set -eu\nshopt -s expand_aliases\nsource "$FRAMEWORK_ENV"\n'
-                      'params-set machine/first --file - --host 127.0.0.1 --port "$1"\n')
+                      'ose app parameter set machine/first --file - --host 127.0.0.1 --port "$1"\n')
             process = await asyncio.create_subprocess_exec('bash', '--noprofile', '--norc', '-c', script, 'test', str(port),
                 env=env, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             stdout, stderr = await asyncio.wait_for(process.communicate(b'{"threshold": 92.0}'), 15)
             self.assertEqual(process.returncode, 0, stderr.decode())
             self.assertEqual(json.loads(stdout), {'updated': 'machine/first'})
             script = ('set -eu\nset -o pipefail\nshopt -s expand_aliases\nsource "$FRAMEWORK_ENV"\n'
-                      'params-get "/first$" --host 127.0.0.1 --port "$1" | '
-                      'params-set --file - --host 127.0.0.1 --port "$1"\n'
-                      'params-get --exact machine/first --host 127.0.0.1 --port "$1"\n'
-                      'params-get --host 127.0.0.1 --port "$1"\n'
-                      'params-get-all --host 127.0.0.1 --port "$1"\n')
+                      'ose app parameter get "/first$" --host 127.0.0.1 --port "$1" | '
+                      'ose app parameter set --file - --host 127.0.0.1 --port "$1"\n'
+                      'ose app parameter get --exact machine/first --host 127.0.0.1 --port "$1"\n'
+                      'ose app parameter get --host 127.0.0.1 --port "$1"\n'
+                      'ose app parameter get --host 127.0.0.1 --port "$1"\n')
             process = await asyncio.create_subprocess_exec('bash', '--noprofile', '--norc', '-c', script, 'test', str(port),
                 env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             stdout, stderr = await asyncio.wait_for(process.communicate(), 15)

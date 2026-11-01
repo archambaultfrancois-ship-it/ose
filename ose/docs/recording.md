@@ -83,7 +83,7 @@ before pressing Enter. Down past the newest entry restores the unfinished line.
 
 Each recording session carries an informational `label`, defaulting to
 `recorder`, the recorder client's component name. Set it at launch with
-`record --label moteur-1` (or `ose record -l moteur-1`). The console's
+`ose app record --label moteur-1` (or `ose record -l moteur-1`). The console's
 `label` command shows the current value; `label "essai moteur 1"` changes it
 before the next recording. The label is frozen while a capture is running.
 Labels accept nonempty text up to 256 UTF-8 bytes and need not be unique.
@@ -91,7 +91,7 @@ Labels accept nonempty text up to 256 UTF-8 bytes and need not be unique.
 The label is sent to each source with `recording_open`, retained in source
 session statistics, shown by recorder `status` and final summaries, and stored
 in the file's `sdl.recording` and `ose.session` metadata (visible through
-`record-info FILE`). Each source still assigns an independent UUID, and session
+`ose app record info FILE`). Each source still assigns an independent UUID, and session
 operations remain bound to the connection that created it. Labels do not
 identify application graph nodes or grant access to another session.
 
@@ -231,7 +231,7 @@ enable it. In local execution the adapter refreshes activation every 50 ms; in
 distributed execution the worker reads its local taps. Changes reach callbacks
 between ticks, so activation remains fixed during each callback. Stopping one of
 several captures leaves a point enabled for the others. `recording_enabled` can
-also avoid constructing costly diagnostic values; `record` itself skips encoding
+also avoid constructing costly diagnostic values; `ose app record` itself skips encoding
 when disabled. Filters are independent for each capture and run before tap queue
 admission, even if another capture selects the same point without a filter.
 
@@ -435,12 +435,12 @@ to inspect, validate or replay the resulting file, without a running application
 python3 "$SDL_ROOT/tools/recording/sdl-recording" info capture.pcapng
 python3 "$SDL_ROOT/tools/recording/sdl-recording" inspect capture.pcapng --check
 python3 "$SDL_ROOT/tools/recording/sdl-recording" inspect capture.pcapng --topic alarm.event --limit 3
-record-inspect capture.pcapng --summary --from +1s --to +5s --format table
-record-inspect capture.pcapng --check --from +1s --duration 4s --format table
-record-inspect capture.pcapng --check --summary --topic alarm.event --format json
+ose app record inspect capture.pcapng --summary --from +1s --to +5s --format table
+ose app record inspect capture.pcapng --check --from +1s --duration 4s --format table
+ose app record inspect capture.pcapng --check --summary --topic alarm.event --format json
 ```
 
-After sourcing the framework's `setenv.sh`, `record-inspect --summary` reports
+After sourcing the framework's `setenv.sh`, `ose app record inspect --summary` reports
 `message_count`, `message_count_by_topic`, `start_time_ns`, `end_time_ns` and
 `duration_seconds` for the selection. Duration is the difference between the
 last and first selected log times, in seconds, and is zero for fewer than two
@@ -458,29 +458,28 @@ can be mixed. `--duration 4s` replaces `--to` and sets the exclusive end to
 `--from + 4s`; with no `--from`, the interval starts at the earliest file log
 time. Duration may be zero. `--to` and `--duration` cannot be combined. The
 reported duration spans the selected messages, which can be shorter than the
-requested interval. Reported time bounds remain absolute. Text is the shortcut's
+requested interval. Reported time bounds remain absolute. Text is the application inspection command's
 default format. `--limit` does not restrict checking or summary counts. Container
 integrity is always checked through the end of the file, including outside the
 selection; only selected message bodies are decoded by `--check`. Errors return
 a nonzero status without emitting a success report.
 
-`record-check` remains a compatibility shortcut for `inspect --check` with JSON
-output by default, and accepts the same options. The underlying `validate`
-command remains available for complete-file validation and its original JSON
-count report.
+Use `ose app record inspect FILE --check --format json` for a JSON validation
+report. The underlying SDL `validate` command remains available for complete-file
+validation and its original JSON count report.
 
-`inspect` and the `record-inspect` shortcut display all selected messages by
+`inspect` and the `ose app record inspect` command display all selected messages by
 default. Add `--limit N` for a bounded preview. `--full` controls the detail of
 arrays and strings within each message, independently of the message count.
 
 Options taking values also accept `=`, for example
-`record-inspect capture.pcapng --summary --from=+1s --duration=4s --format=table`.
+`ose app record inspect capture.pcapng --summary --from=+1s --duration=4s --format=table`.
 Short options are `-b`/`--from`, `-e`/`--to`, `-d`/`--duration`, `-t`/`--topic`,
 `-c`/`--check`, `-s`/`--summary`, `-f`/`--format`, `-n`/`--limit`,
 `-a`/`--full`, `-i`/`--indent-width`, and `-h`/`--help`. For example:
 
 ```sh
-record-inspect capture.pcapng -cs -b +1s -d 4s -f table
+ose app record inspect capture.pcapng -cs -b +1s -d 4s -f table
 ```
 
 From the OSE root, `make test-recording` checks both formats, unchanged payload

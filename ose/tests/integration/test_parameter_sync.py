@@ -219,7 +219,7 @@ class SyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
                    OSE_APP_ROOT=str(self.root), OSE_PYTHON=os.sys.executable, OSE_PARAMETER_CLIENT='operator')
         env.pop('OSE_PARAMETER_TOKEN', None)
         script = ('set -eu\nshopt -s expand_aliases\nsource "$FRAMEWORK_ENV"\n'
-                  'params-sync --dir .\n')
+                  'ose app parameter sync --dir .\n')
         process = await asyncio.create_subprocess_exec('bash', '--noprofile', '--norc', '-c', script,
             cwd=caller, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             start_new_session=True)

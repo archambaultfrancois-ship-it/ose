@@ -19,11 +19,17 @@ def _command(commands, name, summary, description, examples):
         epilog="Examples:\n" + "\n".join("  " + example for example in examples))
 
 
-def main():
+def create_parser():
     parser = argparse.ArgumentParser(
         prog="ose", formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Build, run and observe SDL applications with OSE.",
-        epilog="""Typical local workflow:
+        epilog="""Application workflows:
+  ose app run
+  ose app record
+  ose app parameter get
+  ose app --root /path/to/application env
+
+Explicit model/plan workflow:
   ose validate --model model.json --deployment deployment.json
   ose build --model model.json --deployment deployment.json
   ose run
@@ -223,9 +229,22 @@ For distributed execution, start serve and worker instead of run.""")
         "Load it in the current Bash terminal or add it to ~/.bashrc.",
         ["source <(ose completion bash)"])
     command.add_argument("shell", choices=("bash",), help="target shell")
-    args = parser.parse_args()
+    from ose.app import add_parser
+    add_parser(commands)
+    return parser
+
+
+def main(argv=None):
+    parser = create_parser()
+    return execute(parser.parse_args(argv), parser)
+
+
+def execute(args, parser=None):
     try:
-        if args.action == 'completion':
+        if args.action == 'app':
+            from ose.app import run
+            return run(args)
+        elif args.action == 'completion':
             from ose.completion import bash_completion
             print(bash_completion(parser), end='')
         elif args.action == 'measure':
@@ -235,6 +254,7 @@ For distributed execution, start serve and worker instead of run.""")
             except KeyboardInterrupt:
                 return 130
         elif args.action == "parameter":
+            from ose.parameters import cli as parameter_cli
             try:
                 asyncio.run(parameter_cli.run(args))
             except KeyboardInterrupt:
@@ -390,6 +410,8 @@ For distributed execution, start serve and worker instead of run.""")
                 except asyncio.CancelledError:
                     pass
             asyncio.run(execute())
+    except KeyboardInterrupt:
+        return 130
     except (ValueError, OSError, EOFError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"ose: {error}", file=sys.stderr)
         return 1

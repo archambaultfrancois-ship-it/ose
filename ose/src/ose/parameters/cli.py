@@ -186,7 +186,7 @@ async def run(options):
     if options.parameter_action in ('get', 'sync'):
         if options.exact and options.path is None:
             raise ValueError(f'{options.parameter_action} --exact requires PATH')
-        # Keep existing value-only CLI reads literal. Shell shortcuts select
+        # Keep existing value-only CLI reads literal. Application commands select
         # export mode, where a positional pattern (or all paths) is the default.
         if not options.exact and (options.parameter_action == 'sync' or options.export or options.path is None):
             try:

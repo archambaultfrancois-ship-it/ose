@@ -15,14 +15,12 @@ ose parameter sync --dir ./parameters --client operator
 ose parameter sync '^machines/press_1/' --dir ./parameters --client operator
 ```
 
-After sourcing `setenv.sh`, the equivalent shortcut is
-`params-sync --dir ./parameters` (or `params sync --dir ./parameters`). It uses
-the loaded token and defaults to `operator` or `OSE_PARAMETER_CLIENT`.
-The shortcut resolves `--dir` relative to the caller's current directory, while
-using the application directory for the default plan and endpoint. For example,
-`params-sync --dir .` manages files in the current terminal directory.
-The client needs read and write access to the selected blocks. Existing token,
-endpoint, SDL runtime and distributed TLS options apply.
+Use `ose app parameter sync --dir ./parameters` for application defaults.
+It resolves the selected client's token on each invocation and defaults to
+`operator` or `OSE_PARAMETER_CLIENT`. Storage is relative to the caller's current
+directory; the default plan and endpoint are relative to the selected application.
+The client needs read and write access. Explicit token, endpoint, SDL runtime and
+TLS options remain available.
 
 | Option | Default | Purpose |
 | --- | --- | --- |

@@ -120,40 +120,37 @@ ose parameter set machines/press_1/detection --client operator --file detection.
 ose parameter watch machines/press_1/detection --client operator --count 3
 ```
 
-After sourcing the framework's `setenv.sh`, the shell shortcuts are:
+The application CLI provides automatic client, token, plan and endpoint defaults:
 
 ```sh
-params-list
-params-get machines/press_1/detection
-params-get '/detection$'
-params-get
-params-set --file parameters.json
-params-set machines/press_1/detection --file detection.json
-params-watch machines/press_1/detection --count 3
-params-sync --dir ./parameters
+ose app parameter list
+ose app parameter get machines/press_1/detection
+ose app parameter get '/detection$'
+ose app parameter get
+ose app parameter set --file parameters.json
+ose app parameter set machines/press_1/detection --file detection.json
+ose app parameter watch machines/press_1/detection --count 3
+ose app parameter sync --dir ./parameters
 ```
 
-They run from `OSE_APP_ROOT` and default to client `operator`. Set
-`OSE_PARAMETER_CLIENT` or pass `--client NAME` to use another identity.
-When sourcing, `setenv.sh` loads `OSE_PARAMETER_TOKEN` for the selected client
-from `build/plan.json`, or the first existing `deployment.local.json` /
-`deployment.json` before a build. An existing plan takes precedence even when
-the client has no token. Explicit environment values, including an empty token,
-are preserved; the script never prints the token. Sourcing again refreshes an
-automatically loaded value, including when switching applications or clients.
-Set `OSE_PARAMETER_CLIENT` before sourcing when selecting another client's token;
-an explicit `--client` alone does not select a different token automatically.
-`--token-env` still selects a manually managed environment variable.
-Relative filenames resolve from the application directory, except the sync
-directory: `params-sync --dir DIR` and `params sync --dir DIR` resolve `DIR`
-from the caller's current directory. The default plan and endpoint still resolve
-from the application directory.
-All CLI options pass through; `params` shows help and `params ACTION ...` is
-the general shortcut.
+Application selection is `ose app --root DIR`, then `OSE_APP_ROOT`, then the
+current directory. These commands default to client `operator`; set
+`OSE_PARAMETER_CLIENT` or pass `--client NAME` to choose another identity.
+On every invocation the token is loaded for that client from `build/plan.json`,
+or the first existing `deployment.local.json` / `deployment.json` before a build.
+The first existing configuration is authoritative even when it has no token.
+Explicit `OSE_PARAMETER_TOKEN` values, including an empty token, take precedence.
+Tokens stay inside the command's process and are never printed; sourcing
+`setenv.sh` only selects paths and enables completion.
+`--token-env` selects a manually managed environment variable.
+Relative filenames follow the application directory. The sync storage option
+`ose app parameter sync --dir DIR` follows the caller's current directory;
+its plan and endpoint still follow the application directory.
+All service and TLS options remain available. Use `ose app parameter --help`.
 
 ### Export and restore blocks by path
 
-The `params-get` shortcut always includes paths in its output. Single-block and
+The `ose app parameter get` command always includes paths in its output. Single-block and
 multiple-block exports use the same JSON shape:
 
 ```json
@@ -164,20 +161,20 @@ multiple-block exports use the same JSON shape:
 }
 ```
 
-Use `params-get PATTERN` to search paths with a Python regular expression.
-The pattern is optional: `params-get` alone exports every listed block.
-`params-get-all` remains a synonym. Use `params-get --exact PATH` to select
+Use `ose app parameter get PATTERN` to search paths with a Python regular expression.
+The pattern is optional: `ose app parameter get` alone exports every listed block.
+Use `ose app parameter get --exact PATH` to select
 one literal path. Quote patterns to keep the shell from expanding them.
 Anchor with `^` / `$` when needed; for example `^machines/press_1/` selects one
 machine and `/detection$` selects detection blocks. Every selected block must be
 readable. A pattern matching nothing produces `{}`; invalid patterns fail.
 
-`params-set --file FILE` reads the embedded paths, without an `--all` option:
+`ose app parameter set --file FILE` reads the embedded paths, without an `--all` option:
 
 ```sh
-params-get > parameters.json
-params-set --file parameters.json
-params-get '/detection$' | params-set --file -
+ose app parameter get > parameters.json
+ose app parameter set --file parameters.json
+ose app parameter get '/detection$' | ose app parameter set --file -
 ```
 
 The ordinary CLI supports `ose parameter get --export [PATTERN] --client operator`
@@ -193,9 +190,9 @@ To import all `*.json` files in a directory and its subdirectories:
 
 ```sh
 mkdir -p parameters/machines
-params-get '^machines/press_1/' > parameters/machines/press_1.json
-params-get '^machines/press_2/' > parameters/machines/press_2.json
-params-set --dir parameters
+ose app parameter get '^machines/press_1/' > parameters/machines/press_1.json
+ose app parameter get '^machines/press_2/' > parameters/machines/press_2.json
+ose app parameter set --dir parameters
 ```
 
 Every file must contain a path-keyed export, with one or several complete blocks.
@@ -228,11 +225,11 @@ transport/CH/1 frame limits and service storage budget remain in effect.
 For `set`, `--file -` reads a complete JSON block from stdin instead of a file:
 
 ```sh
-params-set machines/press_1/detection --file - <<'JSON'
+ose app parameter set machines/press_1/detection --file - <<'JSON'
 {"enabled": true, "threshold": 85.0, "hysteresis": 5.0, "window_ms": 200}
 JSON
 # Pipes and redirected files work as well:
-cat detection.json | params-set machines/press_1/detection --file -
+cat detection.json | ose app parameter set machines/press_1/detection --file -
 ```
 
 The ordinary `ose parameter set ... --client operator --file -` command
@@ -257,13 +254,10 @@ ose parameter sync '^machines/press_1/' --dir ./parameters --client operator
 ose parameter sync --exact machines/press_1/detection --dir ./parameters --client operator
 ```
 
-After sourcing `setenv.sh`, use `params-sync --dir ./parameters` or
-`params sync --dir ./parameters`. Both run in the application directory and use
-the loaded token and default client (`operator` or `OSE_PARAMETER_CLIENT`).
-The sync directory is resolved before changing directory, so `params-sync --dir .`
-uses the terminal's current directory even when it is outside the application.
-Run the process in its own terminal or under a supervisor; Ctrl+C and SIGTERM
-close its watchers and connections.
+Use `ose app parameter sync --dir ./parameters` for the application's default
+client and token. The sync directory is resolved before entering the application,
+so `--dir .` uses the terminal's current directory. Run it in a separate terminal
+or under a supervisor; Ctrl+C and SIGTERM close watchers and connections.
 
 Each path maps to one file: `machines/press_1/detection` becomes
 `parameters/machines/press_1/detection.json`. The file must contain exactly one

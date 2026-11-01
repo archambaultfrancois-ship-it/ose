@@ -13,6 +13,26 @@ for `~/.bashrc`). The framework's `setenv.sh` enables it automatically in
 interactive Bash terminals. Completion covers commands, nested parameter actions,
 options and option choices, with Bash's usual filename fallback.
 
+Use `ose app` as the application control point:
+
+```sh
+ose app --root /path/to/application run --duration 60
+ose app record
+ose app record inspect capture.mcap --check
+ose app parameter get > parameters.json
+ose app parameter set --file parameters.json
+ose app parameter sync --dir parameters
+ose app env
+```
+
+`--root`, `OSE_APP_ROOT` and the current directory select the application in that
+order. Run builds through its Makefile first and is unlimited by default; record
+prepares only missing services; parameter commands resolve client credentials on
+each invocation. Get exports `{path: block}`. JSON/capture paths are relative to
+the application, except sync storage, which follows the terminal directory.
+The shell keeps only `app-cd`, `app-build` and `app-run`, plus the `ose` checkout
+entry point. All workflow behavior also works from the installed package.
+
 This directory is a standalone project designed for extraction into a
 separate repository. By default, it uses the sibling `../sdl` project in this repository; an
 explicit path supports a separate SDL dependency checkout.

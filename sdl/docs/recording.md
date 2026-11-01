@@ -234,8 +234,8 @@ an empty selection. Errors return a nonzero status and emit no success report.
 block, and `table` prints aligned field/type/value rows, including a count per
 topic. `--indent-width` also applies to text reports. `--limit`, `--full` and
 array previews only affect individual-message display, never the report or
-validation scope. The framework's `record-inspect` shortcut defaults to text;
-`record-check` remains a compatibility shortcut for `inspect --check` in JSON.
+validation scope. The framework's `ose app record inspect` shortcut defaults to text;
+`ose app record inspect --check --format json` remains a compatibility shortcut for `inspect --check` in JSON.
 
 Long options with values accept both `--option value` and `--option=value`,
 for example `--from=+1s --duration=4s --format=table`. Inspection also provides
@@ -255,7 +255,7 @@ these short options:
 | `-i` | `--indent-width` |
 | `-h` | `--help` |
 
-For example, `record-inspect capture.pcapng -cs -b +1s -d 4s -f table` checks
+For example, `ose app record inspect capture.pcapng -cs -b +1s -d 4s -f table` checks
 and summarizes the same interval. Boolean short options can be grouped (`-cs`);
 options taking values also allow attached values (`-d4s`). Flags such as
 `--summary` and `--check` take no value. Replay shares `-b`, `-e`, `-d` and `-t`.
