@@ -23,8 +23,8 @@ On Android/Termux, keep the host awake during real-time/distributed tests with
 `termux-wake-lock`, then release it with `termux-wake-unlock` afterwards. Host
 suspension expires worker leases by design.
 
-The pinned framework (`a83652a`, including component-owned internal recording points) lives
-in `deps/sdl-ose`; for framework development, set
+The pinned framework (`e1a7018`, including internal recording points and current
+application measurements) lives in `deps/sdl-ose`; for framework development, set
 `FRAMEWORK_ROOT=/absolute/path/to/sdl-ose`. Build artifacts and prepared absolute
 paths live in `build/`. Rebuild after moving a checkout. The workflow uses the
 public `python -m ose.cli` interface from the selected framework checkout.
@@ -107,6 +107,31 @@ record> stop
 These points observe analyzer inputs; `sensor_*.signal` observes sensor
 publications. Capture both to compare sequences across delivery. Internal points
 are also available in distributed execution and stay disabled in simulation.
+
+## Read the current RMS measurement
+
+Each Rust analyzer declares the fl64 measurement `vibration.rms` in `on_start`
+and updates it after calculating the RMS of each input block. Values use the same
+m/s² unit as the `Analysis.rms` output. Each component retains only its latest
+value in OSE RAM, without a measurement history or restoration after restart.
+
+After updating the framework submodule, rebuild and launch the application, then
+read the measurements from a second Bash terminal:
+
+```sh
+# First terminal, from the Vibration Watch directory:
+source ./setenv.sh
+app-run
+
+# Second terminal, from the same directory:
+source ./setenv.sh
+ose-ctl measures 'analyzer_*.vibration.rms' --watch
+```
+
+The report shows `analyzer_1` and `analyzer_2` separately. Omit `--watch` for a
+single reading, or use `--interval 1 --count 10 --format jsonl` for ten readings.
+These are snapshots of the latest reported values; intermediate publications
+between readings are not retained.
 
 ## Run with parameter directory sync
 

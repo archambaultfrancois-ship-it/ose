@@ -11,12 +11,14 @@ impl Callbacks for Handler {
         ctx.declare_recording_point::<SignalBlock>(
             "dsp.input",
             "Signal block received before RMS and peak calculation",
-        )
+        )?;
+        ctx.declare_measurement("vibration.rms")
     }
 
     fn on_input(&mut self, ctx: &mut Context, message: &SignalBlock) -> Result {
         ctx.record("dsp.input", message)?;
         let (rms, peak) = math::summarize(&message.samples)?;
+        ctx.measure("vibration.rms", rms)?;
         ctx.publish_result(&Analysis {
             machine_id: message.machine_id,
             sequence: message.sequence,
