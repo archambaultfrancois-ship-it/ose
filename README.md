@@ -51,6 +51,9 @@ This exports `FRAMEWORK_ROOT`, `SDL_ROOT`, `OSE_ROOT`, `OSE_APP_ROOT`, and
 to `PYTHONPATH`. `OSE_PYTHON` defaults to `python3`; set it to an interpreter path
 before sourcing to use a virtual environment. Sourcing again does not duplicate
 the added paths. No dependencies are built or installed when sourcing.
+Interactive Bash terminals also enable `ose-ctl` completion for commands,
+options and option choices. Press Tab after `ose-ctl`, `ose-ctl parameter`,
+or an option such as `ose-ctl run --mode` followed by a space.
 To switch applications in the same terminal, run `unset OSE_APP_ROOT`, enter the
 other repository, and source the script again.
 
@@ -150,7 +153,7 @@ expansion. `params-get-all` remains a synonym for `params-get` without a pattern
 Every selected block must be readable. `params-set --file FILE` imports this format
 without requiring a separate path or an `--all` option. Supplying an explicit path
 to `params-set` still writes a bare block. The ordinary
-`ose-ctl parameters get PATH` keeps its value-only output for existing scripts;
+`ose-ctl parameter get PATH` keeps its value-only output for existing scripts;
 use `get --export [PATTERN]` for the same path-keyed pattern export as the shell
 shortcuts, or `get --export --exact PATH` to export one literal path.
 Writes replace complete typed blocks. See the [parameter guide](ose/docs/parameters.md).

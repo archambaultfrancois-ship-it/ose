@@ -8,6 +8,11 @@ The Python distribution and import namespace are `ose`; the command-line tool is
 `python3 -m ose.cli --help`. Rebuild application plans and generated containers
 after upgrading from an earlier package layout.
 
+Enable Bash completion with `source <(ose-ctl completion bash)` (also suitable
+for `~/.bashrc`). The framework's `setenv.sh` enables it automatically in
+interactive Bash terminals. Completion covers commands, nested parameter actions,
+options and option choices, with Bash's usual filename fallback.
+
 This directory is a standalone project designed for extraction into a
 separate repository. By default, it uses the sibling `../sdl` project in this repository; an
 explicit path supports a separate SDL dependency checkout.
@@ -84,11 +89,11 @@ python3 -m ose.cli top
 tick p95 and colored diagnostics locally or through the distributed coordinator.
 Use arrows/Enter for details, Space to freeze, or `--format jsonl` for collection.
 
-[`ose-ctl measures`](docs/measurements.md) reads application-defined fl64 values,
+[`ose-ctl measure`](docs/measurements.md) reads application-defined fl64 values,
 retaining only the last value per declared dot-separated name in RAM. Declare
 with `ctx.declare_measurement("moteur.temperature")` in Python `on_start`, emit
 with `ctx.measure("moteur.temperature", value)` in tick callbacks, and read with
-`ose-ctl measures --watch` or `--count 60 --format jsonl`. Equivalent APIs exist
+`ose-ctl measure --watch` or `--count 60 --format jsonl`. Equivalent APIs exist
 in C, Rust, Java and Ada. Components restart with no saved measurements.
 
 Ctrl+C stops OSE and its component processes. `run --duration 2` provides
@@ -109,7 +114,7 @@ replaces its value. CLI and external clients can read, write and watch selected
 blocks locally or through the distributed coordinator. See the runnable
 [two-detector example](examples/shared_parameters/README.md).
 On Linux/Termux, `pip install '.[sync]'` enables
-`ose-ctl parameters sync --dir parameters --client operator` to synchronize
+`ose-ctl parameter sync --dir parameters --client operator` to synchronize
 unit JSON files with the running application using inotify and OSE subscriptions.
 JSON imports allow 16 MiB per input and 64 MiB per directory by default.
 

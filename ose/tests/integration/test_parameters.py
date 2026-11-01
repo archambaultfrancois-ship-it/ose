@@ -271,7 +271,7 @@ def on_tick(ctx):
     async def parameter_cli(self, port, action, *args, data=None, success=True):
         env = dict(os.environ, OSE_PARAMETER_TOKEN='test-only-parameter-token',
                    PYTHONPATH=str(Path(__file__).resolve().parents[2] / 'src'))
-        process = await asyncio.create_subprocess_exec(os.sys.executable, '-m', 'ose.cli', 'parameters', action, *args,
+        process = await asyncio.create_subprocess_exec(os.sys.executable, '-m', 'ose.cli', 'parameter', action, *args,
             '--client', 'operator', '--host', '127.0.0.1', '--port', str(port), '--sdl-root', str(self.codec.root),
             env=env, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, stderr = await asyncio.wait_for(process.communicate(data), 15)

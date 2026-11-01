@@ -44,7 +44,7 @@ class EnvironmentTests(unittest.TestCase):
                         invocation = json.loads(result.stdout)
                         self.assertEqual(invocation['cwd'], str(application))
                         self.assertEqual(invocation['args'],
-                            ['-m', 'ose.cli', 'parameters', 'sync', '--client',
+                            ['-m', 'ose.cli', 'parameter', 'sync', '--client',
                              os.environ.get('OSE_PARAMETER_CLIENT', 'operator'), *expected])
 
     def test_switching_frameworks_selects_current_modules_and_paths(self):

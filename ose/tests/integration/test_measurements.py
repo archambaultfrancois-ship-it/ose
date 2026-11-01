@@ -56,7 +56,7 @@ class MeasurementTests(unittest.IsolatedAsyncioTestCase):
                         await self.until(lambda: 'source' in server.ready, task)
                         server.enabled = True
                     await self.until(lambda: sample(server.snapshot())['measurements'].get('source', {}).get('moteur.temperature') is not None, task)
-                    command = [sys.executable, '-m', 'ose.cli', 'measures', 'source.moteur.*', '--host', '127.0.0.1',
+                    command = [sys.executable, '-m', 'ose.cli', 'measure', 'source.moteur.*', '--host', '127.0.0.1',
                                '--port', str(server.port), '--count', '2', '--interval', '.1', '--format', 'jsonl']
                     if distributed: command.append('--insecure')
                     process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)

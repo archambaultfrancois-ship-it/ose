@@ -216,12 +216,12 @@ _ose_env_parameters() (
     cd -- "$OSE_APP_ROOT" || return
     case "$action" in
         get)
-            "$OSE_PYTHON" -m ose.cli parameters get --export \
+            "$OSE_PYTHON" -m ose.cli parameter get --export \
                 --client "${OSE_PARAMETER_CLIENT:-operator}" "$@" ;;
         list|set|watch|sync)
-            "$OSE_PYTHON" -m ose.cli parameters "$action" \
+            "$OSE_PYTHON" -m ose.cli parameter "$action" \
                 --client "${OSE_PARAMETER_CLIENT:-operator}" "$@" ;;
-        *) "$OSE_PYTHON" -m ose.cli parameters "$action" "$@" ;;
+        *) "$OSE_PYTHON" -m ose.cli parameter "$action" "$@" ;;
     esac
 )
 
@@ -231,6 +231,7 @@ _ose_env_help() {
     cat <<'EOF'
 
 ose-ctl ...             OSE CLI from this framework checkout
+ose-ctl completion bash generate Bash completion (enabled in interactive Bash)
 app-cd                  enter the application repository
 app-make ...            application Makefile (arguments passed through)
 app-validate            validate the application
@@ -304,5 +305,6 @@ alias params-sync='_ose_env_parameters sync'
 alias ose-env='_ose_env_help'
 
 if [[ $- == *i* ]]; then
+    eval "$(_ose_env_cli completion bash)"
     printf 'SDL/OSE ready. Application: %s\nType ose-env for shortcuts.\n' "$OSE_APP_ROOT"
 fi

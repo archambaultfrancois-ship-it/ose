@@ -114,10 +114,10 @@ From an application's root with a compiled plan and running broker:
 
 ```sh
 export OSE_PARAMETER_TOKEN='example-local-token-change-me'
-ose-ctl parameters list --client operator
-ose-ctl parameters get machines/press_1/detection --client operator
-ose-ctl parameters set machines/press_1/detection --client operator --file detection.json
-ose-ctl parameters watch machines/press_1/detection --client operator --count 3
+ose-ctl parameter list --client operator
+ose-ctl parameter get machines/press_1/detection --client operator
+ose-ctl parameter set machines/press_1/detection --client operator --file detection.json
+ose-ctl parameter watch machines/press_1/detection --client operator --count 3
 ```
 
 After sourcing the framework's `setenv.sh`, the shell shortcuts are:
@@ -180,12 +180,12 @@ params-set --file parameters.json
 params-get '/detection$' | params-set --file -
 ```
 
-The ordinary CLI supports `ose-ctl parameters get --export [PATTERN] --client operator`
-and `ose-ctl parameters get --export --exact PATH --client operator`. Export mode
+The ordinary CLI supports `ose-ctl parameter get --export [PATTERN] --client operator`
+and `ose-ctl parameter get --export --exact PATH --client operator`. Export mode
 interprets the positional argument as a pattern, or selects all paths when omitted.
-`ose-ctl parameters get --client operator` with no path also exports all blocks.
+`ose-ctl parameter get --client operator` with no path also exports all blocks.
 For compatibility,
-`ose-ctl parameters get PATH` without `--export` still returns only the value.
+`ose-ctl parameter get PATH` without `--export` still returns only the value.
 An explicit path on `set` likewise continues to accept a bare block, rather than
 a path-keyed export. `watch` keeps its existing `{path, value}` event format.
 
@@ -210,7 +210,7 @@ and all blocks are validated before the first write.
 `--dir` is mutually exclusive with `--file` and a positional parameter path.
 `--exact` is a selection option for `get` and `sync`, not an import option for `set`.
 The ordinary CLI also supports
-`ose-ctl parameters set --dir parameters --client operator`.
+`ose-ctl parameter set --dir parameters --client operator`.
 
 Imports describe and validate every block before the first write; empty imports
 are valid no-ops. They replace complete blocks, and each path needs write access.
@@ -235,7 +235,7 @@ JSON
 cat detection.json | params-set machines/press_1/detection --file -
 ```
 
-The ordinary `ose-ctl parameters set ... --client operator --file -` command
+The ordinary `ose-ctl parameter set ... --client operator --file -` command
 supports the same input. File and stdin reads are bounded to 16 MiB by default and reject
 duplicate JSON keys; the service applies the same SDL validation to both.
 
@@ -252,9 +252,9 @@ On Linux/Termux, install the optional file watcher from the OSE project root:
 
 ```sh
 python3 -m pip install '.[sync]'
-ose-ctl parameters sync --dir ./parameters --client operator
-ose-ctl parameters sync '^machines/press_1/' --dir ./parameters --client operator
-ose-ctl parameters sync --exact machines/press_1/detection --dir ./parameters --client operator
+ose-ctl parameter sync --dir ./parameters --client operator
+ose-ctl parameter sync '^machines/press_1/' --dir ./parameters --client operator
+ose-ctl parameter sync --exact machines/press_1/detection --dir ./parameters --client operator
 ```
 
 After sourcing `setenv.sh`, use `params-sync --dir ./parameters` or

@@ -12,141 +12,229 @@ from ose.modeling.compiler import build, validate
 from ose.recording import DEFAULT_LABEL, session_label
 
 
+def _command(commands, name, summary, description, examples):
+    return commands.add_parser(
+        name, help=summary, description=description,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Examples:\n" + "\n".join("  " + example for example in examples))
+
+
 def main():
-    parser = argparse.ArgumentParser(prog="ose-ctl")
-    commands = parser.add_subparsers(dest="action", required=True)
+    parser = argparse.ArgumentParser(
+        prog="ose-ctl", formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Build, run and observe SDL applications with OSE.",
+        epilog="""Typical local workflow:
+  ose-ctl validate --model model.json --deployment deployment.json
+  ose-ctl build --model model.json --deployment deployment.json
+  ose-ctl run
+
+From another terminal while the application runs:
+  ose-ctl top
+  ose-ctl measure 'analyzer_*.vibration.rms' --watch
+  ose-ctl record
+
+Use ose-ctl COMMAND --help for options and examples.
+Use ose-ctl parameter ACTION --help for parameter operations.
+Local observation commands use build/endpoint.json by default.
+For distributed execution, start serve and worker instead of run.""")
+    commands = parser.add_subparsers(dest="action", required=True, title="commands", metavar="COMMAND")
     for name in ("validate", "build"):
-        command = commands.add_parser(name)
-        command.add_argument("--model", required=True)
-        command.add_argument("--deployment", required=True)
+        summary = "validate the model and deployment" if name == "validate" else "generate a plan and compile component executables"
+        command = _command(commands, name, summary,
+            "Validate the SDL model and its deployment without compiling components." if name == "validate" else
+            "Validate the model and deployment, write plan.json in the build directory and compile components.\n"
+            "Use --component to rebuild one component while retaining the complete plan.",
+            [f"ose-ctl {name} --model model.json --deployment deployment.json"])
+        command.add_argument("--model", required=True, help="application model JSON file")
+        command.add_argument("--deployment", required=True, help="deployment JSON file")
         command.add_argument("--sdl-root", default=os.environ.get("SDL_ROOT", str(Path(__file__).resolve().parents[3] / "sdl")),
                              help="SDL checkout (default: SDL_ROOT or the sibling sdl directory of the OSE source checkout)")
-        command.add_argument("--build-dir", default="build")
+        command.add_argument("--build-dir", default="build", help="build output directory (default: build; build command only)")
         if name == "build":
             command.add_argument("--component", help="compile only this component, retaining the complete plan")
     for name in ("serve", "worker", "cluster-status"):
-        command = commands.add_parser(name)
-        command.add_argument("--host", default="127.0.0.1", help="listen address for serve; coordinator address otherwise")
-        command.add_argument("--port", type=int, default=7000)
-        command.add_argument("--tls-ca")
-        command.add_argument("--tls-cert")
-        command.add_argument("--tls-key")
+        summaries = {"serve": "start the distributed coordinator",
+                     "worker": "run one component of a distributed plan",
+                     "cluster-status": "print distributed cluster status as JSON"}
+        descriptions = {
+            "serve": "Coordinate workers, routing and leases for a distributed plan.\n"
+                     "Use mutual TLS in deployment, or --insecure on loopback for development.",
+            "worker": "Launch the named component and connect it to the distributed coordinator.\n"
+                      "Start one worker per component; advertise an address reachable by peers.",
+            "cluster-status": "Query the coordinator for the current workers and distributed application status."}
+        examples = {"serve": ["ose-ctl serve --insecure"],
+                    "worker": ["ose-ctl worker --node analyzer --insecure"],
+                    "cluster-status": ["ose-ctl cluster-status --insecure"]}
+        command = _command(commands, name, summaries[name], descriptions[name], examples[name])
+        command.add_argument("--host", default="127.0.0.1", help="listen address for serve; coordinator address otherwise (default: 127.0.0.1)")
+        command.add_argument("--port", type=int, default=7000, help="coordinator TCP port (default: 7000)")
+        command.add_argument("--tls-ca", help="trusted CA certificate file for mutual TLS")
+        command.add_argument("--tls-cert", help="certificate file; identity is coordinator for serve, node name for worker")
+        command.add_argument("--tls-key", help="private key file matching --tls-cert")
         command.add_argument("--insecure", action="store_true", help="explicit loopback-only development mode")
         if name != "cluster-status":
-            command.add_argument("--plan", default="build/plan.json")
+            command.add_argument("--plan", default="build/plan.json", help="compiled deployment plan (default: build/plan.json)")
         if name == "serve":
-            command.add_argument("--lease-seconds", type=float, default=6)
+            command.add_argument("--lease-seconds", type=float, default=6, help="worker lease duration in seconds (default: 6)")
             command.add_argument("--kubernetes-lease", help="pre-created Kubernetes Lease for coordinator fencing")
-            command.add_argument("--namespace", default="default")
+            command.add_argument("--namespace", default="default", help="namespace of --kubernetes-lease (default: default)")
         if name == "worker":
-            command.add_argument("--node", required=True)
-            command.add_argument("--listen-host", default="127.0.0.1")
-            command.add_argument("--listen-port", type=int, default=0)
-            command.add_argument("--advertise-host", default="127.0.0.1")
-    command = commands.add_parser("export-kubernetes")
-    command.add_argument("--plan", default="build/plan.json")
-    command.add_argument("--images", required=True)
-    command.add_argument("--namespace", default="ose-app")
-    command.add_argument("--image-pull-secret", action="append", default=[])
-    command.add_argument("--output", required=True)
-    command = commands.add_parser("run")
-    command.add_argument("--plan", default="build/plan.json")
-    command.add_argument("--duration", type=float)
-    command.add_argument("--port", type=int)
-    command.add_argument("--mode", choices=("realtime", "simulated"), default="realtime")
-    command.add_argument("--workers", type=int)
-    command.add_argument("--scenario")
-    command.add_argument("--trace")
-    command.add_argument("--max-tick-output-bytes", type=int)
-    command = commands.add_parser("replay", help="replay a recording into simulated or live external inputs")
+            command.add_argument("--node", required=True, help="component name in the plan")
+            command.add_argument("--listen-host", default="127.0.0.1", help="worker listen address (default: 127.0.0.1)")
+            command.add_argument("--listen-port", type=int, default=0, help="worker TCP port (default: 0, automatically assigned)")
+            command.add_argument("--advertise-host", default="127.0.0.1", help="worker address announced to peers (default: 127.0.0.1)")
+    command = _command(commands, "export-kubernetes", "generate Kubernetes manifests for a distributed plan",
+        "Write Kubernetes manifests using digest-pinned images for the coordinator and every component.\n"
+        "This command generates files; apply them separately to deploy.",
+        ["ose-ctl export-kubernetes --images images.json --output manifests.json"])
+    command.add_argument("--plan", default="build/plan.json", help="compiled distributed plan (default: build/plan.json)")
+    command.add_argument("--images", required=True, help="JSON file mapping coordinator and component names to image digests")
+    command.add_argument("--namespace", default="ose-app", help="generated application namespace (default: ose-app)")
+    command.add_argument("--image-pull-secret", action="append", default=[], help="existing image pull secret name; repeat for multiple secrets")
+    command.add_argument("--output", required=True, help="output Kubernetes manifest JSON file")
+    command = _command(commands, "run", "run a local application in real time or simulated time",
+        "Execute a compiled plan; real-time mode starts the local broker and component processes.\n"
+        "Real-time execution runs until interrupted unless --duration is provided.\n"
+        "Simulation requires --duration in virtual seconds. Distributed plans use serve and worker.",
+        ["ose-ctl run", "ose-ctl run --duration 30",
+         "ose-ctl run --mode simulated --duration 60 --workers 4 --trace trace.jsonl"])
+    command.add_argument("--plan", default="build/plan.json", help="compiled deployment plan (default: build/plan.json)")
+    command.add_argument("--duration", type=float, help="positive execution duration in seconds; required in simulated mode")
+    command.add_argument("--port", type=int, help="local broker TCP port; real-time only (default: automatically assigned)")
+    command.add_argument("--mode", choices=("realtime", "simulated"), default="realtime", help="execution clock (default: realtime)")
+    command.add_argument("--workers", type=int, help="simulation worker count (default: 1; simulated mode only)")
+    command.add_argument("--scenario", help="external-input scenario JSON file (simulated mode only)")
+    command.add_argument("--trace", help="output deterministic trace file (simulated mode only)")
+    command.add_argument("--max-tick-output-bytes", type=int, help="output byte limit per component tick (default: 16777216; simulated mode only)")
+    command = _command(commands, "replay", "replay a recording into simulated or live external inputs",
+        "Map recorded topics to external input topics declared in the plan.\n"
+        "Simulation starts an application and requires --duration. Real-time replay publishes\n"
+        "into an already running application and supports playback controls.\n"
+        "Connection options, --speed, --interactive and --command require --mode realtime.",
+        ["ose-ctl replay capture.mcap --map recorded.topic=external.topic --duration 30",
+         "ose-ctl replay capture.mcap --map recorded.topic=external.topic --mode realtime --interactive",
+         "ose-ctl replay capture.mcap --map recorded.topic=external.topic --duration 30 --schema-policy compatible"])
     command.add_argument("recording", help="SDL PCAPNG or MCAP capture")
-    command.add_argument("--plan", default="build/plan.json")
+    command.add_argument("--plan", default="build/plan.json", help="target deployment plan (default: build/plan.json)")
     command.add_argument("--map", dest="mappings", action="append", required=True,
                          metavar="RECORDED_TOPIC=EXTERNAL_TOPIC", help="select and map a topic; repeat for each input")
-    command.add_argument("--mode", choices=("simulated", "realtime"), default="simulated")
+    command.add_argument("--mode", choices=("simulated", "realtime"), default="simulated", help="replay destination and clock (default: simulated)")
     command.add_argument("--schema-policy", choices=("exact", "compatible"), default="exact",
                          help="recorded schema policy (default: exact; compatible adapts messages to the target contract)")
     command.add_argument("--loops", type=int, default=1, help="total playback passes (default: 1; 0: infinite)")
     command.add_argument("--duration", type=float, help="recorded-time horizon in seconds; required for simulation")
-    command.add_argument("--workers", type=int)
+    command.add_argument("--workers", type=int, help="simulation worker count (default: 1; simulated mode only)")
     command.add_argument("--start-ns", type=int, help="inclusive recorded log timestamp in nanoseconds")
     command.add_argument("--end-ns", type=int, help="exclusive recorded log timestamp in nanoseconds")
-    command.add_argument("--trace", help="write the deterministic simulation trace")
+    command.add_argument("--trace", help="output deterministic trace file (simulated mode only)")
     command.add_argument("--speed", type=float, help="real-time playback rate (default: 1; 0: maximum speed)")
     command.add_argument("--interactive", action="store_true", help="live speed, pause, resume and stop controls")
     command.add_argument("--command", action="append",
                          help="execute a live replay command in order; repeat to script a session (wait SECONDS supported)")
-    command.add_argument("--endpoint", help="live endpoint JSON; defaults to the local plan's endpoint.json")
-    command.add_argument("--host")
-    command.add_argument("--port", type=int)
+    command.add_argument("--endpoint", help="live endpoint JSON (default: local plan's endpoint.json); exclusive with --host/--port")
+    command.add_argument("--host", help="target broker or coordinator host")
+    command.add_argument("--port", type=int, help="target broker or coordinator TCP port")
     command.add_argument("--distributed", action="store_true", help="publish through the distributed coordinator")
-    command.add_argument("--tls-ca")
+    command.add_argument("--tls-ca", help="trusted CA certificate file for distributed mutual TLS")
     command.add_argument("--tls-cert", help="distributed client certificate with common name replay")
-    command.add_argument("--tls-key")
+    command.add_argument("--tls-key", help="private key file matching --tls-cert")
     command.add_argument("--insecure", action="store_true", help="distributed loopback-only development mode")
-    command = commands.add_parser("inspect")
-    command.add_argument("--endpoint", default="build/endpoint.json")
-    command.add_argument("--last", action="store_true")
-    command = commands.add_parser("top", help="live component, queue and delivery diagnostics")
-    command.add_argument("--endpoint", help="local endpoint JSON (default: build/endpoint.json)")
-    command.add_argument("--host")
-    command.add_argument("--port", type=int)
-    command.add_argument("--distributed", action="store_true")
-    command.add_argument("--tls-ca")
-    command.add_argument("--tls-cert")
-    command.add_argument("--tls-key")
+    command = _command(commands, "inspect", "print local application status as JSON",
+        "Query the running local broker, or read its last saved status with --last.\n"
+        "For a distributed application, use cluster-status or top --distributed.",
+        ["ose-ctl inspect", "ose-ctl inspect --last"])
+    command.add_argument("--endpoint", default="build/endpoint.json", help="local endpoint JSON (default: build/endpoint.json)")
+    command.add_argument("--last", action="store_true", help="read last-status.json beside the endpoint without contacting the broker")
+    command = _command(commands, "top", "show live component, queue and delivery diagnostics",
+        "Monitor execution rates, queues and delivery diagnostics locally or through a coordinator.\n"
+        "Text output is interactive on a terminal: arrows navigate, Enter opens details,\n"
+        "Space pauses the display and q quits. Use JSONL for scripts and --count to stop.",
+        ["ose-ctl top", "ose-ctl top --format jsonl --count 5",
+         "ose-ctl top --distributed --host 127.0.0.1 --port 7000 --insecure"])
+    command.add_argument("--endpoint", help="local endpoint JSON (default: build/endpoint.json); exclusive with --host/--port")
+    command.add_argument("--host", help="target broker or coordinator host")
+    command.add_argument("--port", type=int, help="target broker or coordinator TCP port")
+    command.add_argument("--distributed", action="store_true", help="query a distributed coordinator instead of the local broker")
+    command.add_argument("--tls-ca", help="trusted CA certificate file for distributed mutual TLS")
+    command.add_argument("--tls-cert", help="distributed client certificate file")
+    command.add_argument("--tls-key", help="private key file matching --tls-cert")
     command.add_argument("--insecure", action="store_true", help="distributed loopback-only development mode")
-    command.add_argument("--interval", type=float, default=1, help="refresh seconds (default: 1)")
-    command.add_argument("--window", type=float, default=5, help="rate window seconds (default: 5)")
+    command.add_argument("--interval", type=float, default=1, help="refresh interval in seconds (default: 1; minimum: 0.1)")
+    command.add_argument("--window", type=float, default=5, help="rate window in seconds (default: 5; range: 0.1 to 60)")
     command.add_argument("--count", type=int, help="exit after N samples")
-    command.add_argument("--format", choices=("text", "jsonl"), default="text")
-    command.add_argument("--color", choices=("auto", "always", "never"), default="auto")
-    command.add_argument("--no-color", dest="color", action="store_const", const="never")
-    command = commands.add_parser('measures', help='read current application measurements (RAM-only fl64 values)')
-    command.add_argument('patterns', nargs='*', help='glob patterns for component.name or local measurement names')
-    command.add_argument('--endpoint', help='local endpoint JSON (default: build/endpoint.json)')
-    command.add_argument('--host')
-    command.add_argument('--port', type=int)
-    command.add_argument('--distributed', action='store_true')
-    command.add_argument('--tls-ca')
-    command.add_argument('--tls-cert')
-    command.add_argument('--tls-key')
+    command.add_argument("--format", choices=("text", "jsonl"), default="text", help="display format (default: text); jsonl emits one JSON object per sample")
+    command.add_argument("--color", choices=("auto", "always", "never"), default="auto", help="text color policy (default: auto)")
+    command.add_argument("--no-color", dest="color", action="store_const", const="never", help="alias for --color never")
+    command = _command(commands, 'measure', 'read current application measurements (RAM-only fl64 values)',
+        'Read the latest value of each declared application measurement.\n'
+        'Only the last published fl64 value is kept in RAM; there is no stored history.\n'
+        'A declared measure has no value until its first publication. By default, print one\n'
+        'snapshot of all measures. Quote glob patterns to prevent shell expansion.',
+        ['ose-ctl measure', "ose-ctl measure 'analyzer_*.vibration.rms' --watch",
+         "ose-ctl measure 'vibration.*' --count 10 --interval 0.5 --format jsonl"])
+    command.add_argument('patterns', nargs='*', help='glob patterns matching component.name or local dotted names (default: all)')
+    command.add_argument('--endpoint', help='local endpoint JSON (default: build/endpoint.json); exclusive with --host/--port')
+    command.add_argument('--host', help='target broker or coordinator host')
+    command.add_argument('--port', type=int, help='target broker or coordinator TCP port')
+    command.add_argument('--distributed', action='store_true', help='query a distributed coordinator instead of the local broker')
+    command.add_argument('--tls-ca', help='trusted CA certificate file for distributed mutual TLS')
+    command.add_argument('--tls-cert', help='distributed client certificate file')
+    command.add_argument('--tls-key', help='private key file matching --tls-cert')
     command.add_argument('--insecure', action='store_true', help='explicit distributed loopback-only development mode')
     command.add_argument('--watch', action='store_true', help='repeat until interrupted')
-    command.add_argument('--interval', type=float, default=1, help='sampling interval in seconds (minimum 0.1)')
+    command.add_argument('--interval', type=float, default=1, help='sampling interval in seconds (default: 1; minimum: 0.1)')
     command.add_argument('--count', type=int, help='number of snapshots (default: one, or unlimited with --watch)')
-    command.add_argument('--format', choices=('text', 'jsonl'), default='text')
-    command = commands.add_parser("record", help="discover and interactively record live application outputs")
+    command.add_argument('--format', choices=('text', 'jsonl'), default='text', help='output format (default: text); jsonl emits one JSON object per snapshot')
+    command = _command(commands, "record", "discover and interactively record live application outputs",
+        "Open the recorder console and discover outputs of the running application.\n"
+        "Use list, show and select to choose outputs, then start and stop to capture.\n"
+        "Type help in the console for commands, filters and output-file settings.\n"
+        "Repeat --command to execute console commands in order.",
+        ["ose-ctl record", "ose-ctl record --command list --command quit",
+         "ose-ctl record --command 'select all' --command 'start capture.mcap' --command 'wait 10' --command quit",
+         "ose-ctl record --distributed --host 127.0.0.1 --port 7000 --insecure"])
     command.add_argument("-l", "--label", type=session_label, default=DEFAULT_LABEL,
                          help="informational session label (default: recorder)")
-    command.add_argument("--endpoint", help="local broker endpoint JSON (default: build/endpoint.json when present)")
-    command.add_argument("--host")
-    command.add_argument("--port", type=int)
+    command.add_argument("--endpoint", help="local endpoint JSON (default: build/endpoint.json when present); exclusive with --host/--port")
+    command.add_argument("--host", help="target broker or coordinator host")
+    command.add_argument("--port", type=int, help="target broker or coordinator TCP port")
     command.add_argument("--distributed", action="store_true", help="discover remote workers through the coordinator")
-    command.add_argument("--tls-ca")
-    command.add_argument("--tls-cert")
-    command.add_argument("--tls-key")
+    command.add_argument("--tls-ca", help="trusted CA certificate file for distributed mutual TLS")
+    command.add_argument("--tls-cert", help="distributed client certificate file")
+    command.add_argument("--tls-key", help="private key file matching --tls-cert")
     command.add_argument("--insecure", action="store_true", help="distributed loopback-only development mode")
-    command.add_argument("--sdl-root", default=os.environ.get("SDL_ROOT"))
-    command.add_argument("--capacity", type=int, default=256, help="capture queue messages per endpoint")
-    command.add_argument("--byte-budget", type=int, default=8 * 1024 * 1024, help="capture queue bytes per endpoint")
-    command.add_argument("--max-frame", type=int, default=1024 * 1024)
+    command.add_argument("--sdl-root", default=os.environ.get("SDL_ROOT"), help="SDL checkout for recording support (default: SDL_ROOT or installed runtime)")
+    command.add_argument("--capacity", type=int, default=256, help="capture queue message limit per endpoint (default: 256)")
+    command.add_argument("--byte-budget", type=int, default=8 * 1024 * 1024, help="capture queue byte limit per endpoint (default: 8388608 / 8 MiB)")
+    command.add_argument("--max-frame", type=int, default=1024 * 1024, help="maximum transport frame size in bytes (default: 1048576 / 1 MiB)")
     command.add_argument("--command", action="append", help="execute a console command; repeat to script a session")
-    command = commands.add_parser("adapter", help=argparse.SUPPRESS)
-    command.add_argument("--plan", required=True)
-    command.add_argument("--node", required=True)
-    command.add_argument("--port", type=int, required=True)
+    command = _command(commands, "adapter", "internal: run a local component adapter (started by run)",
+        "Internal process launched automatically by ose-ctl run for each local component.\n"
+        "Launch the component, connect it to the local broker and drive its ticks and IPC.\n"
+        "Use ose-ctl run to start an application; this command is for runtime debugging.",
+        ["ose-ctl adapter --plan build/plan.json --node analyzer --port 7001"])
+    command.add_argument("--plan", required=True, help="compiled deployment plan JSON file")
+    command.add_argument("--node", required=True, help="component name in the plan")
+    command.add_argument("--port", type=int, required=True, help="TCP port of the already running local broker")
     from ose.parameters import cli as parameter_cli
     parameter_cli.parser(commands)
+    command = _command(commands, "completion", "generate shell completion",
+        "Print a Bash completion script for commands, options and option choices.\n"
+        "Load it in the current Bash terminal or add it to ~/.bashrc.",
+        ["source <(ose-ctl completion bash)"])
+    command.add_argument("shell", choices=("bash",), help="target shell")
     args = parser.parse_args()
     try:
-        if args.action == 'measures':
+        if args.action == 'completion':
+            from ose.completion import bash_completion
+            print(bash_completion(parser), end='')
+        elif args.action == 'measure':
             from ose.measures import run
             try:
                 return asyncio.run(run(args))
             except KeyboardInterrupt:
                 return 130
-        elif args.action == "parameters":
+        elif args.action == "parameter":
             try:
                 asyncio.run(parameter_cli.run(args))
             except KeyboardInterrupt:

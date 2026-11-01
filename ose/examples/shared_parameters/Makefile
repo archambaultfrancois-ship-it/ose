@@ -10,12 +10,12 @@ build:
 run: build
 	$(PYTHON) -m ose.cli run
 list:
-	$(PYTHON) -m ose.cli parameters list --client operator
+	$(PYTHON) -m ose.cli parameter list --client operator
 get:
-	$(PYTHON) -m ose.cli parameters get machines/press_1/detection --client operator
+	$(PYTHON) -m ose.cli parameter get machines/press_1/detection --client operator
 set:
-	$(PYTHON) -m ose.cli parameters set machines/press_1/detection --client operator --file detection.json
+	$(PYTHON) -m ose.cli parameter set machines/press_1/detection --client operator --file detection.json
 watch:
-	$(PYTHON) -m ose.cli parameters watch machines/press_1/detection --client operator
+	$(PYTHON) -m ose.cli parameter watch machines/press_1/detection --client operator
 simulate: build
 	$(PYTHON) -m ose.cli run --mode simulated --duration 2 --workers 2 --scenario scenario.json --trace build/trace.jsonl

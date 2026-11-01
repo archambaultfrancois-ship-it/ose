@@ -188,7 +188,7 @@ class SyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.edit(5.)
         environment = dict(os.environ, OSE_PARAMETER_TOKEN=TOKEN,
                            PYTHONPATH=str(Path(__file__).resolve().parents[2] / 'src'))
-        process = await asyncio.create_subprocess_exec(os.sys.executable, '-m', 'ose.cli', 'parameters', 'sync',
+        process = await asyncio.create_subprocess_exec(os.sys.executable, '-m', 'ose.cli', 'parameter', 'sync',
             '--dir', str(self.directory), '--client', 'operator', '--initial', 'app',
             '--host', '127.0.0.1', '--port', str(self.port), '--sdl-root', str(SDL_ROOT),
             env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)

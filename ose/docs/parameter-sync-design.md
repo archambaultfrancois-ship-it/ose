@@ -11,8 +11,8 @@ Install from the OSE project root, then run from the application directory:
 
 ```sh
 python3 -m pip install '.[sync]'
-ose-ctl parameters sync --dir ./parameters --client operator
-ose-ctl parameters sync '^machines/press_1/' --dir ./parameters --client operator
+ose-ctl parameter sync --dir ./parameters --client operator
+ose-ctl parameter sync '^machines/press_1/' --dir ./parameters --client operator
 ```
 
 After sourcing `setenv.sh`, the equivalent shortcut is
