@@ -13,13 +13,13 @@ from ose.recording.replay import recording_reader, run
 HANDLERS = {
     'python': ('sink.py', '''def on_input(ctx, message):
     message.value += 1.0
-    ctx.publish_out(message)
+    ctx.publish_output(message)
 '''),
     'c': ('sink.c', '''#include "component.h"
 static int on_input(OseContext *ctx, const Measurement *message) {
     Measurement result = *message;
     result.value += 1.0;
-    return publish_out(ctx, &result);
+    return publish_output(ctx, &result);
 }
 const ComponentCallbacks component_callbacks = { .on_input = on_input };
 '''),
@@ -30,7 +30,7 @@ impl Callbacks for Handler {
     fn on_input(&mut self, ctx: &mut Context, message: &Measurement) -> Result {
         let mut result = message.clone();
         result.value += 1.0;
-        ctx.publish_out(&result)
+        ctx.publish_output(&result)
     }
 }
 '''),
@@ -39,7 +39,7 @@ import sdl.globaltypes.measurement.Measurement;
 public final class Sink extends API.Handler {
     public void on_input(API.Context ctx, Measurement message) throws Exception {
         message.value += 1.0;
-        ctx.publish_out(message);
+        ctx.publish_output(message);
     }
 }
 '''),
@@ -51,7 +51,7 @@ package body Sink_Handler is
         Result : SDL_measurement.T_Measurement := Message.all;
     begin
         Result.F_value := Result.F_value + 1.0;
-        Ose_sink.Publish_out (Ctx, Result);
+        Ose_sink.Publish_output (Ctx, Result);
     end;
 end Sink_Handler;
 '''),
@@ -73,7 +73,7 @@ end Sink_Handler;
 ''')
     desc = dict(root='Measurement')
     model = dict(version=1, schemas='measurement.sdl', external_topics={'external.signal': desc},
-        components={'sink': dict(inputs={'input': desc}, outputs={'out': desc}, trigger={'mode': 'on_change'})},
+        components={'sink': dict(inputs={'input': desc}, outputs={'output': desc}, trigger={'mode': 'on_change'})},
         subscriptions=[dict(id='signal', from_topic='external.signal', to='sink.input')])
     container = dict(language=language, handler=handler)
     if language == 'java': container['class'] = 'Sink'
@@ -104,5 +104,5 @@ end Sink_Handler;
     summary = await run(capture, plan_path, .001, mappings=['sensor.old=external.signal'],
                         schema_policy='compatible', trace=trace)
     publications = [json.loads(line) for line in trace.read_text().splitlines()]
-    case.assertEqual([e['sha256'] for e in publications if e.get('topic') == 'sink.out'], expected)
+    case.assertEqual([e['sha256'] for e in publications if e.get('topic') == 'sink.output'], expected)
     case.assertEqual(summary['replay']['schema_adaptation']['adapted_messages'], 2)
