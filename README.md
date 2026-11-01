@@ -23,8 +23,9 @@ On Android/Termux, keep the host awake during real-time/distributed tests with
 `termux-wake-lock`, then release it with `termux-wake-unlock` afterwards. Host
 suspension expires worker leases by design.
 
-The pinned framework (`e1a7018`, including internal recording points and current
-application measurements) lives in `deps/sdl-ose`; for framework development, set
+The pinned framework (`cf5bb67`, including internal recording points, current
+application measurements and Bash completion) lives in `deps/sdl-ose`; for
+framework development, set
 `FRAMEWORK_ROOT=/absolute/path/to/sdl-ose`. Build artifacts and prepared absolute
 paths live in `build/`. Rebuild after moving a checkout. The workflow uses the
 public `python -m ose.cli` interface from the selected framework checkout.
@@ -45,6 +46,8 @@ The application environment selects Vibration Watch as `OSE_APP_ROOT` and source
 another checkout. `app-run` builds and runs until Ctrl+C;
 `app-run DURATION=60` limits the run. `record` prepares missing recording/filter
 dependencies and opens the external console. `ose-env` lists the shortcuts.
+Interactive Bash terminals also enable `ose-ctl` completion for commands,
+subcommands, options and option choices. Source `./setenv.sh`, then press Tab.
 `record-inspect FILE` displays all recorded messages; use `--limit N` to show
 only the first N selected messages.
 Recording content filters are evaluated at the source: in the broker for local
@@ -125,7 +128,7 @@ app-run
 
 # Second terminal, from the same directory:
 source ./setenv.sh
-ose-ctl measures 'analyzer_*.vibration.rms' --watch
+ose-ctl measure 'analyzer_*.vibration.rms' --watch
 ```
 
 The report shows `analyzer_1` and `analyzer_2` separately. Omit `--watch` for a
@@ -290,7 +293,7 @@ limits can be adjusted with `--max-json-size BYTES` and
 The application commands validate business constraints before submitting values:
 1–131072 samples, a nonzero uint32 seed, sample rate 1–1e9 Hz, vibration frequency
 0–half the sample rate, amplitude/noise/ramp 0–1e6 and RMS threshold 1e-12–1e12.
-The generic `params-set` / `ose-ctl parameters set` commands check SDL types;
+The generic `params-set` / `ose-ctl parameter set` commands check SDL types;
 writers using those interfaces must also respect these business constraints.
 
 An update applies at a subsequent callback, without restarting the component.
@@ -318,7 +321,7 @@ use `--distributed --tls-ca build/pki/ca.crt --tls-cert build/pki/operator.crt
 --tls-key build/pki/operator.key` with an explicit host and port. `make certs`
 generates the development operator credentials. Cluster access authenticates the
 `operator` certificate identity; it does not use the local development token.
-The ordinary `ose-ctl parameters get PATH --client operator` still returns a
+The ordinary `ose-ctl parameter get PATH --client operator` still returns a
 bare block for existing scripts; the shell shortcut returns a path-keyed export.
 See [cluster deployment](deploy/README.md) for credentials and connectivity.
 

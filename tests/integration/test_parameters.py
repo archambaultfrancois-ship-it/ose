@@ -101,7 +101,7 @@ class SharedSettingsTests(unittest.IsolatedAsyncioTestCase):
                     if profile == "cluster":
                         endpoint += ["--distributed", "--insecure"]
                     path = "machines/1/detection"
-                    get = ["-m", "ose.cli", "parameters", "get", path, "--client", "operator", *endpoint]
+                    get = ["-m", "ose.cli", "parameter", "get", path, "--client", "operator", *endpoint]
                     self.assertEqual(json.loads((await self.invoke(get, environment)).stdout), {"rms_threshold": 1.0})
                     saved = None
                     if shutil.which('bash'):
@@ -173,7 +173,7 @@ class SharedSettingsTests(unittest.IsolatedAsyncioTestCase):
                     await self.until(lambda: any(row["machine_id"] == 1 and row["state"] == 1 and
                                                  abs(row["rms"] - 8**.5) < 1e-5
                                                  for row in observations(log_path)[count:]), processes)
-                    sensor_get = ["-m", "ose.cli", "parameters", "get", "machines/1/sensor", "--client", "operator", *endpoint]
+                    sensor_get = ["-m", "ose.cli", "parameter", "get", "machines/1/sensor", "--client", "operator", *endpoint]
                     self.assertEqual(json.loads((await self.invoke(sensor_get, environment)).stdout), settings)
                     self.assertTrue(all(row["state"] == 0 for row in observations(log_path) if row["machine_id"] == 2))
                 finally:

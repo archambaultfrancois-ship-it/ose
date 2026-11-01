@@ -70,7 +70,7 @@ class LaunchSyncTests(unittest.IsolatedAsyncioTestCase):
                     # An application-side write must update the same file.
                     plan = json.loads((ROOT / "build/plan.json").read_text())
                     client_env = dict(env, OSE_PARAMETER_TOKEN=plan["parameter_clients"]["operator"]["token"])
-                    options = [sys.executable, "-m", "ose.cli", "parameters", "set", path, "--file", "-",
+                    options = [sys.executable, "-m", "ose.cli", "parameter", "set", path, "--file", "-",
                         "--client", "operator", "--host", "127.0.0.1", "--port", str(port)]
                     if task == "distributed-local":
                         options += ["--distributed", "--insecure"]

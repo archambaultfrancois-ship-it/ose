@@ -199,7 +199,7 @@ def start_params_sync(args, port, *, distributed=False, stream=None):
     token = read(plan)["parameter_clients"]["operator"].get("token")
     if not token:
         raise ValueError("local parameter synchronization requires the operator token in the plan")
-    options = [sys.executable, "-m", "ose.cli", "parameters", "sync", "--dir", args.params_sync,
+    options = [sys.executable, "-m", "ose.cli", "parameter", "sync", "--dir", args.params_sync,
                "--client", "operator", "--plan", str(plan), "--host", "127.0.0.1", "--port", str(port)]
     if distributed:
         options += ["--distributed", "--insecure"]
@@ -359,7 +359,7 @@ def set_parameters(args):
     with tempfile.TemporaryDirectory(prefix="vibration-parameters-") as temporary:
         source = Path(temporary) / "settings.json"
         write(source, value)
-        options = ["parameters", "set", f"machines/{args.machine}/{block}",
+        options = ["parameter", "set", f"machines/{args.machine}/{block}",
                    "--client", "operator", "--file", source, "--plan", args.plan,
                    "--endpoint", args.endpoint]
         for name in ("host", "port", "tls_ca", "tls_cert", "tls_key"):
