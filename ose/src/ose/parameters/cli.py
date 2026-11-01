@@ -18,36 +18,36 @@ def parser(commands):
                     'Paths use slash-separated names, such as motor/control. Each action requires\n'
                     'a declared --client identity; its token is read from OSE_PARAMETER_TOKEN by default.',
         epilog='Examples:\n'
-               '  ose-ctl parameter list --client operator\n'
-               '  ose-ctl parameter get motor/control --client operator\n'
-               '  ose-ctl parameter sync --dir parameters --client operator\n\n'
-               'Use ose-ctl parameter ACTION --help for options and examples.')
+               '  ose parameter list --client operator\n'
+               '  ose parameter get motor/control --client operator\n'
+               '  ose parameter sync --dir parameters --client operator\n\n'
+               'Use ose parameter ACTION --help for options and examples.')
     actions = command.add_subparsers(dest='parameter_action', required=True, title='actions', metavar='ACTION')
     descriptions = {
         'list': ('list parameter blocks visible to a client',
                  'Print the paths of parameter blocks accessible to the client as a JSON array.',
-                 ['ose-ctl parameter list --client operator']),
+                 ['ose parameter list --client operator']),
         'get': ('read a block or export matching blocks as JSON',
                 'With PATH, read one literal block and print its value.\n'
                 'With --export, print {path: block} and interpret PATH as a Python regular\n'
                 'expression searched in each path; --exact selects a literal path instead.\n'
                 'Omitting PATH exports all blocks visible to the client.',
-                ['ose-ctl parameter get motor/control --client operator',
-                 "ose-ctl parameter get '^motor/' --export --client operator > parameters.json",
-                 'ose-ctl parameter get --client operator > parameters.json']),
+                ['ose parameter get motor/control --client operator',
+                 "ose parameter get '^motor/' --export --client operator > parameters.json",
+                 'ose parameter get --client operator > parameters.json']),
         'set': ('replace a block or import a JSON export',
                 'With PATH and --file, replace one complete block using its JSON value.\n'
                 'Without PATH, import a {path: block} JSON export, or recursively import\n'
                 '*.json exports using --dir. Use --file - to read standard input.\n'
                 'Imports validate all blocks before writing; writes are applied per block.',
-                ['ose-ctl parameter set motor/control --file control.json --client operator',
-                 'ose-ctl parameter set --file parameters.json --client operator',
-                 'ose-ctl parameter set --dir parameters --client operator']),
+                ['ose parameter set motor/control --file control.json --client operator',
+                 'ose parameter set --file parameters.json --client operator',
+                 'ose parameter set --dir parameters --client operator']),
         'watch': ('stream changes to one parameter block',
                   'Watch one literal block path and print JSON updates until interrupted.\n'
                   'Subscriptions keep the latest value when updates arrive faster than reads.',
-                  ['ose-ctl parameter watch motor/control --client operator',
-                   'ose-ctl parameter watch motor/control --count 5 --client operator']),
+                  ['ose parameter watch motor/control --client operator',
+                   'ose parameter watch motor/control --count 5 --client operator']),
         'sync': ('synchronize parameter blocks with a directory of JSON files',
                  'Synchronize selected blocks with a local directory until interrupted.\n'
                  'Each PATH maps to DIR/PATH.json containing {path: block}. PATH is a Python\n'
@@ -55,8 +55,8 @@ def parser(commands):
                  'Initially, existing files update the application by default; missing files are\n'
                  'created from application values. Use --initial app to overwrite files instead.\n'
                  'Subsequent changes propagate in both directions. Requires the OSE sync extra.',
-                 ['ose-ctl parameter sync --dir parameters --client operator',
-                  "ose-ctl parameter sync '^motor/' --dir parameters --initial app --client operator"]),
+                 ['ose parameter sync --dir parameters --client operator',
+                  "ose parameter sync '^motor/' --dir parameters --initial app --client operator"]),
     }
     for name in ('list', 'get', 'set', 'watch', 'sync'):
         summary, description, examples = descriptions[name]

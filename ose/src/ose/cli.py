@@ -21,20 +21,20 @@ def _command(commands, name, summary, description, examples):
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="ose-ctl", formatter_class=argparse.RawDescriptionHelpFormatter,
+        prog="ose", formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Build, run and observe SDL applications with OSE.",
         epilog="""Typical local workflow:
-  ose-ctl validate --model model.json --deployment deployment.json
-  ose-ctl build --model model.json --deployment deployment.json
-  ose-ctl run
+  ose validate --model model.json --deployment deployment.json
+  ose build --model model.json --deployment deployment.json
+  ose run
 
 From another terminal while the application runs:
-  ose-ctl top
-  ose-ctl measure 'analyzer_*.vibration.rms' --watch
-  ose-ctl record
+  ose top
+  ose measure 'analyzer_*.vibration.rms' --watch
+  ose record
 
-Use ose-ctl COMMAND --help for options and examples.
-Use ose-ctl parameter ACTION --help for parameter operations.
+Use ose COMMAND --help for options and examples.
+Use ose parameter ACTION --help for parameter operations.
 Local observation commands use build/endpoint.json by default.
 For distributed execution, start serve and worker instead of run.""")
     commands = parser.add_subparsers(dest="action", required=True, title="commands", metavar="COMMAND")
@@ -44,7 +44,7 @@ For distributed execution, start serve and worker instead of run.""")
             "Validate the SDL model and its deployment without compiling components." if name == "validate" else
             "Validate the model and deployment, write plan.json in the build directory and compile components.\n"
             "Use --component to rebuild one component while retaining the complete plan.",
-            [f"ose-ctl {name} --model model.json --deployment deployment.json"])
+            [f"ose {name} --model model.json --deployment deployment.json"])
         command.add_argument("--model", required=True, help="application model JSON file")
         command.add_argument("--deployment", required=True, help="deployment JSON file")
         command.add_argument("--sdl-root", default=os.environ.get("SDL_ROOT", str(Path(__file__).resolve().parents[3] / "sdl")),
@@ -62,9 +62,9 @@ For distributed execution, start serve and worker instead of run.""")
             "worker": "Launch the named component and connect it to the distributed coordinator.\n"
                       "Start one worker per component; advertise an address reachable by peers.",
             "cluster-status": "Query the coordinator for the current workers and distributed application status."}
-        examples = {"serve": ["ose-ctl serve --insecure"],
-                    "worker": ["ose-ctl worker --node analyzer --insecure"],
-                    "cluster-status": ["ose-ctl cluster-status --insecure"]}
+        examples = {"serve": ["ose serve --insecure"],
+                    "worker": ["ose worker --node analyzer --insecure"],
+                    "cluster-status": ["ose cluster-status --insecure"]}
         command = _command(commands, name, summaries[name], descriptions[name], examples[name])
         command.add_argument("--host", default="127.0.0.1", help="listen address for serve; coordinator address otherwise (default: 127.0.0.1)")
         command.add_argument("--port", type=int, default=7000, help="coordinator TCP port (default: 7000)")
@@ -86,7 +86,7 @@ For distributed execution, start serve and worker instead of run.""")
     command = _command(commands, "export-kubernetes", "generate Kubernetes manifests for a distributed plan",
         "Write Kubernetes manifests using digest-pinned images for the coordinator and every component.\n"
         "This command generates files; apply them separately to deploy.",
-        ["ose-ctl export-kubernetes --images images.json --output manifests.json"])
+        ["ose export-kubernetes --images images.json --output manifests.json"])
     command.add_argument("--plan", default="build/plan.json", help="compiled distributed plan (default: build/plan.json)")
     command.add_argument("--images", required=True, help="JSON file mapping coordinator and component names to image digests")
     command.add_argument("--namespace", default="ose-app", help="generated application namespace (default: ose-app)")
@@ -96,8 +96,8 @@ For distributed execution, start serve and worker instead of run.""")
         "Execute a compiled plan; real-time mode starts the local broker and component processes.\n"
         "Real-time execution runs until interrupted unless --duration is provided.\n"
         "Simulation requires --duration in virtual seconds. Distributed plans use serve and worker.",
-        ["ose-ctl run", "ose-ctl run --duration 30",
-         "ose-ctl run --mode simulated --duration 60 --workers 4 --trace trace.jsonl"])
+        ["ose run", "ose run --duration 30",
+         "ose run --mode simulated --duration 60 --workers 4 --trace trace.jsonl"])
     command.add_argument("--plan", default="build/plan.json", help="compiled deployment plan (default: build/plan.json)")
     command.add_argument("--duration", type=float, help="positive execution duration in seconds; required in simulated mode")
     command.add_argument("--port", type=int, help="local broker TCP port; real-time only (default: automatically assigned)")
@@ -111,9 +111,9 @@ For distributed execution, start serve and worker instead of run.""")
         "Simulation starts an application and requires --duration. Real-time replay publishes\n"
         "into an already running application and supports playback controls.\n"
         "Connection options, --speed, --interactive and --command require --mode realtime.",
-        ["ose-ctl replay capture.mcap --map recorded.topic=external.topic --duration 30",
-         "ose-ctl replay capture.mcap --map recorded.topic=external.topic --mode realtime --interactive",
-         "ose-ctl replay capture.mcap --map recorded.topic=external.topic --duration 30 --schema-policy compatible"])
+        ["ose replay capture.mcap --map recorded.topic=external.topic --duration 30",
+         "ose replay capture.mcap --map recorded.topic=external.topic --mode realtime --interactive",
+         "ose replay capture.mcap --map recorded.topic=external.topic --duration 30 --schema-policy compatible"])
     command.add_argument("recording", help="SDL PCAPNG or MCAP capture")
     command.add_argument("--plan", default="build/plan.json", help="target deployment plan (default: build/plan.json)")
     command.add_argument("--map", dest="mappings", action="append", required=True,
@@ -142,15 +142,15 @@ For distributed execution, start serve and worker instead of run.""")
     command = _command(commands, "inspect", "print local application status as JSON",
         "Query the running local broker, or read its last saved status with --last.\n"
         "For a distributed application, use cluster-status or top --distributed.",
-        ["ose-ctl inspect", "ose-ctl inspect --last"])
+        ["ose inspect", "ose inspect --last"])
     command.add_argument("--endpoint", default="build/endpoint.json", help="local endpoint JSON (default: build/endpoint.json)")
     command.add_argument("--last", action="store_true", help="read last-status.json beside the endpoint without contacting the broker")
     command = _command(commands, "top", "show live component, queue and delivery diagnostics",
         "Monitor execution rates, queues and delivery diagnostics locally or through a coordinator.\n"
         "Text output is interactive on a terminal: arrows navigate, Enter opens details,\n"
         "Space pauses the display and q quits. Use JSONL for scripts and --count to stop.",
-        ["ose-ctl top", "ose-ctl top --format jsonl --count 5",
-         "ose-ctl top --distributed --host 127.0.0.1 --port 7000 --insecure"])
+        ["ose top", "ose top --format jsonl --count 5",
+         "ose top --distributed --host 127.0.0.1 --port 7000 --insecure"])
     command.add_argument("--endpoint", help="local endpoint JSON (default: build/endpoint.json); exclusive with --host/--port")
     command.add_argument("--host", help="target broker or coordinator host")
     command.add_argument("--port", type=int, help="target broker or coordinator TCP port")
@@ -170,8 +170,8 @@ For distributed execution, start serve and worker instead of run.""")
         'Only the last published fl64 value is kept in RAM; there is no stored history.\n'
         'A declared measure has no value until its first publication. By default, print one\n'
         'snapshot of all measures. Quote glob patterns to prevent shell expansion.',
-        ['ose-ctl measure', "ose-ctl measure 'analyzer_*.vibration.rms' --watch",
-         "ose-ctl measure 'vibration.*' --count 10 --interval 0.5 --format jsonl"])
+        ['ose measure', "ose measure 'analyzer_*.vibration.rms' --watch",
+         "ose measure 'vibration.*' --count 10 --interval 0.5 --format jsonl"])
     command.add_argument('patterns', nargs='*', help='glob patterns matching component.name or local dotted names (default: all)')
     command.add_argument('--endpoint', help='local endpoint JSON (default: build/endpoint.json); exclusive with --host/--port')
     command.add_argument('--host', help='target broker or coordinator host')
@@ -190,9 +190,9 @@ For distributed execution, start serve and worker instead of run.""")
         "Use list, show and select to choose outputs, then start and stop to capture.\n"
         "Type help in the console for commands, filters and output-file settings.\n"
         "Repeat --command to execute console commands in order.",
-        ["ose-ctl record", "ose-ctl record --command list --command quit",
-         "ose-ctl record --command 'select all' --command 'start capture.mcap' --command 'wait 10' --command quit",
-         "ose-ctl record --distributed --host 127.0.0.1 --port 7000 --insecure"])
+        ["ose record", "ose record --command list --command quit",
+         "ose record --command 'select all' --command 'start capture.mcap' --command 'wait 10' --command quit",
+         "ose record --distributed --host 127.0.0.1 --port 7000 --insecure"])
     command.add_argument("-l", "--label", type=session_label, default=DEFAULT_LABEL,
                          help="informational session label (default: recorder)")
     command.add_argument("--endpoint", help="local endpoint JSON (default: build/endpoint.json when present); exclusive with --host/--port")
@@ -209,10 +209,10 @@ For distributed execution, start serve and worker instead of run.""")
     command.add_argument("--max-frame", type=int, default=1024 * 1024, help="maximum transport frame size in bytes (default: 1048576 / 1 MiB)")
     command.add_argument("--command", action="append", help="execute a console command; repeat to script a session")
     command = _command(commands, "adapter", "internal: run a local component adapter (started by run)",
-        "Internal process launched automatically by ose-ctl run for each local component.\n"
+        "Internal process launched automatically by ose run for each local component.\n"
         "Launch the component, connect it to the local broker and drive its ticks and IPC.\n"
-        "Use ose-ctl run to start an application; this command is for runtime debugging.",
-        ["ose-ctl adapter --plan build/plan.json --node analyzer --port 7001"])
+        "Use ose run to start an application; this command is for runtime debugging.",
+        ["ose adapter --plan build/plan.json --node analyzer --port 7001"])
     command.add_argument("--plan", required=True, help="compiled deployment plan JSON file")
     command.add_argument("--node", required=True, help="component name in the plan")
     command.add_argument("--port", type=int, required=True, help="TCP port of the already running local broker")
@@ -221,7 +221,7 @@ For distributed execution, start serve and worker instead of run.""")
     command = _command(commands, "completion", "generate shell completion",
         "Print a Bash completion script for commands, options and option choices.\n"
         "Load it in the current Bash terminal or add it to ~/.bashrc.",
-        ["source <(ose-ctl completion bash)"])
+        ["source <(ose completion bash)"])
     command.add_argument("shell", choices=("bash",), help="target shell")
     args = parser.parse_args()
     try:
@@ -391,7 +391,7 @@ For distributed execution, start serve and worker instead of run.""")
                     pass
             asyncio.run(execute())
     except (ValueError, OSError, EOFError, RuntimeError, subprocess.CalledProcessError) as error:
-        print(f"ose-ctl: {error}", file=sys.stderr)
+        print(f"ose: {error}", file=sys.stderr)
         return 1
     return 0
 

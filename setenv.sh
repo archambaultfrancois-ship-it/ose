@@ -230,8 +230,8 @@ _ose_env_help() {
         "$FRAMEWORK_ROOT" "$OSE_APP_ROOT" "$OSE_PYTHON"
     cat <<'EOF'
 
-ose-ctl ...             OSE CLI from this framework checkout
-ose-ctl completion bash generate Bash completion (enabled in interactive Bash)
+ose ...                 OSE CLI from this framework checkout
+ose completion bash     generate Bash completion (enabled in interactive Bash)
 app-cd                  enter the application repository
 app-make ...            application Makefile (arguments passed through)
 app-validate            validate the application
@@ -282,7 +282,12 @@ Use --file - for stdin. Imports replace complete blocks in sequence.
 EOF
 }
 
-alias ose-ctl='_ose_env_cli'
+# Clear shortcuts installed by earlier versions in the current terminal.
+unalias ose-ctl 2>/dev/null || :
+complete -r ose-ctl 2>/dev/null || :
+unset -f _ose_ctl_complete
+
+alias ose='_ose_env_cli'
 alias app-cd='_ose_env_app_cd'
 alias app-make='_ose_env_make'
 alias app-validate='_ose_env_make validate'

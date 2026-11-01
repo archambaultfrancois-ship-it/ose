@@ -1,7 +1,7 @@
 # Current application measurements
 
 Components may declare named scalar measurements and replace their current values
-during callbacks. `ose-ctl measure` reads those values through the same read-only
+during callbacks. `ose measure` reads those values through the same read-only
 status RPC as `top`, locally or through the distributed coordinator. No graph
 ports, subscriptions, SDL application types or optional recording dependencies
 are required.
@@ -91,11 +91,11 @@ logical trace and saved simulation summary.
 ## CLI readings
 
 ```sh
-ose-ctl measure                            # one snapshot
-ose-ctl measure 'analyse.*'                # select a component's measures
-ose-ctl measure 'moteur.*'                 # select local names across components
-ose-ctl measure --watch                    # continuous readings, stop with Ctrl+C
-ose-ctl measure --interval 1 --count 60 --format jsonl
+ose measure                            # one snapshot
+ose measure 'analyse.*'                # select a component's measures
+ose measure 'moteur.*'                 # select local names across components
+ose measure --watch                    # continuous readings, stop with Ctrl+C
+ose measure --interval 1 --count 60 --format jsonl
 ```
 
 Patterns are case-sensitive globs and match either `component.local_name` or the
@@ -126,11 +126,11 @@ JSONL to a file is an explicit action by the caller, not storage inside OSE.
 Connection options mirror `top`:
 
 ```sh
-ose-ctl measure --endpoint /app/build/endpoint.json
-ose-ctl measure --host 127.0.0.1 --port 7000
-ose-ctl measure --distributed --host coordinator --port 7000 \
+ose measure --endpoint /app/build/endpoint.json
+ose measure --host 127.0.0.1 --port 7000
+ose measure --distributed --host coordinator --port 7000 \
   --tls-ca ca.crt --tls-cert observer.crt --tls-key observer.key
-ose-ctl measure --insecure --host 127.0.0.1 --port 7000
+ose measure --insecure --host 127.0.0.1 --port 7000
 ```
 
 The local default is `build/endpoint.json`. Explicit `--host`/`--port` cannot be

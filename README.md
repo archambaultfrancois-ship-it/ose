@@ -51,9 +51,9 @@ This exports `FRAMEWORK_ROOT`, `SDL_ROOT`, `OSE_ROOT`, `OSE_APP_ROOT`, and
 to `PYTHONPATH`. `OSE_PYTHON` defaults to `python3`; set it to an interpreter path
 before sourcing to use a virtual environment. Sourcing again does not duplicate
 the added paths. No dependencies are built or installed when sourcing.
-Interactive Bash terminals also enable `ose-ctl` completion for commands,
-options and option choices. Press Tab after `ose-ctl`, `ose-ctl parameter`,
-or an option such as `ose-ctl run --mode` followed by a space.
+Interactive Bash terminals also enable `ose` completion for commands,
+options and option choices. Press Tab after `ose`, `ose parameter`,
+or an option such as `ose run --mode` followed by a space.
 To switch applications in the same terminal, run `unset OSE_APP_ROOT`, enter the
 other repository, and source the script again.
 
@@ -118,7 +118,7 @@ through the framework CLI with no time limit. Stop with Ctrl+C, or use
 `SCENARIO=normal`, are forwarded to the build. This avoids time limits imposed by
 an application's `make run` target. `app-distributed` defaults to `DURATION=300`,
 with command-line assignments overriding that value. `app-cd` enters the application directory;
-`ose-ctl` runs this checkout's CLI with the selected Python interpreter.
+`ose` runs this checkout's CLI with the selected Python interpreter.
 
 Shared parameters have shortcuts that run from `OSE_APP_ROOT`, so the default
 plan and endpoint are found even when invoked from another directory:
@@ -153,7 +153,7 @@ expansion. `params-get-all` remains a synonym for `params-get` without a pattern
 Every selected block must be readable. `params-set --file FILE` imports this format
 without requiring a separate path or an `--all` option. Supplying an explicit path
 to `params-set` still writes a bare block. The ordinary
-`ose-ctl parameter get PATH` keeps its value-only output for existing scripts;
+`ose parameter get PATH` keeps its value-only output for existing scripts;
 use `get --export [PATTERN]` for the same path-keyed pattern export as the shell
 shortcuts, or `get --export --exact PATH` to export one literal path.
 Writes replace complete typed blocks. See the [parameter guide](ose/docs/parameters.md).

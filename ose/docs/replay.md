@@ -1,6 +1,6 @@
 # Recording replay
 
-`ose-ctl replay` feeds selected PCAPNG or MCAP messages into a compiled model's
+`ose replay` feeds selected PCAPNG or MCAP messages into a compiled model's
 external topics, either in deterministic simulation or through a running local
 broker or distributed coordinator. Use it to reproduce an incident or test a
 component change with captured inputs. Simulation is the default mode.
@@ -8,7 +8,7 @@ component change with captured inputs. Simulation is the default mode.
 Build a model with [external inputs](clients.md#feeding-a-model-input), then run:
 
 ```sh
-ose-ctl replay signals.pcapng --plan build/plan.json \
+ose replay signals.pcapng --plan build/plan.json \
   --map sensor_1.signal=external.signal_1 \
   --map sensor_2.signal=external.signal_2 \
   --duration 3 --workers 4 --trace build/replay.jsonl
@@ -26,9 +26,9 @@ message in the selected range.
 Start the application with external inputs before replaying in real time:
 
 ```sh
-ose-ctl run --plan build/plan.json
+ose run --plan build/plan.json
 # In another terminal:
-ose-ctl replay signals.pcapng --mode realtime --plan build/plan.json \
+ose replay signals.pcapng --mode realtime --plan build/plan.json \
   --endpoint build/endpoint.json --map sensor_1.signal=external.signal_1 \
   --speed 2 --interactive
 ```
@@ -53,7 +53,7 @@ closes the publisher with exit status 130; the application continues running.
 Repeat `--command` to run an ordered script without reading stdin:
 
 ```sh
-ose-ctl replay signals.pcapng --mode realtime --plan build/plan.json \
+ose replay signals.pcapng --mode realtime --plan build/plan.json \
   --map sensor_1.signal=external.signal_1 \
   --command pause --command 'wait 1' --command 'speed 2' \
   --command resume --command 'wait 3' --command status --command stop
@@ -72,7 +72,7 @@ to its coordinator with a CA-signed client certificate whose common name is
 `replay`:
 
 ```sh
-ose-ctl replay signals.pcapng --mode realtime --plan build/plan.json \
+ose replay signals.pcapng --mode realtime --plan build/plan.json \
   --host coordinator.example --port 7000 --distributed \
   --tls-ca ca.crt --tls-cert replay.crt --tls-key replay.key \
   --map sensor_1.signal=external.signal_1 --speed 1
@@ -174,7 +174,7 @@ publications, TLS identities, cancellation, refusals and generation fencing.
 Use an older capture with a compatible current contract by selecting:
 
 ```sh
-ose-ctl replay old-signals.pcapng --plan build/plan.json \
+ose replay old-signals.pcapng --plan build/plan.json \
   --map sensor_1.signal=external.signal_1 --duration 3 \
   --schema-policy compatible
 ```

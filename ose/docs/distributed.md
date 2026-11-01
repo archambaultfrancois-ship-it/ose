@@ -29,7 +29,7 @@ internal paths such as `/app`, since commands in resolved plans are absolute.
 
 ## External recording publishers
 
-The coordinator accepts publisher-only RPCs used by `ose-ctl replay`. They use
+The coordinator accepts publisher-only RPCs used by `ose replay`. They use
 the same authenticated CENV/1 control connection as worker RPCs, with a separate
 certificate common name `replay`. Loopback development can use explicit
 `--insecure`. The application must already be activated.
@@ -59,13 +59,13 @@ See [replay](replay.md) for timing, speed and interactive controls.
 Build normally, then start a coordinator and one worker per logical component:
 
 ```sh
-ose-ctl serve --plan /app/build/plan.json --host 0.0.0.0 --port 7000 \
+ose serve --plan /app/build/plan.json --host 0.0.0.0 --port 7000 \
   --tls-ca ca.crt --tls-cert coordinator.crt --tls-key coordinator.key
-ose-ctl worker --plan /app/build/plan.json --node source \
+ose worker --plan /app/build/plan.json --node source \
   --host coordinator.example --port 7000 --listen-host 0.0.0.0 \
   --listen-port 7001 --advertise-host source.example \
   --tls-ca ca.crt --tls-cert source.crt --tls-key source.key
-ose-ctl cluster-status --host coordinator.example --port 7000 \
+ose cluster-status --host coordinator.example --port 7000 \
   --tls-ca ca.crt --tls-cert observer.crt --tls-key observer.key
 ```
 
@@ -134,7 +134,7 @@ Supply a JSON image map covering `coordinator` and every component. Values must
 be pinned registry references: `registry/image@sha256:<64 hex digits>`.
 
 ```sh
-ose-ctl export-kubernetes --plan build/plan.json --images build/images.json \
+ose export-kubernetes --plan build/plan.json --images build/images.json \
   --namespace my-app --output build/kubernetes.json
 kubectl apply -f build/kubernetes.json
 ```

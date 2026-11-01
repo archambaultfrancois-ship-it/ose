@@ -16,6 +16,7 @@ class KubernetesTests(unittest.TestCase):
         for item in deployments:
             self.assertEqual(item["spec"]["strategy"]["type"], "Recreate")
             pod = item["spec"]["template"]["spec"]
+            self.assertEqual(pod["containers"][0]["command"], ["ose"])
             self.assertEqual(pod["imagePullSecrets"], [{"name": "registry-auth"}])
             if item["metadata"]["name"] == "ose-coordinator":
                 self.assertTrue(pod["automountServiceAccountToken"])

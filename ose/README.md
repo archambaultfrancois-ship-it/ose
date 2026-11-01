@@ -3,12 +3,12 @@
 Executable component graphs with SDL2 contracts and per-subscription quality of
 service. See the [feature overview](docs/features.md) for the available user-facing services.
 
-The Python distribution and import namespace are `ose`; the command-line tool is
-`ose-ctl`. Install with `python3 -m pip install .`, then use `ose-ctl --help` or
+The Python distribution, import namespace and command-line tool are named `ose`.
+Install with `python3 -m pip install .`, then use `ose --help` or
 `python3 -m ose.cli --help`. Rebuild application plans and generated containers
 after upgrading from an earlier package layout.
 
-Enable Bash completion with `source <(ose-ctl completion bash)` (also suitable
+Enable Bash completion with `source <(ose completion bash)` (also suitable
 for `~/.bashrc`). The framework's `setenv.sh` enables it automatically in
 interactive Bash terminals. Completion covers commands, nested parameter actions,
 options and option choices, with Bash's usual filename fallback.
@@ -43,10 +43,10 @@ For multi-machine real-time execution, see [distributed deployment](docs/distrib
 OSE provides authenticated `serve`/`worker` processes, direct or broker routes,
 cold component replacement and Kubernetes manifest export.
 
-The optional [interactive recorder](docs/recording.md), `ose-ctl record`, discovers
+The optional [interactive recorder](docs/recording.md), `ose record`, discovers
 live outputs without a model, selects points and SDL filters, and starts/stops
 local PCAPNG or MCAP files. It supports the local broker and distributed workers.
-Use [`ose-ctl replay`](docs/replay.md) to feed captured topics into a model's
+Use [`ose replay`](docs/replay.md) to feed captured topics into a model's
 external inputs for simulation or paced local/distributed execution, with optional
 interactive speed and pause controls.
 
@@ -85,15 +85,15 @@ python3 -m ose.cli inspect
 python3 -m ose.cli top
 ```
 
-[`ose-ctl top`](docs/monitoring.md) shows recent component rates, FIFO occupancy,
+[`ose top`](docs/monitoring.md) shows recent component rates, FIFO occupancy,
 tick p95 and colored diagnostics locally or through the distributed coordinator.
 Use arrows/Enter for details, Space to freeze, or `--format jsonl` for collection.
 
-[`ose-ctl measure`](docs/measurements.md) reads application-defined fl64 values,
+[`ose measure`](docs/measurements.md) reads application-defined fl64 values,
 retaining only the last value per declared dot-separated name in RAM. Declare
 with `ctx.declare_measurement("moteur.temperature")` in Python `on_start`, emit
 with `ctx.measure("moteur.temperature", value)` in tick callbacks, and read with
-`ose-ctl measure --watch` or `--count 60 --format jsonl`. Equivalent APIs exist
+`ose measure --watch` or `--count 60 --format jsonl`. Equivalent APIs exist
 in C, Rust, Java and Ada. Components restart with no saved measurements.
 
 Ctrl+C stops OSE and its component processes. `run --duration 2` provides
@@ -114,7 +114,7 @@ replaces its value. CLI and external clients can read, write and watch selected
 blocks locally or through the distributed coordinator. See the runnable
 [two-detector example](examples/shared_parameters/README.md).
 On Linux/Termux, `pip install '.[sync]'` enables
-`ose-ctl parameter sync --dir parameters --client operator` to synchronize
+`ose parameter sync --dir parameters --client operator` to synchronize
 unit JSON files with the running application using inotify and OSE subscriptions.
 JSON imports allow 16 MiB per input and 64 MiB per directory by default.
 
@@ -155,7 +155,7 @@ prints the complete output of a failing suite and stops immediately. Use
 
 `make test-simulated` checks deterministic virtual-time execution across worker
 counts, native containers, scenarios, timeouts and bounded queue admission.
-Choose `ose-ctl run --mode simulated --duration 60 --workers 4` to simulate
+Choose `ose run --mode simulated --duration 60 --workers 4` to simulate
 60 virtual seconds. The default remains real-time execution. See the
 [parallel simulation example](docs/simulation.md#runnable-parallel-example).
 

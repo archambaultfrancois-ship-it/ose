@@ -13,7 +13,7 @@ LANGUAGES = set(os.environ.get('TEST_LANGUAGES', 'python,c,rust,java,ada').split
 if not LANGUAGES or LANGUAGES - {'python', 'c', 'rust', 'java', 'ada'}:
     raise ValueError('unknown TEST_LANGUAGES entry')
 PROGRAM = r'''
-import importlib.metadata, json, os, pathlib, sys
+import importlib.metadata, json, os, pathlib, shutil, subprocess, sys
 if os.environ.get("OSE_INSTALLED_TARGET"):
     sys.path.insert(0, os.environ["OSE_INSTALLED_TARGET"])
     os.environ["PYTHONPATH"] = os.environ["OSE_INSTALLED_TARGET"]
@@ -25,7 +25,11 @@ from ose.modeling.native_containers import sdk_root
 distribution = importlib.metadata.distribution('ose')
 assert distribution.metadata['Name'] == 'ose'
 assert [(entry.name, entry.value) for entry in distribution.entry_points
-        if entry.group == 'console_scripts'] == [('ose-ctl', 'ose.cli:main')]
+        if entry.group == 'console_scripts'] == [('ose', 'ose.cli:main')]
+command = (str(pathlib.Path(os.environ['OSE_INSTALLED_TARGET']) / 'bin/ose')
+           if os.environ.get('OSE_INSTALLED_TARGET') else shutil.which('ose'))
+assert command, 'installed ose command not found'
+assert subprocess.check_output([command, '--help'], text=True).startswith('usage: ose ')
 assert pathlib.Path(ose.__file__).resolve().is_relative_to(pathlib.Path(distribution.locate_file('')).resolve())
 root = pathlib.Path.cwd()
 sdk = sdk_root()
@@ -65,7 +69,7 @@ if 'java' in languages:
     build_java(sys.argv[1], root / 'java-client')
 if 'ada' in languages:
     build_ada(sys.argv[1], root / 'ada-client')
-print('Installed ose package, ose-ctl entry point and SDK builds passed: ' + ', '.join(languages))
+print('Installed ose package, ose entry point and SDK builds passed: ' + ', '.join(languages))
 '''
 with tempfile.TemporaryDirectory() as directory:
     # -I removes PYTHONPATH and the current directory from imports.

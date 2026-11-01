@@ -57,7 +57,7 @@ def resources(plan, images, namespace, image_pull_secrets=()):
                 placement = {}
         port = 7000 if name == "coordinator" else 7001
         container = {"name": "ose", "image": images[name], "imagePullPolicy": "IfNotPresent",
-                     "command": ["ose-ctl"], "args": args, "ports": [{"containerPort": port}],
+                     "command": ["ose"], "args": args, "ports": [{"containerPort": port}],
                      "volumeMounts": [{"name": "tls", "mountPath": "/run/ose-tls", "readOnly": True}],
                      "resources": placement.get("resources", {"requests": {"cpu": "100m", "memory": "128Mi"}}),
                      "securityContext": {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}},

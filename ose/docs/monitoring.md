@@ -1,16 +1,16 @@
 # Live diagnostics
 
-`ose-ctl top` observes a running local application or distributed graph. It uses
+`ose top` observes a running local application or distributed graph. It uses
 only the read-only status RPC: no model changes, subscriptions or message files.
 Restart applications with the updated OSE runtime before using this command.
 
 ```sh
-ose-ctl top                              # build/endpoint.json
-ose-ctl top --endpoint /app/build/endpoint.json
-ose-ctl top --host 127.0.0.1 --port 7000  # local broker
-ose-ctl top --distributed --host coordinator --port 7000 \
+ose top                              # build/endpoint.json
+ose top --endpoint /app/build/endpoint.json
+ose top --host 127.0.0.1 --port 7000  # local broker
+ose top --distributed --host coordinator --port 7000 \
   --tls-ca ca.crt --tls-cert observer.crt --tls-key observer.key
-ose-ctl top --distributed --insecure --host 127.0.0.1 --port 7000
+ose top --distributed --insecure --host 127.0.0.1 --port 7000
 ```
 
 Distributed TLS uses a CA-signed client certificate and verifies the server's
@@ -77,8 +77,8 @@ after tick completion, so it is not a missed-deadline counter.
 ## Scripted collection
 
 ```sh
-ose-ctl top --format jsonl --count 60 > diagnostics.jsonl
-ose-ctl top --no-color --count 1
+ose top --format jsonl --count 60 > diagnostics.jsonl
+ose top --no-color --count 1
 ```
 
 Each JSON line contains the timestamp, epoch, component states, recent rates,

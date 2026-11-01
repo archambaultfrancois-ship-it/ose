@@ -30,8 +30,8 @@ def bash_completion(parser):
         suggestions.append(f'        {shlex.quote(context)}) candidates={shlex.quote(" ".join(words))} ;;')
 
     visit(parser, 'root')
-    return '''# Bash completion for ose-ctl. Load with: source <(ose-ctl completion bash)
-_ose_ctl_complete() {
+    return '''# Bash completion for ose. Load with: source <(ose completion bash)
+_ose_complete() {
     local context=root expecting= candidates= word option current prefix= candidate
     local i
     local -a words=()
@@ -81,5 +81,5 @@ _ose_ctl_complete() {
     done < <(compgen -W "$candidates" -- "$current")
     return 0
 }
-complete -o bashdefault -o default -F _ose_ctl_complete ose-ctl
+complete -o bashdefault -o default -F _ose_complete ose
 '''

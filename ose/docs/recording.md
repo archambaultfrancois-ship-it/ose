@@ -1,6 +1,6 @@
 # Interactive live recording
 
-`ose-ctl record` is a generic external console included in OSE. It discovers
+`ose record` is a generic external console included in OSE. It discovers
 the outputs and declared internal points of a running application and records
 selected samples through SDL's recording service. It needs no model, generated application classes or
 recorder component in the graph. Start and stop files repeatedly in one session.
@@ -83,7 +83,7 @@ before pressing Enter. Down past the newest entry restores the unfinished line.
 
 Each recording session carries an informational `label`, defaulting to
 `recorder`, the recorder client's component name. Set it at launch with
-`record --label moteur-1` (or `ose-ctl record -l moteur-1`). The console's
+`record --label moteur-1` (or `ose record -l moteur-1`). The console's
 `label` command shows the current value; `label "essai moteur 1"` changes it
 before the next recording. The label is frozen while a capture is running.
 Labels accept nonempty text up to 256 UTF-8 bytes and need not be unique.
@@ -342,7 +342,7 @@ Connect to the coordinator using a client certificate signed by the application
 CA. A separate certificate identity such as `recorder` is suitable:
 
 ```sh
-ose-ctl record --distributed --host coordinator.example --port 7000 \
+ose record --distributed --host coordinator.example --port 7000 \
   --tls-ca ca.crt --tls-cert recorder.crt --tls-key recorder.key
 ```
 
@@ -421,7 +421,7 @@ Cross-producer file order is recorder write order, not a global causal ordering.
 Repeat `--command` to execute the same console language without prompting:
 
 ```sh
-ose-ctl record --endpoint /path/to/build/endpoint.json \
+ose record --endpoint /path/to/build/endpoint.json \
   --command 'select *.result alarm.event' \
   --command 'filter alarm.event state == 1' \
   --command 'start capture.pcapng' --command 'wait 10' --command stop
