@@ -25,13 +25,13 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
     destination = Path(destination); sdl_root = Path(sdl_root)
     types = merge_schemas(name, 'ada', schemas, destination / 'types')
     api = 'Ose_' + name; stem = api.lower(); packages = sorted({p for p, _ in types.values()})
-    if any(p.lower() in (api.lower(), identity.lower(), 'ose_component', 'ose_recording') for p in packages):
+    if any(p.lower() in (api.lower(), identity.lower(), 'ose_component', 'ose_recording', 'ose_measurements') for p in packages):
         raise ValueError('Ada schema package conflicts with component API')
     if handler.name.lower() != identity.lower().replace('.', '-') + '.adb':
         raise ValueError('Ada handler filename must follow GNAT unit naming')
     def typ(desc): return '.'.join(types[desc['root']])
     spec = ['-- Generated typed component API.', 'with Ada.Strings.Unbounded;', 'with Ada.Task_Identification;',
-            'with Interfaces;', 'with SDL_Runtime;', 'with Ose_Recording;', *(f'with {p};' for p in packages), f'package {api} is',
+            'with Interfaces;', 'with SDL_Runtime;', 'with Ose_Recording;', 'with Ose_Measurements;', *(f'with {p};' for p in packages), f'package {api} is',
             '   type Context is limited private;', '   function Name (Ctx : Context) return String;',
             '   function Config_JSON (Ctx : Context) return String;',
             '   function Time_Ns (Ctx : Context) return Interfaces.Unsigned_64;',
@@ -61,6 +61,8 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
         spec += [f'   procedure Declare_Recording_{symbol} (Ctx : in out Context; Name : String; Description : String := "");',
                  f'   function Record_{symbol} (Ctx : in out Context; Name : String; Value : {".".join(types[root])}) return Ose_Recording.Emit_Result;']
     spec += ['   function Recording_Enabled (Ctx : Context; Name : String) return Boolean;']
+    spec += ['   procedure Declare_Measurement (Ctx : in out Context; Name : String);',
+             '   procedure Measure (Ctx : in out Context; Name : String; Value : SDL_Runtime.Float64);']
     for alias, desc in node.get('parameter_bindings', {}).items():
         if 'read' in desc['access']:
             spec += [f'   function Parameters_{alias} (Ctx : Context) return {typ(desc)};']
@@ -69,6 +71,7 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
     spec += ['   procedure Run (Self : in out Handler\'Class);', 'private', '   type Context is limited record',
              '      Config : Ada.Strings.Unbounded.Unbounded_String;',
              '      Recordings : Ose_Recording.Registry;',
+             '      Measurements : Ose_Measurements.Registry;',
              '      Time, Index : Interfaces.Unsigned_64 := 0;',
              '      Active : Boolean := False;', '      Owner : Ada.Task_Identification.Task_Id := Ada.Task_Identification.Null_Task_Id;']
     for port in node['outputs']:
@@ -114,6 +117,16 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
                  f'      Publish ({literal(port)}, {package}.Encode (Ctx.Output_{port}, Message));', '   end;']
     body += ['   function Recording_Enabled (Ctx : Context; Name : String) return Boolean is',
              '     (Ose_Recording.Is_Enabled (Ctx.Recordings, Name));']
+    body += ['   procedure Declare_Measurement (Ctx : in out Context; Name : String) is',
+             '   begin',
+             '      if Ctx.Owner /= Ada.Task_Identification.Current_Task then raise Program_Error with "measurement declaration requires on_start"; end if;',
+             '      Ose_Measurements.Declare_Measurement (Ctx.Measurements, Name);',
+             '   end Declare_Measurement;',
+             '   procedure Measure (Ctx : in out Context; Name : String; Value : SDL_Runtime.Float64) is',
+             '   begin',
+             '      if not Ctx.Active or else Ctx.Owner /= Ada.Task_Identification.Current_Task then raise Program_Error with "measurement requires the active tick callback"; end if;',
+             '      Ose_Measurements.Measure (Ctx.Measurements, Name, Value);',
+             '   end Measure;']
     for root, symbol in recording_symbols.items():
         package, value_type = types[root]
         text = node['recording_catalogues'][root]
@@ -177,7 +190,7 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
     if node.get('parameter_bindings'): body += ['      Ctx.Parameter_Writes := True; Ctx.Owner := Ada.Task_Identification.Current_Task;']
     body += ['      Ctx.Owner := Ada.Task_Identification.Current_Task;',
              '      Started := True; On_Start (Self, Ctx);',
-             '      Ctx.Recordings.Frozen := True; Ctx.Owner := Ada.Task_Identification.Null_Task_Id;']
+             '      Ctx.Recordings.Frozen := True; Ctx.Measurements.Frozen := True; Ctx.Owner := Ada.Task_Identification.Null_Task_Id;']
     if node.get('parameter_bindings'): body += ['      Ctx.Parameter_Writes := False;']
     body += ['      Ready (' + ('True' if node.get('parameter_bindings') else 'False') + ');' , '      loop', '         Read_Event (E);', '         case Op (E) is',
              "         when 'X' =>", '            if Body_Size (E) /= 0 then raise Protocol_Error with "invalid STOP"; end if;', '            exit;',
@@ -212,7 +225,7 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
              '            Clear; Finish;',
              '         when others => raise Protocol_Error with "unexpected opcode";', '         end case;', '      end loop;',
              '      Clear; Started := False; On_Stop (Self, Ctx);', '   exception when others =>',
-             '      Ctx.Active := False; Ctx.Recordings.Frozen := True; Clear;', *(['      Ctx.Parameter_Writes := False;'] if node.get('parameter_bindings') else []), '      if Started then',
+             '      Ctx.Active := False; Ctx.Recordings.Frozen := True; Ctx.Measurements.Frozen := True; Clear;', *(['      Ctx.Parameter_Writes := False;'] if node.get('parameter_bindings') else []), '      if Started then',
              '         begin On_Stop (Self, Ctx); exception when others => null; end;', '      end if;', '      raise;',
              '   end Run;', f'end {api};', '']
     (destination / (stem + '.adb')).write_text('\n'.join(body))

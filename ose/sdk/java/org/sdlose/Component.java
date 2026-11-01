@@ -82,6 +82,7 @@ public final class Component {
         private final OutputStream stream;
         private final Map<String, Port> recordingPoints = new HashMap<>();
         private final Set<String> recordingActive = new HashSet<>();
+        private final Set<String> measurements = new HashSet<>();
         private boolean initializing;
         private int recordingBytes;
         private InputStream inputStream;
@@ -137,6 +138,23 @@ public final class Component {
         public BigInteger timeNs() { return time; }
         public BigInteger tickIndex() { return index; }
         public double now() { return time.doubleValue() / 1000000000.0; }
+        public final void declareMeasurement(String name) throws IOException {
+            if (!initializing || owner != Thread.currentThread() || measurements.contains(name) ||
+                measurements.size() >= 128 || name == null || name.length() > 200 ||
+                !name.matches("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*"))
+                throw new IllegalArgumentException("measurement declarations require onStart and unique valid names (max 128)");
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream(); DataOutputStream out = new DataOutputStream(bytes);
+            byte[] local = utf8(name); out.writeShort(local.length); out.write(local);
+            send(stream, 'M', bytes.toByteArray()); measurements.add(name);
+        }
+        public final void measure(String name, double value) throws IOException {
+            if (initializing || owner != Thread.currentThread() || !measurements.contains(name))
+                throw new IllegalStateException("measurement requires a declared name and the active tick callback");
+            if (Double.isNaN(value) || Double.isInfinite(value)) throw new IllegalArgumentException("measurement requires a finite fl64");
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream(); DataOutputStream out = new DataOutputStream(bytes);
+            byte[] local = utf8(name); out.writeShort(local.length); out.write(local); out.writeDouble(value);
+            send(stream, 'V', bytes.toByteArray());
+        }
         public final <T extends SdlCodec.Message> void declareRecordingPoint(
                 String name, Class<T> type, String description) throws IOException {
             if (!initializing || owner != Thread.currentThread() || recordingPoints.containsKey(name) ||

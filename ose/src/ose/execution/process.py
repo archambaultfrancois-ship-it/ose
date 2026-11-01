@@ -6,6 +6,7 @@ from pathlib import Path
 import struct
 from ose.execution import ipc
 from ose.parameters.bindings import updates, write_reply
+from ose.execution.measurements import Measurements
 
 
 async def start_component(node, parameters=None, recording=None):
@@ -20,6 +21,7 @@ async def start_component(node, parameters=None, recording=None):
         from ose.recording.component import ComponentRecording
         recording = ComponentRecording(None)
     process.recording = recording
+    process.measurements = Measurements()
     try:
         async def initialize():
             await ipc.send(process.stdin, "I", json.dumps(node).encode())
@@ -28,8 +30,10 @@ async def start_component(node, parameters=None, recording=None):
                     raise ValueError("shared parameter service is required")
                 await updates(process, node, parameters.initial)
             op, body = await ipc.receive(process.stdout)
-            while op in ("S", "N"):
-                if op == "N":
+            while op in ("S", "N", "M"):
+                if op == 'M':
+                    process.measurements.declare(body)
+                elif op == "N":
                     await recording.declare(body)
                 else:
                     await write_reply(process, body, parameters)
@@ -68,6 +72,9 @@ async def tick_events(process, node, selected, time_ns=None, tick_index=1, param
             continue
         if op == "F" and not body:
             return
+        if op == 'V':
+            process.measurements.update(body)
+            continue
         if op == "C" and recording is not None:
             from ose.recording.component import MAX_TICK_BYTES
             recording_bytes += len(body)

@@ -348,6 +348,9 @@ class Coordinator:
             value = json.loads(body)
             if not isinstance(value, dict):
                 raise ValueError("metrics must be an object")
+            if 'measurements' in value:
+                from ose.execution.measurements import validate_snapshot
+                value['measurements'] = validate_snapshot(value['measurements'])
             session["metrics"] = value
             session["metric_time"] = time.monotonic()
             return {}, None
@@ -416,7 +419,7 @@ class Coordinator:
             "report_age_ms": (time.monotonic() - self.sessions[name]["metric_time"]) * 1000
                 if self.sessions.get(name, {}).get("metric_time") is not None else None}
             for name, desc in self.observation["components"].items()}}
-        return {"epoch": self.epoch, "observation": observation, "parameters": self.parameters.service.snapshot(),
+        return {"epoch": self.epoch, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
                 "enabled": self.activated, "metrics": dict(self.metrics),
                 "external_publishers": len(self.external_peers),
                 "components": {name: {"ready": session["ready"], "host": session["host"],
@@ -601,6 +604,8 @@ class Worker:
                        **self.timings.snapshot(self.scheduler),
                        "inputs": {key: value.snapshot() for key, value in self.buffers.items()},
                        "direct": {key: value.snapshot() for key, value in self.engines.items()}}
+            process = getattr(self, 'process', None)
+            metrics['measurements'] = process.measurements.snapshot() if process is not None else {}
             await self.control("metrics", json.dumps(metrics).encode())
             if self.closing:
                 return

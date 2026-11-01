@@ -21,6 +21,10 @@ package body Ose_Component is
      with Import, Convention => C, External_Name => "ose_record_bytes";
    function C_Declare_Recording (Name, Root, Catalogue, Description : Interfaces.C.char_array) return Interfaces.C.int
      with Import, Convention => C, External_Name => "ose_declare_recording";
+   function C_Declare_Measurement (Name : Interfaces.C.char_array) return Interfaces.C.int
+     with Import, Convention => C, External_Name => "ose_measurement_declare";
+   function C_Measure (Name : Interfaces.C.char_array; Value : Interfaces.C.double) return Interfaces.C.int
+     with Import, Convention => C, External_Name => "ose_measurement_value";
    function C_Input (E : access constant Raw_Event; Port : access System.Address; Port_Size : access Interfaces.C.size_t;
                      Catalogue : access System.Address; Catalogue_Size : access Interfaces.C.size_t;
                      Payload : access System.Address; Payload_Size : access Interfaces.C.size_t) return Interfaces.C.int
@@ -94,4 +98,12 @@ package body Ose_Component is
    begin
       Check (C_Record (Interfaces.C.To_C (Name), Payload'Address, Interfaces.C.size_t (Payload'Length)));
    end Record_Bytes;
+   procedure Declare_Measurement (Name : String) is
+   begin
+      Check (C_Declare_Measurement (Interfaces.C.To_C (Name)));
+   end Declare_Measurement;
+   procedure Measure (Name : String; Value : SDL_Runtime.Float64) is
+   begin
+      Check (C_Measure (Interfaces.C.To_C (Name), Interfaces.C.double (Value)));
+   end Measure;
 end Ose_Component;

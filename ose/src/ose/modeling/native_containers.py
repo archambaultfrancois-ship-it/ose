@@ -192,7 +192,8 @@ def generate_rust(name, node, handler, sdl_root, schemas, destination):
              "pub struct Context {", "    pub name: &'static str,", "    pub config_json: String,", "    active: bool,",
              "    tick: sdl_ose_component::TickContext,", "    parameter_writes: bool,",
              "    recording: std::collections::HashMap<String, (std::any::TypeId, sdl_runtime::Context, bool)>,",
-             "    recording_ready: bool, recording_bytes: usize,"]
+             "    recording_ready: bool, recording_bytes: usize,",
+             "    measurements: std::collections::HashSet<String>,"]
     for port in node["outputs"]:
         lines.append(f"    output_{port}: sdl_runtime::Context,")
     for alias, desc in node.get('parameter_bindings', {}).items():
@@ -205,6 +206,21 @@ def generate_rust(name, node, handler, sdl_root, schemas, destination):
               "    pub fn tick_index(&self) -> u64 { self.tick.tick_index }",
               "    pub fn now(&self) -> f64 { self.time_ns() as f64 / 1_000_000_000.0 }"]
     lines += r'''
+    pub fn declare_measurement(&mut self, name: &str) -> Result {
+        if self.recording_ready || !self.parameter_writes || self.measurements.contains(name) || self.measurements.len() >= 128 {
+            return Err("measurement declarations require on_start and unique names (max 128)".into());
+        }
+        sdl_ose_component::declare_measurement(name)?;
+        self.measurements.insert(name.to_owned());
+        Ok(())
+    }
+    pub fn measure(&mut self, name: &str, value: f64) -> Result {
+        if !self.active || !self.measurements.contains(name) {
+            return Err("measurement requires a declared name and an active tick callback".into());
+        }
+        sdl_ose_component::measure(name, value)?;
+        Ok(())
+    }
     pub fn declare_recording_point<T: SdlMessage>(&mut self, name: &str, description: &str) -> Result {
         if self.recording_ready || self.recording.contains_key(name) || self.recording.len() >= 128 {
             return Err("recording declarations require initialization and unique names".into());
@@ -299,7 +315,7 @@ def generate_rust(name, node, handler, sdl_root, schemas, destination):
     lines += ["    }", "}", "pub fn run<H: Callbacks>(mut handler: H) -> Result {", "    let init = receive()?;",
               '    if init.op != b\'I\' { return Err("expected INIT".into()); }', "    let mut ctx = Context {",
               f"        name: {rust_string(name)}, config_json: String::from_utf8(init.data)?, active: false, tick: Default::default(), parameter_writes: true,",
-              "        recording: Default::default(), recording_ready: false, recording_bytes: 0,"]
+              "        recording: Default::default(), recording_ready: false, recording_bytes: 0, measurements: Default::default(),"]
     for port, desc in node["outputs"].items():
         module, symbol = types[desc["root"]]
         lines.append(f"        output_{port}: codec(sdl_runtime::prepare({rust_string(desc['catalogue'])}, &[crate::types::{module}::{symbol}::type_info()]))?,")

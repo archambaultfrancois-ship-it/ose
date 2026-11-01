@@ -66,6 +66,14 @@ pub fn declare_recording_point(name: &str, root: &str, catalogue: &str, descript
     named_send(b'N', name, format!("{root}\0{description}\0{catalogue}").as_bytes())
 }
 pub fn record(name: &str, payload: &[u8]) -> io::Result<()> { named_send(b'C', name, payload) }
+pub fn declare_measurement(name: &str) -> io::Result<()> {
+    if !valid_recording_name(name) { return Err(invalid("invalid measurement name")); }
+    named_send(b'M', name, &[])
+}
+pub fn measure(name: &str, value: f64) -> io::Result<()> {
+    if !valid_recording_name(name) || !value.is_finite() { return Err(invalid("invalid measurement name or fl64")); }
+    named_send(b'V', name, &value.to_be_bytes())
+}
 pub fn set_parameters(name: &str, payload: &[u8]) -> io::Result<()> {
     named_send(b'S', name, payload)?;
     let result = receive()?;

@@ -31,6 +31,7 @@ root = pathlib.Path.cwd()
 sdk = sdk_root()
 assert 'share/ose/sdk' in str(sdk), sdk
 for asset in ('java/org/sdlose/Component.java', 'ada/ose_component.ads',
+              'ada/ose_measurements.ads', 'ada/ose_measurements.adb',
               'client/java/ose_jni.c', 'client/ada/ose_client-typed.adb',
               'client/c/ose_parameters.h', 'client/rust/src/parameters.rs',
               'client/rust/src/parameters_tls.rs',

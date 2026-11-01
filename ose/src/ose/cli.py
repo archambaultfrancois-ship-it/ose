@@ -102,6 +102,20 @@ def main():
     command.add_argument("--format", choices=("text", "jsonl"), default="text")
     command.add_argument("--color", choices=("auto", "always", "never"), default="auto")
     command.add_argument("--no-color", dest="color", action="store_const", const="never")
+    command = commands.add_parser('measures', help='read current application measurements (RAM-only fl64 values)')
+    command.add_argument('patterns', nargs='*', help='glob patterns for component.name or local measurement names')
+    command.add_argument('--endpoint', help='local endpoint JSON (default: build/endpoint.json)')
+    command.add_argument('--host')
+    command.add_argument('--port', type=int)
+    command.add_argument('--distributed', action='store_true')
+    command.add_argument('--tls-ca')
+    command.add_argument('--tls-cert')
+    command.add_argument('--tls-key')
+    command.add_argument('--insecure', action='store_true', help='explicit distributed loopback-only development mode')
+    command.add_argument('--watch', action='store_true', help='repeat until interrupted')
+    command.add_argument('--interval', type=float, default=1, help='sampling interval in seconds (minimum 0.1)')
+    command.add_argument('--count', type=int, help='number of snapshots (default: one, or unlimited with --watch)')
+    command.add_argument('--format', choices=('text', 'jsonl'), default='text')
     command = commands.add_parser("record", help="discover and interactively record live application outputs")
     command.add_argument("-l", "--label", type=session_label, default=DEFAULT_LABEL,
                          help="informational session label (default: recorder)")
@@ -126,7 +140,13 @@ def main():
     parameter_cli.parser(commands)
     args = parser.parse_args()
     try:
-        if args.action == "parameters":
+        if args.action == 'measures':
+            from ose.measures import run
+            try:
+                return asyncio.run(run(args))
+            except KeyboardInterrupt:
+                return 130
+        elif args.action == "parameters":
             try:
                 asyncio.run(parameter_cli.run(args))
             except KeyboardInterrupt:

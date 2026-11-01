@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 typedef struct {
     char *name, *root;
@@ -30,6 +31,8 @@ typedef struct {
     RecordingPoint recording[256];
     size_t recording_count, recording_bytes;
     int ready;
+    char *measurements[128];
+    size_t measurement_count;
 } Runtime;
 
 static RecordingPoint *recording_slot(Runtime *runtime, const char *name) {
@@ -59,6 +62,32 @@ static char *recording_copy(const char *text) {
     char *copy = malloc(size);
     if (copy) memcpy(copy, text, size);
     return copy;
+}
+int ose_declare_measurement(OseContext *ctx, const char *name) {
+    Runtime *runtime = ctx->private_runtime;
+    size_t i;
+    char *copy;
+    if (runtime->ready || !runtime->parameter_writes || !recording_name(name) || runtime->measurement_count >= 128)
+        return ose_fail(ctx, "invalid measurement declaration");
+    for (i = 0; i < runtime->measurement_count; ++i)
+        if (!strcmp(runtime->measurements[i], name)) return ose_fail(ctx, "duplicate measurement name");
+    copy = recording_copy(name);
+    if (!copy) return ose_fail(ctx, "measurement allocation failed");
+    runtime->measurements[runtime->measurement_count++] = copy;
+    if (!ose_measurement_declare(name)) return ose_fail(ctx, "measurement declaration failed");
+    return 1;
+}
+int ose_measure(OseContext *ctx, const char *name, double value) {
+    Runtime *runtime = ctx->private_runtime;
+    size_t i;
+    if (!runtime->active || !recording_name(name) || !isfinite(value))
+        return ose_fail(ctx, "measurement requires a finite fl64 during a tick");
+    for (i = 0; i < runtime->measurement_count; ++i)
+        if (!strcmp(runtime->measurements[i], name)) {
+            if (!ose_measurement_value(name, value)) return ose_fail(ctx, "measurement emission failed");
+            return 1;
+        }
+    return ose_fail(ctx, "unknown measurement name");
 }
 int ose_declare_recording_value(OseContext *ctx, const char *name, const char *root,
                                const char *catalogue, const char *description) {
@@ -342,6 +371,7 @@ cleanup:
         free(runtime.recording[index].name); free(runtime.recording[index].root);
         type_context_free(runtime.recording[index].encoder);
     }
+    for (index = 0; index < runtime.measurement_count; ++index) free(runtime.measurements[index]);
     free(runtime.selected); free(runtime.encoders); free(config);
     return result;
 }

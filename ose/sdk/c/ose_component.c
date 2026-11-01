@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #define MAX_SIZE (1024U * 1024U)
 static uint32_t number(const uint8_t *b) {
     return ((uint32_t)b[0]<<24)|((uint32_t)b[1]<<16)|((uint32_t)b[2]<<8)|b[3];
@@ -68,6 +69,23 @@ int ose_publish(const char *port, const void *payload, size_t size) {
 }
 int ose_record_bytes(const char *name, const void *payload, size_t size) {
     return named_send('C', name, payload, size);
+}
+int ose_measurement_declare(const char *name) {
+    uint8_t data[202];
+    size_t n;
+    if (!name || !(n = strlen(name)) || n > 200) return 0;
+    data[0] = (uint8_t)(n >> 8); data[1] = (uint8_t)n;
+    memcpy(data + 2, name, n);
+    return ose_send('M', data, n + 2);
+}
+int ose_measurement_value(const char *name, double value) {
+    uint64_t bits;
+    uint8_t data[8];
+    size_t i;
+    if (!name || sizeof(value) != sizeof(bits) || !isfinite(value)) return 0;
+    memcpy(&bits, &value, sizeof(bits));
+    for (i = 0; i < 8; ++i) data[i] = (uint8_t)(bits >> (56 - i * 8));
+    return named_send('V', name, data, sizeof(data));
 }
 int ose_declare_recording(const char *name, const char *root, const char *catalogue, const char *description) {
     size_t r = strlen(root), c = strlen(catalogue), d = strlen(description);

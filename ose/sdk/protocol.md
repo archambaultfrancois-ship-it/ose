@@ -21,6 +21,17 @@ catalogue-relative message ID, without S2PS/2 (the adapter adds/removes it).
 | `N` RECORDING DECLARE | Component → engine, before READY | u16 local-name length, name, root, NUL, description, NUL, catalogue (UTF-8) |
 | `E` RECORDING ENABLE | Engine → component, between ticks | NUL-separated active local names; empty disables all |
 | `C` RECORDING SAMPLE | Component → engine, during TICK | u16 local-name length, name, SDL2 payload |
+| `M` MEASUREMENT DECLARE | Component → engine, before READY | u16 local-name length, name (UTF-8), no trailing bytes |
+| `V` MEASUREMENT VALUE | Component → engine, during TICK | u16 local-name length, name, exactly one big-endian IEEE-754 fl64 |
+
+Measurements retain one current finite fl64 per declared name, initially absent.
+Names have the same dot-separated ASCII syntax and 200-byte limit as internal
+recording points, with up to 128 independent measurement names per component.
+Duplicate/late declarations, undeclared emissions, malformed bodies and nonfinite
+values fail the component. Measurement values are raw eight-byte scalars rather
+than SDL2 message payloads. They never enter application delivery queues, recording
+points or logical traces. They are volatile and appear in live status; see
+[current measurements](../docs/measurements.md) for SDK and CLI APIs.
 
 Internal recording declarations are scoped to one component generation and are
 fixed before READY. Names are dot-separated ASCII identifiers, at most 200 bytes;

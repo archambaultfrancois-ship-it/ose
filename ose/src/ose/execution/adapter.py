@@ -117,6 +117,7 @@ class Adapter:
                 "running": bool(self.activated_at_ns), **self.metrics, **self.timings.snapshot(self.scheduler)}
             if hasattr(self, "component_recording"):
                 metrics["recording"] = dict(self.component_recording.counts)
+            metrics['measurements'] = self.process.measurements.snapshot()
             await self.client.request("metrics", json.dumps(metrics).encode())
             await asyncio.sleep(.1)
 

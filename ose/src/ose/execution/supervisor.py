@@ -60,6 +60,9 @@ async def run(plan_path, duration=None, port=0):
                 child.kill()
                 await child.wait()
         snapshot = broker.snapshot() if hasattr(broker, "udp") else {}
+        # Application measurements are RAM-only, including diagnostic shutdown files.
+        snapshot['components'] = {name: {key: value for key, value in metrics.items() if key != 'measurements'}
+                                  for name, metrics in snapshot.get('components', {}).items()}
         (Path(plan["build_dir"]) / "last-status.json").write_text(json.dumps(snapshot, indent=2))
         if hasattr(broker, "server"):
             await broker.close()

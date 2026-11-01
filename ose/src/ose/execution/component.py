@@ -4,6 +4,7 @@ import struct
 import sys
 from enum import Enum
 from ose.recording.component import validate_name, MAX_POINTS, MAX_TICK_BYTES
+from ose.execution.measurements import validate_name as validate_measurement_name, validate_value
 from ose.execution.ipc import MAX_SIZE, TICK_CONTEXT, frame, port_data, unpack_port, tick_context
 
 
@@ -44,6 +45,7 @@ class ComponentSession:
             self.parameter_values[alias] = (catalogue, payload)
         self.is_ready = False
         self.recording_points = {}
+        self._measurement_names = set()
         self._recording_bytes = 0
         self._in_tick = False
         self.timed_ticks = timed_ticks
@@ -81,6 +83,24 @@ class ComponentSession:
 
     def recording_enabled(self, name):
         return self.recording_points[name]
+
+    def declare_measurement(self, name):
+        if self.is_ready:
+            raise RuntimeError('measurement declarations require initialization')
+        validate_measurement_name(name)
+        if name in self._measurement_names or len(self._measurement_names) >= MAX_POINTS:
+            raise ValueError('measurement declarations require unique names (max 128)')
+        body = port_data(name, b'')
+        self.send('M', body)
+        self._measurement_names.add(name)
+
+    def measure(self, name, value):
+        if not self._in_tick:
+            raise RuntimeError('measurement emission requires an active tick')
+        if name not in self._measurement_names:
+            raise ValueError('unknown measurement name')
+        body = port_data(name, struct.pack('>d', validate_value(value)))
+        self.send('V', body)
 
     def record(self, name, payload):
         if not self._in_tick:

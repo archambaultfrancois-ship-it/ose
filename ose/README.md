@@ -84,6 +84,13 @@ python3 -m ose.cli top
 tick p95 and colored diagnostics locally or through the distributed coordinator.
 Use arrows/Enter for details, Space to freeze, or `--format jsonl` for collection.
 
+[`ose-ctl measures`](docs/measurements.md) reads application-defined fl64 values,
+retaining only the last value per declared dot-separated name in RAM. Declare
+with `ctx.declare_measurement("moteur.temperature")` in Python `on_start`, emit
+with `ctx.measure("moteur.temperature", value)` in tick callbacks, and read with
+`ose-ctl measures --watch` or `--count 60 --format jsonl`. Equivalent APIs exist
+in C, Rust, Java and Ada. Components restart with no saved measurements.
+
 Ctrl+C stops OSE and its component processes. `run --duration 2` provides
 a finite execution; `inspect --last` reads the final saved counters after shutdown.
 Supervised adapters and components run in separate process sessions so terminal

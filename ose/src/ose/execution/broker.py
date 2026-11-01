@@ -285,6 +285,9 @@ class Broker(Sessions):
                         metrics = json.loads(body) if body else header["metrics"]
                         if not isinstance(metrics, dict):
                             raise ValueError("metrics must be an object")
+                        if 'measurements' in metrics:
+                            from ose.execution.measurements import validate_snapshot
+                            metrics['measurements'] = validate_snapshot(metrics['measurements'])
                         self.metrics[node] = metrics
                         self.metric_times[node] = time.monotonic()
                     else:
@@ -317,6 +320,7 @@ class Broker(Sessions):
                 for topic in topics:
                     del self.internal_points[topic]
                 self.peers.pop(node, None)
+                self.metrics.get(node, {}).pop('measurements', None)
                 self.ready.discard(node)
                 self.dedicated_data.discard(node)
                 self._notify_node(node)
@@ -479,7 +483,7 @@ class Broker(Sessions):
             "generation": self.generations.get(name),
             "report_age_ms": (time.monotonic() - self.metric_times[name]) * 1000 if name in self.metric_times else None}
             for name, desc in self.observation["components"].items()}}
-        return {"epoch": self.epoch, "observation": observation, "parameters": self.parameters.service.snapshot(),
+        return {"epoch": self.epoch, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
                 "enabled": self.enabled, "ready": sorted(self.ready), "subscriptions": {key: engine.snapshot() for key, engine in self.engines.items()},
                 "components": dict(self.metrics), "udp_errors": self.udp.errors, "errors": self.errors,
                 "topics": {topic: {"root": port["root"], "publications": self.topic_counts[topic],

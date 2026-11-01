@@ -69,6 +69,16 @@ class CallbackContext:
     def recording_enabled(self, name):
         return self.session.recording_enabled(name)
 
+    def declare_measurement(self, name):
+        if self.session.is_ready or not self._parameter_writes:
+            raise RuntimeError('measurement declarations require on_start')
+        self.session.declare_measurement(name)
+
+    def measure(self, name, value):
+        if not self._active:
+            raise RuntimeError('measurement emission requires an active tick callback')
+        self.session.measure(name, value)
+
     def record(self, name, message):
         if not self._active:
             raise RuntimeError("recording requires an active tick callback")

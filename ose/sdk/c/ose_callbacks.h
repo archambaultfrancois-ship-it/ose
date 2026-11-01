@@ -44,6 +44,9 @@ int ose_fail(OseContext *, const char *message);
 double ose_now(const OseContext *);
 uint64_t ose_time_ns(const OseContext *);
 uint64_t ose_tick_index(const OseContext *);
+/* Declare during on_start, emit finite fl64 values during tick callbacks. */
+int ose_declare_measurement(OseContext *, const char *name);
+int ose_measure(OseContext *, const char *name, double value);
 typedef enum {
     OSE_RECORD_ERROR = -1, OSE_RECORD_DISABLED = 0,
     OSE_RECORD_QUEUED = 1, OSE_RECORD_DROPPED = 2
