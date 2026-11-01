@@ -359,7 +359,7 @@ def set_parameters(args):
     with tempfile.TemporaryDirectory(prefix="vibration-parameters-") as temporary:
         source = Path(temporary) / "settings.json"
         write(source, value)
-        options = ["parameter", "set", f"machines/{args.machine}/{block}",
+        options = ["app", "--root", ROOT, "parameter", "set", f"machines/{args.machine}/{block}",
                    "--client", "operator", "--file", source, "--plan", args.plan,
                    "--endpoint", args.endpoint]
         for name in ("host", "port", "tls_ca", "tls_cert", "tls_key"):

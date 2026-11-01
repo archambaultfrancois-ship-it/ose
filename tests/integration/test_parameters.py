@@ -29,7 +29,7 @@ class SharedSettingsTests(unittest.IsolatedAsyncioTestCase):
         return result
 
     async def parameters_shell(self, action, options, environment, data=None):
-        alias = 'params-get' if action == 'get' else 'params-set'
+        alias = 'ose app parameter get' if action == 'get' else 'ose app parameter set'
         script = 'set -eu\nshopt -s expand_aliases\nsource "$APP_ENV"\n' + alias + ' "$@"\n'
         env = dict(environment, APP_ENV=str(ROOT / 'setenv.sh'), OSE_PYTHON=sys.executable)
         env.pop('OSE_PARAMETER_CLIENT', None)

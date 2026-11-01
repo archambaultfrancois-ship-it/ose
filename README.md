@@ -38,17 +38,17 @@ git submodule update --init --recursive
 source ./setenv.sh
 app-run
 # In a second terminal, source ./setenv.sh again, then:
-record
+ose app record
 ```
 
 The application environment selects Vibration Watch as `OSE_APP_ROOT` and sources
 `deps/sdl-ose/setenv.sh`, including when `FRAMEWORK_ROOT` was previously set to
 another checkout. `app-run` builds and runs until Ctrl+C;
-`app-run DURATION=60` limits the run. `record` prepares missing recording/filter
-dependencies and opens the external console. `ose-env` lists the shortcuts.
+`app-run DURATION=60` limits the run. `ose app record` prepares missing recording/filter
+dependencies and opens the external console. `ose app env` shows the selected paths; `ose app --help` lists workflows.
 Interactive Bash terminals also enable `ose` completion for commands,
 subcommands, options and option choices. Source `./setenv.sh`, then press Tab.
-`record-inspect FILE` displays all recorded messages; use `--limit N` to show
+`ose app record inspect FILE` displays all recorded messages; use `--limit N` to show
 only the first N selected messages.
 Recording content filters are evaluated at the source: in the broker for local
 execution, or in each producer worker for distributed execution, before capture
@@ -95,7 +95,7 @@ make run DURATION=60
 
 # Second Bash terminal, also from the Vibration Watch directory:
 source ./setenv.sh
-record
+ose app record
 ```
 
 ```text
@@ -175,9 +175,9 @@ include `build/distributed-logs/params-sync.log`; local sync messages appear on
 stderr. Synchronization is available for real-time `run` and `distributed-local`,
 and is disabled by default.
 
-After sourcing the environment, `app-make run PARAMS_SYNC=1 DURATION=60` forwards
+After sourcing the environment, `ose app make run PARAMS_SYNC=1 DURATION=60` forwards
 these Make options. The framework's generic `app-run` shortcut starts OSE directly;
-use `make run` or `app-make run` to enable Vibration's managed synchronizer.
+use `make run` or `ose app make run` to enable Vibration's managed synchronizer.
 
 ## Project resources
 
@@ -216,37 +216,36 @@ app-run SCENARIO=normal
 ```
 
 In a second Bash terminal, source the application environment again. It selects
-the pinned framework and loads the local operator token automatically:
+the pinned framework. Parameter commands resolve the selected client token at invocation:
 
 ```sh
 source ./setenv.sh
-params-list
-params-get                            # All four blocks
-params-get '^machines/1/'              # Both blocks for motor 1
-params-get '/detection$'               # Both alarm thresholds
-params-get --exact machines/1/detection
+ose app parameter list
+ose app parameter get                            # All four blocks
+ose app parameter get '^machines/1/'              # Both blocks for motor 1
+ose app parameter get '/detection$'               # Both alarm thresholds
+ose app parameter get --exact machines/1/detection
 python3 tools/vibration.py set-threshold --machine 1 --rms-threshold 2.0
-params-watch machines/1/detection --count 2
+ose app parameter watch machines/1/detection --count 2
 ```
 
-`params-get` takes a Python regular expression by default and returns one JSON
+`ose app parameter get` takes a Python regular expression by default and returns one JSON
 object mapping each selected path to its complete block. Omitting the pattern
-selects all blocks; `params-get-all` is a synonym. Use `--exact` for a literal path and quote
+selects all blocks. Use `--exact` for a literal path and quote
 patterns to prevent shell expansion. Changing a threshold affects subsequent
 observations in the first terminal; stop a run or a watch with Ctrl+C.
 
 The `operator` client has read/write rights on all four blocks; application
-components have read access only. `source ./setenv.sh` loads
-`OSE_PARAMETER_TOKEN` from `build/plan.json`, or from `deployment.local.json`
-before a build. The local development token is declared in that deployment.
-An explicit environment token is preserved. Set `OSE_PARAMETER_CLIENT` before
-sourcing to choose a different configured client.
+components have read access only. `ose app parameter` resolves the selected
+client's token from `build/plan.json`, or from `deployment.local.json` before a
+build. Explicit environment tokens take precedence. Use `OSE_PARAMETER_CLIENT`
+or `--client NAME` to select another configured client; no new source is needed.
 
 To change a sensor, export only its settings, edit the JSON, and submit it with
 the application's business validation:
 
 ```sh
-params-get --exact machines/1/sensor > build/sensor-1.json
+ose app parameter get --exact machines/1/sensor > build/sensor-1.json
 # Edit the seven fields under "machines/1/sensor" in build/sensor-1.json.
 python3 tools/vibration.py set-sensor --machine 1 --file build/sensor-1.json
 ```
@@ -257,29 +256,29 @@ object. Exports for another machine or multiple blocks are rejected.
 For a backup and restore, the path-keyed format works for one or several blocks:
 
 ```sh
-params-get > build/parameters.json
-params-set --file build/parameters.json
+ose app parameter get > build/parameters.json
+ose app parameter set --file build/parameters.json
 # Reinject only the selected thresholds through stdin:
-params-get '/detection$' | params-set --file -
+ose app parameter get '/detection$' | ose app parameter set --file -
 # Submit an explicit path-keyed threshold value:
-printf '%s\n' '{"machines/1/detection":{"rms_threshold":0.1}}' | params-set --file -
+printf '%s\n' '{"machines/1/detection":{"rms_threshold":0.1}}' | ose app parameter set --file -
 ```
 
 Exports can also be split across files and restored recursively:
 
 ```sh
 mkdir -p build/parameters/motors
-params-get '^machines/1/' > build/parameters/motors/motor-1.json
-params-get '^machines/2/' > build/parameters/motors/motor-2.json
-params-set --dir build/parameters
+ose app parameter get '^machines/1/' > build/parameters/motors/motor-1.json
+ose app parameter get '^machines/2/' > build/parameters/motors/motor-2.json
+ose app parameter set --dir build/parameters
 ```
 
 `--dir` reads all `*.json` files, including files in subdirectories, in relative
 filename order. Every file contains path-keyed exports; filenames do not select
 parameter paths. Duplicate paths, invalid files or invalid blocks stop the import
 before the first write. `--dir` cannot be combined with `--file` or a positional
-path. `--exact` selects a literal path for `params-get` and `params-sync`;
-it is not an import option for `params-set`.
+path. `--exact` selects a literal path for `ose app parameter get` and `ose app parameter sync`;
+it is not an import option for `ose app parameter set`.
 
 There is no `--all` option to manage: imported paths come from the JSON keys.
 All imported blocks are checked against their SDL contracts before the first
@@ -293,7 +292,7 @@ limits can be adjusted with `--max-json-size BYTES` and
 The application commands validate business constraints before submitting values:
 1–131072 samples, a nonzero uint32 seed, sample rate 1–1e9 Hz, vibration frequency
 0–half the sample rate, amplitude/noise/ramp 0–1e6 and RMS threshold 1e-12–1e12.
-The generic `params-set` / `ose parameter set` commands check SDL types;
+The generic `ose app parameter set` / `ose parameter set` commands check SDL types;
 writers using those interfaces must also respect these business constraints.
 
 An update applies at a subsequent callback, without restarting the component.
@@ -322,7 +321,7 @@ use `--distributed --tls-ca build/pki/ca.crt --tls-cert build/pki/operator.crt
 generates the development operator credentials. Cluster access authenticates the
 `operator` certificate identity; it does not use the local development token.
 The ordinary `ose parameter get PATH --client operator` still returns a
-bare block for existing scripts; the shell shortcut returns a path-keyed export.
+bare block for existing scripts; the application command returns a path-keyed export.
 See [cluster deployment](deploy/README.md) for credentials and connectivity.
 
 ## Replay captured signals
@@ -339,7 +338,7 @@ same framework and Python interpreter:
 make run DURATION=60
 # Second terminal, from the application directory:
 source ./setenv.sh
-record --command 'select sensor_1.signal sensor_2.signal' \
+ose app record --command 'select sensor_1.signal sensor_2.signal' \
   --command 'start signals.pcapng' --command 'wait 2' --command stop
 ```
 
