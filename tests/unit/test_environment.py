@@ -21,7 +21,7 @@ class EnvironmentTests(unittest.TestCase):
             script = '''set -eu
 shopt -s expand_aliases
 source "$APP_ENV"
-type ose app-build app-run app-cd >/dev/null
+type ose ose-ws app-build app-run app-cd >/dev/null
 for name in params-list params-get params-get-all params-set params-watch params-sync record-inspect; do
     if alias "$name" >/dev/null 2>&1; then exit 1; fi
 done
@@ -43,3 +43,15 @@ done
                                     cwd=temporary, env=env, capture_output=True, text=True, check=True)
             self.assertEqual(json.loads(result.stdout),
                              ['-m', 'ose.cli', 'app', 'run', '--duration', '3', 'SCENARIO=normal'])
+
+    def test_web_console_uses_its_interpreter_and_application_from_another_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            python = Path(temporary) / 'web python'
+            python.write_text('#!' + sys.executable + '\nimport json, sys\nprint(json.dumps(sys.argv[1:]))\n')
+            python.chmod(0o755)
+            env = dict(os.environ, APP_ENV=str(ROOT / 'setenv.sh'), OSE_WS_PYTHON=str(python))
+            script = 'set -eu\nsource "$APP_ENV"\nose-ws --port 8081 --config "my console.json"\n'
+            result = subprocess.run(['bash', '--noprofile', '--norc', '-c', script],
+                                    cwd=temporary, env=env, capture_output=True, text=True, check=True)
+            self.assertEqual(json.loads(result.stdout), [str(ROOT / 'tools/web_console.py'),
+                '--port', '8081', '--config', 'my console.json'])

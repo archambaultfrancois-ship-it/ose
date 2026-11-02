@@ -23,8 +23,7 @@ On Android/Termux, keep the host awake during real-time/distributed tests with
 `termux-wake-lock`, then release it with `termux-wake-unlock` afterwards. Host
 suspension expires worker leases by design.
 
-The pinned framework (`40e9990`, including internal recording points, current
-application measurements and Bash completion) lives in `deps/sdl-ose`; for
+The pinned framework lives in `deps/sdl-ose`; for
 framework development, set
 `FRAMEWORK_ROOT=/absolute/path/to/sdl-ose`. Build artifacts and prepared absolute
 paths live in `build/`. Rebuild after moving a checkout. The workflow uses the
@@ -50,6 +49,54 @@ Interactive Bash terminals also enable `ose` completion for commands,
 subcommands, options and option choices. Source `./setenv.sh`, then press Tab.
 `ose app record inspect FILE` displays all recorded messages; use `--limit N` to show
 only the first N selected messages.
+
+### Web console for a local run
+
+The pinned framework includes the English-language OSE Web Console. Install its
+optional Python dependencies once (no Node.js build is needed):
+
+```sh
+source ./setenv.sh
+ose-ws setup
+```
+
+Start the local application in one Bash terminal:
+
+```sh
+source ./setenv.sh
+app-run
+```
+
+In a second Bash terminal:
+
+```sh
+source ./setenv.sh
+ose-ws
+```
+
+Open **http://127.0.0.1:8080** and enter the token from
+`vibration-watch/.ose-ws/access.token`. The first launch exclusively creates
+`ose-ws.json` and that owner-only token in the application directory. These local
+files and the capture/database state are ignored by Git. `ose-ws` discovers the
+current `build/endpoint.json` and loads the `operator` parameter token from the
+current `build/plan.json`, falling back to the local deployment before a build.
+An explicit `OSE_PARAMETER_TOKEN` takes precedence. Sourcing the environment
+does not read or export credentials. The web login token and OSE parameter
+client token are separate credentials.
+
+`ose-ws setup` installs into the application's `.venv`; only the console uses
+that interpreter. `app-run` retains `OSE_PYTHON`. Set `OSE_WS_PYTHON` to select a
+different interpreter with the web dependencies already installed. The launcher
+works from another directory after sourcing this application's environment.
+
+Use `ose-ws --port 8081` for another HTTP port, `ose-ws check` to check an existing
+configuration, or `ose-ws --config /path/to/console.json` for an explicit
+configuration (which must already exist). Endpoint overrides follow the caller's
+directory. Closing the console leaves the application running. After replacing
+the framework, restart the application when new engine capabilities are needed.
+See the [console guide](deps/sdl-ose/ose-ws/README.md) for captures, permissions,
+network access and the complete-block parameter overwrite semantics.
+
 Recording content filters are evaluated at the source: in the broker for local
 execution, or in each producer worker for distributed execution, before capture
 queue admission and network delivery. Each recorder has independent filters.
