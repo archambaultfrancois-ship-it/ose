@@ -1,0 +1,8 @@
+.venv*/
+.build-tools/
+node_modules/
+*.egg-info/
+dist/
+build/
+.ose-ws/
+.pytest_cache/

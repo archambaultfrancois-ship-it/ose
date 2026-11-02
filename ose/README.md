@@ -3,6 +3,10 @@
 Executable component graphs with SDL2 contracts and per-subscription quality of
 service. See the [feature overview](docs/features.md) for the available user-facing services.
 
+For a browser interface, install the separate [OSE Web Console](../ose-ws/README.md)
+package. It observes running applications and edits parameters through existing
+OSE RPCs, without adding web framework dependencies to this engine.
+
 The Python distribution, import namespace and command-line tool are named `ose`.
 Install with `python3 -m pip install .`, then use `ose --help` or
 `python3 -m ose.cli --help`. Rebuild application plans and generated containers

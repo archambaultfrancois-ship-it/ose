@@ -11,6 +11,7 @@ import sys
 from ose.recording.recorder import Recorder
 from ose.recording.command_input import CommandInput
 from ose.recording.rotation import parse_size
+from ose.recording.selection import resolve
 from ose.transport.secure import contexts
 
 
@@ -56,22 +57,8 @@ class Console:
         print(value, file=self.output, flush=True)
 
     def names(self, patterns, *, unselect=False, match_types=False):
-        names = list(sorted(self.recorder.points))
-        found = []
-        for pattern in patterns:
-            if pattern.isdigit():
-                number = int(pattern)
-                matches = [names[number - 1]] if 1 <= number <= len(names) else []
-            else:
-                candidates = sorted(self.recorder.selected) if unselect else names
-                matches = [name for name in candidates
-                           if fnmatch.fnmatchcase(name, pattern) or
-                           (match_types and fnmatch.fnmatchcase(
-                               self.recorder.points.get(name, {}).get("root", ""), pattern))]
-            if not matches:
-                raise ValueError(f"no recording point matches {pattern!r}")
-            found.extend(matches)
-        return sorted(set(found))
+        return resolve(self.recorder.points, patterns,
+                       selected=self.recorder.selected if unselect else None, match_types=match_types)
 
     def print_status(self, status):
         max_size, cycle = status["max_size"], status["cycle"]

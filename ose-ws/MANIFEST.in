@@ -1,0 +1,7 @@
+include README.md Makefile requirements.lock
+recursive-include docs *.md
+recursive-include tests *.py
+include frontend/package.json frontend/package-lock.json frontend/index.html
+include frontend/tsconfig.json frontend/vite.config.ts frontend/vitest.config.ts
+recursive-include frontend/src *.ts *.mjs *.vue *.css
+recursive-include frontend/tests *.ts *.mjs

@@ -1,6 +1,6 @@
 # SDL and OSE
 
-This repository contains two projects that evolve together:
+This repository contains three projects that evolve together:
 
 - **[SDL](sdl/README.md)** (Schema Design Language) generates message codecs
   for C99, Rust, Python, Java, Ada, and Matlab/Octave. It also provides catalogue filtering,
@@ -8,6 +8,9 @@ This repository contains two projects that evolve together:
 - **[OSE](ose/README.md)** (Orchestration, Simulation, Exécution) orchestrates
   and executes component graphs with SDL message contracts, bounded RAM delivery, external clients,
   deterministic parallel simulation, and [distributed real-time deployment](ose/docs/distributed.md).
+- **[OSE Web Console](ose-ws/README.md)** (`ose-ws`) provides an independent
+  English-language web interface for diagnostics, scalar measurements, message
+  captures and typed parameter editing in a running OSE application.
 
 OSE depends on SDL's public generator and runtime APIs. SDL builds and
 runs independently of OSE. Each project owns its sources, tests,
@@ -29,7 +32,12 @@ ose/                    OSE project root
   examples/             Component graphs and client examples
   docs/                 OSE documentation
 .github/workflows/      Repository CI
+ose-ws/                 Standalone Python web server and bundled Vue frontend
 ```
+
+The optional web console is installed separately: `python -m pip install ./ose ./ose-ws`.
+Run `ose-ws init --config ose-ws.json` in an application directory, then
+`ose-ws --config ose-ws.json`. See its [setup and security documentation](ose-ws/README.md).
 
 ## Local application environment
 
