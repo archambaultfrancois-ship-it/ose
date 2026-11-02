@@ -243,17 +243,59 @@ this application does not retain an alarm history or implement debouncing.
 
 ## Change settings while running
 
-Each machine has two typed SDL parameter blocks:
+Each machine has two typed SDL parameter blocks, and the terminal observer has
+one display block:
 
 | Path | Fields | Reader |
 | --- | --- | --- |
 | `machines/1/sensor`, `machines/2/sensor` | `samples`, `sample_rate_hz`, `frequency_hz`, `amplitude`, `noise`, `seed`, `ramp_per_second` | Corresponding C sensor |
 | `machines/1/detection`, `machines/2/detection` | `rms_threshold` | Python alarm policy |
+| `observer/display` | Optional `label` and `output`, variable-length `machine_ids`, nested `output.format` | Python terminal observer |
 
 `config/machines.json`, `config/thresholds.json` and the selected signal profile
-provide the initial values when building. The alarm and sensors read generated
-typed bindings at every callback. Machine identity, graph, tick period and queue
-policies remain deployment/model configuration.
+provide the machine blocks' initial values when building. The sensors, alarm and
+observer read generated typed bindings at every callback. Machine identity,
+graph, tick period and queue policies remain deployment/model configuration.
+
+`observer/display` starts with the following value from `model.json`:
+
+```json
+{
+  "label": null,
+  "machine_ids": [1, 2],
+  "output": {
+    "format": {
+      "include_time_ns": true,
+      "include_sequence": true
+    }
+  }
+}
+```
+
+Its SDL type, `ObserverSettings`, contains an optional string, a repeated
+`uint32` field and three message levels: `ObserverSettings` →
+`ObserverOutputSettings` (optional `output`) → `ObserverOutputFormat` (`output.format`).
+The format flags control whether terminal observations contain `time_ns` and
+`sequence`; both are enabled by default. Setting `output` to `null` uses this
+default format; when `output` is present, its `format` structure is required.
+An absent label (`null`) adds no label to terminal observations; an empty string
+is a present label. `machine_ids` filters only the observer's terminal output.
+An empty list shows all machines. Sensor generation,
+analysis and alarm processing continue for every machine.
+
+In **ose-ws → Parameters → observer → display**, toggle the presence of `label`
+or `output`, add or remove `machine_ids` elements, and expand `output` then
+`format` to edit the third-level options. Validate the draft, then apply the
+complete block.
+Restart/rebuild the application after changing this schema to
+make the new block available. The CLI can also apply it:
+
+```sh
+printf '%s\n' '{"observer/display":{"label":"Workshop A","machine_ids":[1],"output":{"format":{"include_time_ns":true,"include_sequence":false}}}}' | ose app parameter set --file -
+ose app parameter get --exact observer/display
+# Remove the label, display all machines and use the default output format:
+printf '%s\n' '{"observer/display":{"label":null,"machine_ids":[],"output":null}}' | ose app parameter set --file -
+```
 
 In a first Bash terminal, start a normal run so changes are easy to observe:
 
@@ -268,7 +310,7 @@ the pinned framework. Parameter commands resolve the selected client token at in
 ```sh
 source ./setenv.sh
 ose app parameter list
-ose app parameter get                            # All four blocks
+ose app parameter get                            # All five blocks
 ose app parameter get '^machines/1/'              # Both blocks for motor 1
 ose app parameter get '/detection$'               # Both alarm thresholds
 ose app parameter get --exact machines/1/detection
@@ -282,7 +324,7 @@ selects all blocks. Use `--exact` for a literal path and quote
 patterns to prevent shell expansion. Changing a threshold affects subsequent
 observations in the first terminal; stop a run or a watch with Ctrl+C.
 
-The `operator` client has read/write rights on all four blocks; application
+The `operator` client has read/write rights on all five blocks; application
 components have read access only. `ose app parameter` resolves the selected
 client's token from `build/plan.json`, or from `deployment.local.json` before a
 build. Explicit environment tokens take precedence. Use `OSE_PARAMETER_CLIENT`
@@ -362,8 +404,8 @@ updates using `ose run --mode simulated --scenario FILE`, as described in the
 
 The same commands accept `--host`, `--port` and `--plan`; use
 `--plan build/replay/plan.json --endpoint build/replay/endpoint.json` for a local
-replay application (only detection blocks are retained there). Distributed clients
-use `--distributed --tls-ca build/pki/ca.crt --tls-cert build/pki/operator.crt
+replay application (detection and observer display blocks are retained there).
+Distributed clients use `--distributed --tls-ca build/pki/ca.crt --tls-cert build/pki/operator.crt
 --tls-key build/pki/operator.key` with an explicit host and port. `make certs`
 generates the development operator credentials. Cluster access authenticates the
 `operator` certificate identity; it does not use the local development token.

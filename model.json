@@ -113,6 +113,12 @@
       "outputs": {},
       "trigger": {
         "mode": "on_change"
+      },
+      "parameter_bindings": {
+        "display": {
+          "path": "observer/display",
+          "access": "read"
+        }
       }
     }
   },
@@ -180,6 +186,19 @@
     }
   ],
   "shared_parameters": {
+    "observer/display": {
+      "root": "ObserverSettings",
+      "initial": {
+        "label": null,
+        "machine_ids": [1, 2],
+        "output": {
+          "format": {
+            "include_time_ns": true,
+            "include_sequence": true
+          }
+        }
+      }
+    },
     "machines/1/detection": {
       "root": "DetectionSettings",
       "initial": {

@@ -60,7 +60,7 @@ class LaunchSyncTests(unittest.IsolatedAsyncioTestCase):
                     start_new_session=True)
                 children = []
                 try:
-                    await self.until(lambda: len(list(parameters.rglob("*.json"))) == 4, process, log)
+                    await self.until(lambda: len(list(parameters.rglob("*.json"))) == 5, process, log)
                     await self.until(lambda: any(row["machine_id"] == 1 and row["state"] == 1
                                                 for row in observations(events)), process, log)
                     count = len(observations(events))
@@ -109,7 +109,7 @@ class LaunchSyncTests(unittest.IsolatedAsyncioTestCase):
             try:
                 _, stderr = await asyncio.wait_for(process.communicate(), 90)
                 self.assertEqual(process.returncode, 0, stderr.decode())
-                self.assertEqual(len(list(directory.rglob("*.json"))), 4)
-                self.assertIn("watching 4 parameters", stderr.decode())
+                self.assertEqual(len(list(directory.rglob("*.json"))), 5)
+                self.assertIn("watching 5 parameters", stderr.decode())
             finally:
                 await self.stop(process)

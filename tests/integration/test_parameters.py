@@ -62,6 +62,36 @@ class SharedSettingsTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(profile=profile):
                 await self.exercise(profile)
 
+    async def check_observer_settings(self, endpoint, environment, directory, log_path, processes):
+        path = "observer/display"
+        get = ["-m", "ose.cli", "parameter", "get", path, "--client", "operator", *endpoint]
+        def settings(label, machine_ids, include_time_ns=True, include_sequence=True, *, output_present=True):
+            return {"label": label, "machine_ids": machine_ids, "output": {"format": {
+                "include_time_ns": include_time_ns, "include_sequence": include_sequence}} if output_present else None}
+        initial = settings(None, [1, 2])
+        self.assertEqual(json.loads((await self.invoke(get, environment)).stdout), initial)
+        file = directory / "observer.json"
+        for value in (settings("Inspection", [1], False, False),
+                      settings("Default format", [2], output_present=False),
+                      settings(None, [], False, True),
+                      settings("", [1, 2], True, False), initial):
+            file.write_text(json.dumps(value))
+            count = len(observations(log_path))
+            await self.invoke(["-m", "ose.cli", "parameter", "set", path, "--file", file,
+                               "--client", "operator", *endpoint], environment)
+            self.assertEqual(json.loads((await self.invoke(get, environment)).stdout), value)
+            def updated():
+                return [row for row in observations(log_path)[count:]
+                        if ("label" not in row if value["label"] is None else row.get("label") == value["label"])]
+            expected = set(value["machine_ids"]) or {1, 2}
+            await self.until(lambda: {row["machine_id"] for row in updated()} == expected, processes)
+            self.assertTrue(all(row["machine_id"] in expected for row in updated()))
+            output_format = value["output"]["format"] if value["output"] is not None else {
+                "include_time_ns": True, "include_sequence": True}
+            for row in updated():
+                self.assertEqual("time_ns" in row, output_format["include_time_ns"])
+                self.assertEqual("sequence" in row, output_format["include_sequence"])
+
     async def exercise(self, profile):
         environment = dict(os.environ, SDL_ROOT=str(FRAMEWORK / "sdl"),
                            PYTHONPATH=str(FRAMEWORK / "ose/src"),
@@ -100,6 +130,7 @@ class SharedSettingsTests(unittest.IsolatedAsyncioTestCase):
                     endpoint = ["--host", address["host"], "--port", address["port"], "--plan", plan_path]
                     if profile == "cluster":
                         endpoint += ["--distributed", "--insecure"]
+                    await self.check_observer_settings(endpoint, environment, directory, log_path, processes)
                     path = "machines/1/detection"
                     get = ["-m", "ose.cli", "parameter", "get", path, "--client", "operator", *endpoint]
                     self.assertEqual(json.loads((await self.invoke(get, environment)).stdout), {"rms_threshold": 1.0})
@@ -110,7 +141,7 @@ class SharedSettingsTests(unittest.IsolatedAsyncioTestCase):
                             shell_environment.pop('OSE_PARAMETER_TOKEN', None)
                         saved = await self.parameters_shell('get', endpoint, shell_environment)
                         self.assertEqual(set(saved), {f'machines/{n}/{block}' for n in (1, 2)
-                                                      for block in ('sensor', 'detection')})
+                                                      for block in ('sensor', 'detection')} | {'observer/display'})
                         self.assertEqual(await self.parameters_shell('get', ['^machines/1/', *endpoint], shell_environment),
                                          {key: value for key, value in saved.items() if key.startswith('machines/1/')})
                         self.assertEqual(await self.parameters_shell('get', ['--exact', path, *endpoint], shell_environment),
@@ -140,6 +171,7 @@ class SharedSettingsTests(unittest.IsolatedAsyncioTestCase):
                         for machine in (1, 2):
                             (settings_tree / 'motors' / f'motor-{machine}.json').write_text(json.dumps(
                                 {key: value for key, value in saved.items() if key.startswith(f'machines/{machine}/')}))
+                        (settings_tree / 'observer.json').write_text(json.dumps({'observer/display': saved['observer/display']}))
                         restored = await self.parameters_shell('set', ['--dir', settings_tree, *endpoint], shell_environment)
                         self.assertEqual(set(restored['updated']), set(saved))
                         self.assertEqual(await self.parameters_shell('get', endpoint, shell_environment), saved)

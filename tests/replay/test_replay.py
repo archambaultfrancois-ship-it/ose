@@ -88,7 +88,7 @@ class ReplayApplicationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(summary["replay"]["message_count"], len(keys))
                 plan = json.loads((ROOT / "build/replay/plan.json").read_text())
                 self.assertEqual(set(plan["components"]), {"analyzer_1", "analyzer_2", "alarm", "observer"})
-                self.assertEqual(set(plan["shared_parameters"]), {"machines/1/detection", "machines/2/detection"})
+                self.assertEqual(set(plan["shared_parameters"]), {"machines/1/detection", "machines/2/detection", "observer/display"})
                 trace = (ROOT / "build/replay/trace.jsonl").read_bytes()
                 if reference is None:
                     reference = trace

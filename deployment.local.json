@@ -41,12 +41,14 @@
   "parameter_clients": {
     "operator": {
       "read": [
+        "observer/display",
         "machines/1/detection",
         "machines/2/detection",
         "machines/1/sensor",
         "machines/2/sensor"
       ],
       "write": [
+        "observer/display",
         "machines/1/detection",
         "machines/2/detection",
         "machines/1/sensor",
