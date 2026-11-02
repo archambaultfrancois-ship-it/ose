@@ -1,5 +1,6 @@
 """Independent Recorder instances with durable ownership and protected artifacts."""
 import asyncio
+import errno
 import os
 from pathlib import Path
 import re
@@ -8,6 +9,7 @@ import stat
 import sys
 import time
 import uuid
+import weakref
 from ose.recording.recorder import Recorder
 from ose.recording.selection import resolve
 from ose_ws.schema.adapter import SchemaAdapter
@@ -15,12 +17,14 @@ from ose_ws.util import APIError, loads, opaque, require, utc
 
 
 ACTIVE = ("STARTING", "RECORDING", "STOPPING")
+DELETABLE = ("DRAFT", "STOPPED", "FAILED", "INTERRUPTED")
 
 
 class RecordingManager:
     def __init__(self, config, connection, store):
         self.config, self.connection, self.store = config, connection, store
-        self.objects, self.recorders, self.locks = {}, {}, {}
+        self.objects, self.recorders = {}, {}
+        self.locks = weakref.WeakValueDictionary()
         self.points, self.point_ids = {}, {}
         self.discovery = None
         self.discovery_lock = asyncio.Lock()
@@ -88,9 +92,11 @@ class RecordingManager:
         require(capture is not None and self.allowed(session, capture, permission), "Capture not found or not authorized.", 404)
         return capture
 
-    def public(self, capture):
+    def public(self, capture, session=None):
         result = dict(capture)
         result["status"] = {k: v for k, v in capture.get("status", {}).items() if k not in ("file", "base_file")}
+        if session is not None:
+            result["permissions"] = {"delete": self.allowed(session, capture, "recordings.delete")}
         return result
 
     def settings(self, body):
@@ -133,7 +139,7 @@ class RecordingManager:
 
     async def create(self, session, body):
         require(sum(c["state"] == "DRAFT" for c in self.objects.values()) < self.config["limits"]["max_drafts"], "Draft quota reached.", 429)
-        require(len(self.objects) < 10000, "Capture metadata quota reached; archive the state directory before creating more captures.", 429)
+        require(len(self.objects) < 10000, "Capture metadata quota reached; delete unused drafts or finished captures.", 429)
         settings = self.settings(body)
         selection = await self.selection(session, body)
         capture = {"id": uuid.uuid4().hex, "owner": session.actor, "state": "DRAFT", "revision": 1,
@@ -161,6 +167,51 @@ class RecordingManager:
             await self.store.save_capture(capture)
         except APIError:
             capture["storage_warning"] = "Capture state could not be persisted. Stop remains available."
+
+    def delete_files(self, identity):
+        parent = os.open(self.store.root / "captures", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        directory = None
+        try:
+            try:
+                directory = os.open(identity, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            except FileNotFoundError:
+                return
+            except OSError as error:
+                if error.errno in (errno.ELOOP, errno.ENOTDIR):
+                    raise APIError(409, "CAPTURE_FILES_CHANGED", "The capture directory was replaced; files were kept.") from None
+                raise
+            names = os.listdir(directory)
+            # Check every entry before unlinking anything. Never traverse directories
+            # or links, and preserve files not created by the capture writer.
+            for name in names:
+                info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                require(stat.S_ISREG(info.st_mode) and re.fullmatch(r"capture(?:_[0-9]{3,})?\.(?:pcapng|mcap)", name),
+                        "The capture directory contains unexpected entries; files were kept. Remove the capture while keeping files or inspect its directory.",
+                        409, "CAPTURE_FILES_CHANGED")
+            for name in names:
+                os.unlink(name, dir_fd=directory)
+            os.rmdir(identity, dir_fd=parent)
+        finally:
+            if directory is not None:
+                os.close(directory)
+            os.close(parent)
+
+    async def delete(self, session, identity, delete_files):
+        async with self.locks.setdefault(identity, asyncio.Lock()):
+            capture = self.get(session, identity, "recordings.delete")
+            require(capture["state"] in DELETABLE and identity not in self.recorders,
+                    "Stop and finalize the capture before deleting it.", 409, "CAPTURE_ACTIVE")
+            def remove():
+                if delete_files:
+                    self.delete_files(identity)
+                with self.store.db:
+                    self.store.db.execute("DELETE FROM files WHERE capture=?", (identity,))
+                    self.store.db.execute("DELETE FROM captures WHERE id=?", (identity,))
+            await self.store.call(remove)
+            self.objects.pop(identity)
+            self.event += 1
+            return {"recording_id": identity, "deleted": True, "files_deleted": delete_files,
+                    "retained_directory": None if delete_files else f"captures/{identity}/"}
 
     async def start(self, session, identity):
         async with self.locks.setdefault(identity, asyncio.Lock()):
@@ -235,10 +286,13 @@ class RecordingManager:
             try:
                 free = await asyncio.to_thread(lambda: shutil.disk_usage(self.store.root).free)
                 for identity, recorder in list(self.recorders.items()):
-                    if free < self.config["recording"]["min_free_disk_mib"] * 1024**2 and recorder.capture and not recorder.capture.task.done():
-                        self.objects[identity]["error"] = "Capture stopped because free disk space reached the configured threshold."
-                        await asyncio.wait_for(recorder.stop(), self.config["limits"]["shutdown_s"])
-                    await self.sync(identity, recorder)
+                    async with self.locks.setdefault(identity, asyncio.Lock()):
+                        if self.recorders.get(identity) is not recorder:
+                            continue
+                        if free < self.config["recording"]["min_free_disk_mib"] * 1024**2 and recorder.capture and not recorder.capture.task.done():
+                            self.objects[identity]["error"] = "Capture stopped because free disk space reached the configured threshold."
+                            await asyncio.wait_for(recorder.stop(), self.config["limits"]["shutdown_s"])
+                        await self.sync(identity, recorder)
             except asyncio.CancelledError:
                 raise
             except Exception as error:
@@ -252,6 +306,10 @@ class RecordingManager:
             os.close(captures)
 
     async def files(self, session, identity):
+        async with self.locks.setdefault(identity, asyncio.Lock()):
+            return await self._files(session, identity)
+
+    async def _files(self, session, identity):
         capture = self.get(session, identity, "recordings.read")
         require(capture["state"] not in ACTIVE + ("DRAFT",), "Files become available after the capture ends.", 409)
         def discover():

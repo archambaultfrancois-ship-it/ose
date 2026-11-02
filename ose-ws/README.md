@@ -91,7 +91,15 @@ OSE wins, including concurrent writes from another browser, a component or CLI.
 There is no CAS, lock, revision, automatic merge or `If-Match`. An acknowledgement
 means stored by OSE; it does not mean every component has consumed the value.
 External changes preserve a browser draft and update its separate remote value.
-Drafts stay in browser memory when navigating; reload/closing can discard them.
+The active section is kept in the URL fragment (for example, `#parameters`), so
+reloading or returning to a browser tab restores that section. Drafts stay in
+browser memory when navigating; reload/closing can discard them.
+
+Failed validation marks the affected field in red with an inline message and
+moves focus to it. Nested branches expand and long sequences show the page
+containing the invalid element. **Go to field** returns to that location.
+The marker clears when that value is edited; validate again before applying.
+Failures without a field location stay visible beside the editor's action buttons.
 
 ## Configuration and network access
 
@@ -143,8 +151,13 @@ Offline integrity checks use one short-lived read-only worker at a time, with
 a configured deadline; the main process retains exclusive ownership of state.
 Only closed files can be downloaded. File descriptors are opened without
 following symbolic links and checked against recorded device/inode identities.
-There is no manual capture-deletion API. Archive an inactive state directory
-outside the console when necessary; do not modify active capture files.
+Use **Delete** on a draft or a finished capture to remove it from the list.
+The confirmation keeps files on disk by default; select **Delete files permanently**
+to remove them too. Retained files stay under `captures/<id>/` in the state
+directory and are no longer accessible through the console. Active captures
+must be stopped and finalized first. Only an administrator or the capture owner
+with `recordings.delete` permission can delete it. Operation and audit history
+are retained. Do not modify active capture files outside the console.
 
 ## Build and verify
 
@@ -170,7 +183,8 @@ Backend tests use real OSE brokers, parameter RPCs, tap sessions and recordings;
 WebSocket tests run the HTTP server on an ephemeral loopback port. They also
 cover uncertain operations, duplicate dispatch, emergency stops, quotas, exact
 integer/quantized values and file replacement. Frontend tests cover exact value
-conversion and structural editing. CI builds both wheel and sdist and verifies
+conversion, structural editing, page isolation and confirmed capture deletion.
+CI builds both wheel and sdist and verifies
 that the wheel includes its offline frontend.
 The installed-wheel check runs outside the checkout and verifies initialization,
 embedded assets, authentication, startup without OSE, exclusive state ownership,

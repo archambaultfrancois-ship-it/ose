@@ -51,7 +51,7 @@ export async function command(path: string, method = 'POST', data: any = {}): Pr
     }
     if (operation.status === 'pending') return { pending: true, operation_id: operation.id }
     unresolvedCommands.delete(signature)
-    if (operation.status === 'failed') throw new RequestError(operation.result?.error || 'The operation failed.', operation.result?.code || 'OPERATION_FAILED')
+    if (operation.status === 'failed') throw new RequestError(operation.result?.error || 'The operation failed.', operation.result?.code || 'OPERATION_FAILED', operation.result?.details)
     return operation.result
   } catch (error) {
     if (error instanceof RequestError) throw error

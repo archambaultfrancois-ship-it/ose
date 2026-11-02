@@ -300,7 +300,7 @@ def create_app(config):
     @app.get("/api/v1/recordings")
     async def list_recordings(request: Request, cursor: str = None, limit: int = 200):
         signed_in = session(request)
-        visible = [recordings.public(capture) for capture in recordings.objects.values()
+        visible = [recordings.public(capture, signed_in) for capture in recordings.objects.values()
                    if recordings.allowed(signed_in, capture, "recordings.read")]
         identities = page(sorted(c["id"] for c in visible), cursor, limit)
         return public({"items": [c for c in visible if c["id"] in identities["items"]], "next": identities["next"]})
@@ -313,7 +313,22 @@ def create_app(config):
 
     @app.get("/api/v1/recordings/{identity}")
     async def get_recording(request: Request, identity: str):
-        return public(recordings.public(recordings.get(session(request), identity)))
+        signed_in = session(request)
+        return public(recordings.public(recordings.get(signed_in, identity), signed_in))
+
+    @app.delete("/api/v1/recordings/{identity}")
+    async def delete_recording(request: Request, identity: str):
+        signed_in, data = session(request, mutation=True), await body(request)
+        require(set(data) == {"delete_files"} and type(data["delete_files"]) is bool,
+                "Choose whether to delete capture files with a boolean delete_files field.")
+        exists = identity in recordings.objects
+        if exists:
+            recordings.get(signed_in, identity, "recordings.delete")
+        else:
+            signed_in.check("recordings.delete", identity)
+        return public(await operations.run(signed_in, f"recordings/{identity}/delete", key(request), data,
+                                           lambda: recordings.delete(signed_in, identity, data["delete_files"]),
+                                           replay_only=not exists))
 
     @app.patch("/api/v1/recordings/{identity}")
     async def patch_recording(request: Request, identity: str):

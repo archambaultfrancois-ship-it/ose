@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { defaultValue, inputValue, presentationAt } from '../fields.mjs'
 const props = withDefaults(defineProps<{
   schema: any; type: string; modelValue: any; label: string; dimensions?: number[];
-  cardinality?: string; readonly?: boolean; pointer?: string; depth?: number
-}>(), { dimensions: () => [], cardinality: 'required', readonly: false, pointer: '', depth: 0 })
+  cardinality?: string; readonly?: boolean; pointer?: string; depth?: number;
+  validation?: { pointer: string; message: string } | null
+}>(), { dimensions: () => [], cardinality: 'required', readonly: false, pointer: '', depth: 0, validation: null })
 const emit = defineEmits<{ 'update:modelValue': [value: any] }>()
 const offset = ref(0)
 const fieldError = ref('')
@@ -15,6 +16,24 @@ const childrenDimensions = computed(() => sequence.value ? props.dimensions : pr
 const values = computed<any[]>(() => Array.isArray(props.modelValue) ? props.modelValue : [])
 const visible = computed(() => values.value.slice(offset.value, offset.value + 40))
 const metadata = computed<any>(() => presentationAt(props.schema, props.pointer))
+const errorId = useId()
+const complex = computed(() => ['c32', 'c64'].includes(props.type))
+const scalar = computed(() => !array.value && shape.value?.kind !== 'message')
+const exactError = computed(() => props.validation?.pointer === props.pointer)
+const containsError = computed(() => props.validation != null && (exactError.value || props.validation.pointer.startsWith(props.pointer + '/')))
+const invalidMessage = computed(() => fieldError.value || (exactError.value || complex.value && containsError.value ? props.validation?.message : '') || '')
+function controlAttributes(part?: string) {
+  const pointer = part ? `${props.pointer}/${part}` : props.pointer
+  const invalid = !!fieldError.value || props.validation?.pointer === pointer || part && exactError.value
+  return { 'aria-invalid': invalid ? true : undefined, 'aria-describedby': invalid ? errorId : undefined }
+}
+watch(() => props.validation, validation => {
+  if (validation && array.value && validation.pointer.startsWith(props.pointer + '/')) {
+    const index = validation.pointer.slice(props.pointer.length + 1).split('/')[0]
+    if (/^\d+$/.test(index) && Number(index) < values.value.length) offset.value = Math.floor(Number(index) / 40) * 40
+  }
+}, { immediate: true })
+watch(() => props.modelValue, () => { fieldError.value = '' }, { deep: true })
 function updateChild(key: string | number, value: any) {
   const result = array.value ? [...values.value] : { ...props.modelValue }
   result[key] = value
@@ -41,39 +60,39 @@ function move(index: number) {
 </script>
 
 <template>
-  <div class="schema-field" :class="{ nested: depth > 0 }">
+  <div class="schema-field" :data-pointer="pointer" :class="{ nested: depth > 0, scalar, invalid: !!invalidMessage }">
     <div class="field-label">
       <strong>{{ metadata.label || label }}</strong><code>{{ type }}{{ dimensions.map(n => `[${n}]`).join('') }}</code>
       <span v-if="metadata.unit" class="muted">{{ metadata.unit }}</span>
-      <label v-if="cardinality === 'optional'" class="inline"><input type="checkbox" :checked="modelValue != null" :disabled="readonly" @change="present" /> Present</label>
+      <label v-if="cardinality === 'optional'" class="inline"><input type="checkbox" data-optional-presence :checked="modelValue != null" :disabled="readonly" :aria-label="`${label} present`" v-bind="controlAttributes()" @change="present" /> Present</label>
     </div>
     <p v-if="metadata.help" class="muted small">{{ metadata.help }}</p>
-    <p v-if="fieldError" class="notice error" role="alert">{{ fieldError }}</p>
+    <p v-if="invalidMessage" :id="errorId" class="field-error"><strong>Error:</strong> {{ invalidMessage }}</p>
     <span v-if="cardinality === 'optional' && modelValue == null" class="muted">Absent</span>
     <span v-else-if="depth >= 48" class="muted">Nesting limit reached. Use a bounded import for deeper structures.</span>
-    <details v-else-if="array" :open="depth < 2">
+    <details v-else-if="array" :open="depth < 2 || containsError">
       <summary>{{ values.length }} elements{{ sequence ? ' · editable sequence' : ' · fixed dimensions' }}</summary>
       <div v-for="(item, i) in visible" :key="i + offset" class="array-item">
-        <SchemaField :schema="schema" :type="type" :model-value="item" :label="`[${i + offset}]`" :dimensions="childrenDimensions" :readonly="readonly" :pointer="`${pointer}/${i + offset}`" :depth="depth + 1" @update:model-value="updateChild(i + offset, $event)" />
+        <SchemaField :schema="schema" :type="type" :model-value="item" :label="`[${i + offset}]`" :dimensions="childrenDimensions" :readonly="readonly" :pointer="`${pointer}/${i + offset}`" :depth="depth + 1" :validation="validation" @update:model-value="updateChild(i + offset, $event)" />
         <div v-if="sequence && !readonly" class="actions compact"><button class="quiet" :disabled="i + offset === 0" @click="move(i + offset)">Move up</button><button class="quiet danger" @click="remove(i + offset)">Remove</button></div>
       </div>
       <div v-if="values.length > 40" class="actions compact"><button :disabled="offset === 0" @click="offset = Math.max(0, offset - 40)">Previous 40</button><span>{{ offset + 1 }}–{{ Math.min(offset + 40, values.length) }}</span><button :disabled="offset + 40 >= values.length" @click="offset += 40">Next 40</button></div>
       <button v-if="sequence && !readonly" class="quiet" @click="append">+ Add element</button>
     </details>
-    <details v-else-if="shape?.kind === 'message'" :open="depth < 2">
+    <details v-else-if="shape?.kind === 'message'" :open="depth < 2 || containsError">
       <summary>{{ shape.fields.length }} fields</summary>
-      <SchemaField v-for="field in shape.fields" :key="field.id" :schema="schema" :type="field.type" :model-value="modelValue?.[field.name]" :label="field.name" :dimensions="field.dimensions" :cardinality="field.cardinality" :readonly="readonly" :pointer="`${pointer}/${field.name.replaceAll('~', '~0').replaceAll('/', '~1')}`" :depth="depth + 1" @update:model-value="updateChild(field.name, $event)" />
+      <SchemaField v-for="field in shape.fields" :key="field.id" :schema="schema" :type="field.type" :model-value="modelValue?.[field.name]" :label="field.name" :dimensions="field.dimensions" :cardinality="field.cardinality" :readonly="readonly" :pointer="`${pointer}/${field.name.replaceAll('~', '~0').replaceAll('/', '~1')}`" :depth="depth + 1" :validation="validation" @update:model-value="updateChild(field.name, $event)" />
     </details>
-    <select v-else-if="shape?.kind === 'enum'" :value="modelValue" :disabled="readonly" :aria-label="label" @change="emit('update:modelValue', ($event.target as HTMLSelectElement).value)">
+    <select v-else-if="shape?.kind === 'enum'" :value="modelValue" :disabled="readonly" :aria-label="label" v-bind="controlAttributes()" @change="emit('update:modelValue', ($event.target as HTMLSelectElement).value)">
       <option v-for="item in shape.values" :key="item.name" :value="item.name">{{ item.name }} ({{ item.value }})</option>
     </select>
-    <label v-else-if="type === 'bool'" class="inline"><input type="checkbox" :checked="modelValue" :disabled="readonly" @change="emit('update:modelValue', ($event.target as HTMLInputElement).checked)" /> {{ modelValue ? 'True' : 'False' }}</label>
+    <label v-else-if="type === 'bool'" class="inline"><input type="checkbox" :checked="modelValue" :disabled="readonly" :aria-label="label" v-bind="controlAttributes()" @change="emit('update:modelValue', ($event.target as HTMLInputElement).checked)" /> {{ modelValue ? 'True' : 'False' }}</label>
     <div v-else-if="type === 'c32' || type === 'c64'" class="complex">
-      <label>Real<input :value="modelValue?.real" :readonly="readonly" inputmode="decimal" @input="updateChild('real', inputValue('fl64', ($event.target as HTMLInputElement).value))" /></label>
-      <label>Imaginary<input :value="modelValue?.imag" :readonly="readonly" inputmode="decimal" @input="updateChild('imag', inputValue('fl64', ($event.target as HTMLInputElement).value))" /></label>
+      <label>Real<input :value="modelValue?.real" :readonly="readonly" :data-pointer="`${pointer}/real`" v-bind="controlAttributes('real')" inputmode="decimal" @input="updateChild('real', inputValue('fl64', ($event.target as HTMLInputElement).value))" /></label>
+      <label>Imaginary<input :value="modelValue?.imag" :readonly="readonly" :data-pointer="`${pointer}/imag`" v-bind="controlAttributes('imag')" inputmode="decimal" @input="updateChild('imag', inputValue('fl64', ($event.target as HTMLInputElement).value))" /></label>
     </div>
-    <textarea v-else-if="type === 'string' && metadata.widget === 'textarea'" :value="modelValue" :readonly="readonly" :aria-label="label" @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)" />
-    <input v-else-if="['string', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'fl32', 'fl64'].includes(type)" :value="modelValue" :readonly="readonly" :aria-label="label" :inputmode="type === 'string' ? 'text' : type.startsWith('fl') ? 'decimal' : 'numeric'" :spellcheck="false" @input="emit('update:modelValue', inputValue(type, ($event.target as HTMLInputElement).value))" />
+    <textarea v-else-if="type === 'string' && metadata.widget === 'textarea'" :value="modelValue" :readonly="readonly" :aria-label="label" v-bind="controlAttributes()" @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)" />
+    <input v-else-if="['string', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'fl32', 'fl64'].includes(type)" :value="modelValue" :readonly="readonly" :aria-label="label" v-bind="controlAttributes()" :inputmode="type === 'string' ? 'text' : type.startsWith('fl') ? 'decimal' : 'numeric'" :spellcheck="false" @input="emit('update:modelValue', inputValue(type, ($event.target as HTMLInputElement).value))" />
     <span v-else class="warning">Unsupported type: {{ type }}. This field cannot be edited.</span>
   </div>
 </template>

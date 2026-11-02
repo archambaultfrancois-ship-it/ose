@@ -138,6 +138,19 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current["value"]["counter"], str(2**64 - 1))
         self.assertFalse(current["value"]["enabled"])
 
+    async def test_parameter_validation_identifies_the_exact_field_or_array_element(self):
+        block = await self.block()
+        initial = (await self.client.get(f"/api/v1/parameters/{block}")).json()
+        for field, value, pointer in (("counter", "-1", "/counter"),
+                                      ("label", 42, "/label"),
+                                      ("samples", ["1", "invalid"], "/samples/1")):
+            response = await self.request("POST", f"/parameters/{block}/validate", {
+                "value": dict(initial["value"], **{field: value}), "schema_digest": initial["schema_digest"]})
+            self.assertEqual(response.status_code, 422, response.text)
+            self.assertEqual(response.json()["error"]["details"]["pointer"], pointer)
+        current = (await self.client.get(f"/api/v1/parameters/{block}")).json()
+        self.assertEqual(current["value"], initial["value"])
+
     async def test_write_only_policy_cannot_read_or_export_but_can_validate_and_write(self):
         block = await self.block()
         session = self.app.state.auth.sessions[self.client.cookies.get("ose_ws_session")]
@@ -172,6 +185,168 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         csv = await self.client.get("/api/v1/series/export", params={"ids": identity})
         self.assertIn('observed_at,sequence,segment,measurement,value,quality', csv.text)
         self.assertIn('source.signal', csv.text)
+
+    async def create_capture(self, finished=False):
+        created = await self.wait_operation(await self.request("POST", "/recordings", {"selection": ["source.settings"]}))
+        self.assertEqual(created["status"], "complete", created)
+        identity = created["result"]["id"]
+        if finished:
+            start = await self.wait_operation(await self.request("POST", f"/recordings/{identity}/start"))
+            self.assertEqual(start["status"], "complete", start)
+            await self.broker.publish("source.settings", self.broker.codec.wrap(CATALOGUE, self.broker.parameters.service.values["machine/settings"]))
+            stop = await self.wait_operation(await self.request("POST", f"/recordings/{identity}/stop"))
+            self.assertEqual(stop["result"]["state"], "STOPPED", stop)
+        return identity
+
+    async def test_delete_finished_capture_keeps_files_and_replays_original_operation(self):
+        identity = await self.create_capture(finished=True)
+        artifact = (await self.client.get(f"/api/v1/recordings/{identity}/files")).json()["items"][0]
+        file = Path(self.config["state_dir"]) / "captures" / identity / artifact["name"]
+        original = file.read_bytes()
+        key = uuid.uuid4().hex
+        deleted = await self.wait_operation(await self.request("DELETE", f"/recordings/{identity}", {"delete_files": False}, key))
+        self.assertEqual(deleted["status"], "complete", deleted)
+        self.assertFalse(deleted["result"]["files_deleted"])
+        self.assertEqual(file.read_bytes(), original)
+        self.assertEqual((await self.client.get("/api/v1/recordings")).json()["items"], [])
+        self.assertEqual((await self.client.get(f"/api/v1/recordings/{identity}")).status_code, 404)
+        self.assertEqual((await self.client.get(f"/api/v1/files/{artifact['id']}/download")).status_code, 404)
+        repeated = await self.wait_operation(await self.request("DELETE", f"/recordings/{identity}", {"delete_files": False}, key))
+        self.assertEqual(repeated["id"], deleted["id"])
+        conflict = await self.request("DELETE", f"/recordings/{identity}", {"delete_files": True}, key)
+        self.assertEqual(conflict.status_code, 409)
+        unknown = await self.request("DELETE", f"/recordings/{identity}", {"delete_files": False})
+        self.assertEqual(unknown.status_code, 404)
+        self.assertEqual(await self.app.state.store.captures(), [])
+        audit = await self.app.state.store.audit()
+        self.assertTrue(any(row["target"] == f"recordings/{identity}/delete" and row["action"] == "result" for row in audit))
+
+    async def test_delete_finished_capture_removes_rotated_files_and_directory(self):
+        identity = await self.create_capture(finished=True)
+        directory = Path(self.config["state_dir"]) / "captures" / identity
+        (directory / "capture_001.pcapng").write_bytes((directory / "capture.pcapng").read_bytes())
+        operation = await self.wait_operation(await self.request("DELETE", f"/recordings/{identity}", {"delete_files": True}))
+        self.assertEqual(operation["status"], "complete", operation)
+        self.assertTrue(operation["result"]["files_deleted"])
+        self.assertFalse(directory.exists())
+
+    async def test_delete_rejects_active_captures_and_releases_draft_quota(self):
+        self.config["limits"]["max_drafts"] = 1
+        identity = await self.create_capture()
+        capture = self.app.state.recordings.objects[identity]
+        for state in ("STARTING", "RECORDING", "STOPPING"):
+            capture["state"] = state
+            operation = await self.wait_operation(await self.request("DELETE", f"/recordings/{identity}", {"delete_files": True}))
+            self.assertEqual(operation["status"], "failed", operation)
+            self.assertEqual(operation["result"]["code"], "CAPTURE_ACTIVE")
+            self.assertIn(identity, self.app.state.recordings.objects)
+        capture["state"] = "DRAFT"
+        operation = await self.wait_operation(await self.request("DELETE", f"/recordings/{identity}", {"delete_files": True}))
+        self.assertEqual(operation["status"], "complete", operation)
+        await self.create_capture()
+
+    async def test_delete_requires_owner_permission_and_an_explicit_boolean_choice(self):
+        identity = await self.create_capture()
+        path = f"/recordings/{identity}"
+        for data in ({}, {"delete_files": "false"}, {"delete_files": 1}, {"delete_files": False, "extra": True}):
+            self.assertEqual((await self.request("DELETE", path, data)).status_code, 422)
+        refused = await self.client.request("DELETE", "/api/v1" + path, json={"delete_files": False}, headers={"X-CSRF-Token": "wrong"})
+        self.assertEqual(refused.status_code, 403)
+        signed_in = next(iter(self.app.state.auth.sessions.values()))
+        with patch.object(signed_in, "permissions", {"recordings.read": ["*"]}):
+            listed = (await self.client.get("/api/v1/recordings")).json()["items"][0]
+            self.assertFalse(listed["permissions"]["delete"])
+            self.assertEqual((await self.request("DELETE", path, {"delete_files": False})).status_code, 404)
+        with patch.object(signed_in, "actor", "other-user"), patch.object(signed_in, "permissions", {
+                "recordings.read": [identity], "recordings.delete": [identity]}):
+            listed = (await self.client.get("/api/v1/recordings")).json()["items"][0]
+            self.assertFalse(listed["permissions"]["delete"])
+            self.assertEqual((await self.request("DELETE", path, {"delete_files": False})).status_code, 404)
+        with patch.object(signed_in, "permissions", {"recordings.delete": [identity]}):
+            operation = await self.wait_operation(await self.request("DELETE", path, {"delete_files": False}))
+            self.assertEqual(operation["status"], "complete", operation)
+
+    async def test_delete_preserves_unexpected_entries_and_symlink_targets(self):
+        identity = await self.create_capture()
+        directory = Path(self.config["state_dir"]) / "captures" / identity
+        directory.mkdir()
+        known = directory / "capture.pcapng"
+        known.write_bytes(b"capture-content")
+        outside = self.root / "outside.pcapng"
+        outside.write_bytes(b"outside-content")
+        for name in ("notes.txt", "capture_001.pcapng"):
+            entry = directory / name
+            entry.symlink_to(outside)
+            operation = await self.wait_operation(await self.request("DELETE", f"/recordings/{identity}", {"delete_files": True}))
+            self.assertEqual(operation["result"]["code"], "CAPTURE_FILES_CHANGED", operation)
+            self.assertEqual(known.read_bytes(), b"capture-content")
+            self.assertEqual(outside.read_bytes(), b"outside-content")
+            self.assertFalse(self.app.state.store.failed)
+            entry.unlink()
+        (directory / "notes.txt").write_bytes(b"keep-notes")
+        operation = await self.wait_operation(await self.request("DELETE", f"/recordings/{identity}", {"delete_files": True}))
+        self.assertEqual(operation["result"]["code"], "CAPTURE_FILES_CHANGED", operation)
+        self.assertEqual(known.read_bytes(), b"capture-content")
+        operation = await self.wait_operation(await self.request("DELETE", f"/recordings/{identity}", {"delete_files": False}))
+        self.assertEqual(operation["status"], "complete", operation)
+        self.assertEqual((directory / "notes.txt").read_bytes(), b"keep-notes")
+
+    async def test_delete_never_follows_a_replaced_capture_directory(self):
+        identity = await self.create_capture()
+        directory = Path(self.config["state_dir"]) / "captures" / identity
+        outside = self.root / "outside"
+        outside.mkdir()
+        file = outside / "capture.pcapng"
+        file.write_bytes(b"keep-outside")
+        directory.symlink_to(outside, target_is_directory=True)
+        operation = await self.wait_operation(await self.request("DELETE", f"/recordings/{identity}", {"delete_files": True}))
+        self.assertEqual(operation["result"]["code"], "CAPTURE_FILES_CHANGED", operation)
+        self.assertEqual(file.read_bytes(), b"keep-outside")
+        self.assertFalse(self.app.state.store.failed)
+
+    async def test_delete_failed_and_interrupted_captures_without_files(self):
+        for state in ("FAILED", "INTERRUPTED"):
+            identity = await self.create_capture()
+            capture = self.app.state.recordings.objects[identity]
+            capture["state"] = state
+            await self.app.state.store.save_capture(capture)
+            operation = await self.wait_operation(await self.request("DELETE", f"/recordings/{identity}", {"delete_files": True}))
+            self.assertEqual(operation["status"], "complete", operation)
+            self.assertNotIn(identity, self.app.state.recordings.objects)
+
+    async def test_delete_does_not_touch_files_without_a_durable_intention(self):
+        from ose_ws.util import APIError
+        identity = await self.create_capture(finished=True)
+        directory = Path(self.config["state_dir"]) / "captures" / identity
+        original = (directory / "capture.pcapng").read_bytes()
+        async def unavailable(*args):
+            raise APIError(503, "STORAGE_UNAVAILABLE", "Injected metadata failure")
+        with patch.object(self.app.state.store, "intention", unavailable):
+            response = await self.request("DELETE", f"/recordings/{identity}", {"delete_files": True})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual((directory / "capture.pcapng").read_bytes(), original)
+        self.assertIn(identity, self.app.state.recordings.objects)
+
+    async def test_delete_serializes_with_a_pending_start_without_recreating_the_capture(self):
+        identity = await self.create_capture()
+        manager = self.app.state.recordings
+        lock = manager.locks.setdefault(identity, asyncio.Lock())
+        await lock.acquire()
+        deletion = asyncio.create_task(self.request("DELETE", f"/recordings/{identity}", {"delete_files": True}))
+        starting = None
+        try:
+            await self.until(lambda: bool(self.app.state.operations.tasks))
+            await asyncio.sleep(.02)
+            starting = await self.request("POST", f"/recordings/{identity}/start")
+        finally:
+            lock.release()
+        deleted = await self.wait_operation(await deletion)
+        self.assertEqual(deleted["status"], "complete", deleted)
+        started = await self.wait_operation(starting)
+        self.assertEqual(started["status"], "failed", started)
+        self.assertNotIn(identity, manager.objects)
+        self.assertNotIn(identity, manager.recorders)
+        self.assertEqual(self.broker.recording.sessions, {})
 
     async def test_capture_original_messages_finalize_validate_and_protect_files(self):
         response = await self.request("POST", "/recordings", {"selection": ["source.settings"], "label": "Integration capture", "format": "pcapng"})

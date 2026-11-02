@@ -229,8 +229,13 @@ Files are exclusively created below state_dir/captures/recording_id. The browser
 uses opaque file IDs. Paths and symbolic links MUST NOT escape the owned capture
 directory. Rotation preserves foreign files. Only terminated, closed artifacts
 can be downloaded. Interrupted files advertise unknown integrity until validated.
-Cyclically removed files are expired, not available. Manual capture deletion and
-downloading a live file are outside this version.
+Cyclically removed files are expired, not available. Drafts and finished captures
+can be deleted with a choice to keep their files or permanently remove them.
+Deletion requires the owner's explicit delete permission or administrator access;
+active captures must be stopped first. Capture/file metadata is removed while
+audit and operation history is retained. Kept files remain on disk without web
+access. Deletion commands use the same durable idempotency rules as other
+mutations. Downloading a live file remains outside this version.
 
 Lost source, changed generation/catalogue or disk error terminates that capture,
 without stopping business components. Stop ceases admission, drains admitted
@@ -392,7 +397,7 @@ Effective rights are its intersection with configured technical OSE rights.
 Checks apply to commands, subscriptions, exports and downloads.
 
 Permission families: components.read, measurements.read, recordings.create,
-recordings.read/stop/download, parameters.read/write and audit.read; administrators
+recordings.read/stop/download/delete, parameters.read/write and audit.read; administrators
 can also reconcile uncertain operations. Parameter scopes are exact paths or an
 explicit all-path administrative selection. Capture ownership is separate from
 labels and the technical OSE identity.

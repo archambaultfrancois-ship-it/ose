@@ -11,9 +11,9 @@ class Operations:
         self.tasks = {}
         self.volatile = {}
 
-    async def run(self, session, target, key, body, effect, *, background=False, emergency_stop=False):
+    async def run(self, session, target, key, body, effect, *, background=False, emergency_stop=False, replay_only=False):
         try:
-            operation, created = await self.store.intention(session.actor, target, key, body)
+            operation, created = await self.store.intention(session.actor, target, key, body, not replay_only)
         except APIError as error:
             if not emergency_stop or error.code not in ("STORAGE_UNAVAILABLE", "OPERATION_QUOTA", "UNRESOLVED_OPERATION_QUOTA"):
                 raise

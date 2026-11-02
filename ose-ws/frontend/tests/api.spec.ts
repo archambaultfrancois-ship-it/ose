@@ -3,6 +3,14 @@ import { account, command } from '../src/api'
 
 afterEach(() => vi.unstubAllGlobals())
 describe('command recovery after a lost reply', () => {
+  it('retains a field pointer when a command fails validation', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ id: 'invalid', status: 'failed', result: {
+      error: 'Invalid value for SDL type uint32.', code: 'PARAMETER_INVALID', details: { pointer: '/machine_ids/1' },
+    } }), { status: 200 })))
+    await expect(command('/parameters/invalid', 'PUT', { value: { machine_ids: [-1] } })).rejects.toMatchObject({
+      code: 'PARAMETER_INVALID', details: { pointer: '/machine_ids/1' },
+    })
+  })
   it('does not retry automatically and reuses the key on an explicit unchanged retry', async () => {
     account.actor = 'transport-test'
     const keys: string[] = []

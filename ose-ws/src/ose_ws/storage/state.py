@@ -35,7 +35,16 @@ class StateStore:
         os.chmod(self.root, 0o700)
         fd = os.open(self.root / "server.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         self.lock = os.fdopen(fd, "r+")
-        fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            owner = self.lock.readline(32).strip()
+            process = f" (PID {owner})" if owner.isascii() and owner.isdecimal() else ""
+            raise APIError(409, "STATE_IN_USE", f"Another ose-ws process{process} is already using this state directory. Stop that console before starting another instance.") from None
+        self.lock.seek(0)
+        self.lock.truncate()
+        self.lock.write(f"{os.getpid()}\n")
+        self.lock.flush()
         database = self.root / "state.sqlite3"
         if database.is_symlink():
             raise OSError("Metadata database cannot be a symbolic link.")
@@ -77,12 +86,12 @@ class StateStore:
         self.db.execute("DELETE FROM audit WHERE id NOT IN (SELECT id FROM audit ORDER BY id DESC LIMIT ?)",
                         (limits["audit_events"],))
 
-    async def intention(self, actor, target, key, body):
+    async def intention(self, actor, target, key, body, create=True):
         if self.failed:
             raise APIError(503, "STORAGE_UNAVAILABLE", "Metadata storage failed; restart after restoring storage. Active captures can still be stopped.")
-        return await self.call(self._intention, actor, target, key, body)
+        return await self.call(self._intention, actor, target, key, body, create)
 
-    def _intention(self, actor, target, key, body):
+    def _intention(self, actor, target, key, body, create=True):
         if not isinstance(key, str) or not 8 <= len(key) <= 200:
             raise APIError(400, "IDEMPOTENCY_KEY_REQUIRED", "Provide an Idempotency-Key of 8 to 200 characters.")
         digest = hashlib.sha256(dumps(body).encode()).hexdigest()
@@ -92,6 +101,8 @@ class StateStore:
             if existing["body_hash"] != digest:
                 raise APIError(409, "IDEMPOTENCY_CONFLICT", "This key was already used with a different request.")
             return self.operation_row(existing), False
+        if not create:
+            raise APIError(404, "NOT_FOUND", "Capture or previous deletion operation not found.")
         now = time.time()
         with self.db:
             self.db.execute("DELETE FROM operations WHERE expires IS NOT NULL AND expires < ?", (now,))

@@ -14,6 +14,7 @@ from ose_ws.config import read
 from ose_ws.schema.adapter import SchemaAdapter
 from ose_ws.services.measurements import MeasurementStore
 from ose_ws.services.operations import Operations
+from ose_ws.services.recordings import RecordingManager
 from ose_ws.storage.state import StateStore
 from ose_ws.util import APIError, loads
 
@@ -199,10 +200,37 @@ class StorageTests(unittest.IsolatedAsyncioTestCase):
     async def test_second_owner_is_refused(self):
         second = StateStore(self.config)
         try:
-            with self.assertRaises(APIError):
+            with self.assertRaises(APIError) as refused:
                 await second.open()
+            self.assertEqual(refused.exception.code, "STATE_IN_USE")
+            self.assertIn(f"PID {os.getpid()}", refused.exception.message)
+            self.assertFalse(second.failed)
         finally:
             await second.close()
+
+    async def test_legacy_empty_lock_reports_another_console_and_stale_pid_does_not_block(self):
+        # Existing versions left an empty lock file. OS ownership, not its text,
+        # determines whether the next server may start.
+        await self.store.call(lambda: (self.store.lock.seek(0), self.store.lock.truncate(), self.store.lock.flush()))
+        second = StateStore(self.config)
+        try:
+            with self.assertRaises(APIError) as refused:
+                await second.open()
+            self.assertEqual(refused.exception.code, "STATE_IN_USE")
+            self.assertIn("Another ose-ws process", refused.exception.message)
+        finally:
+            await second.close()
+        config = copy.deepcopy(self.config)
+        root = Path(self.temp.name) / "unused-state"
+        root.mkdir()
+        (root / "server.lock").write_text("99999999\n")
+        config["state_dir"] = str(root)
+        replacement = StateStore(config)
+        try:
+            await replacement.open()
+            self.assertEqual((root / "server.lock").read_text(), f"{os.getpid()}\n")
+        finally:
+            await replacement.close()
 
     async def test_emergency_stop_survives_storage_failure(self):
         async def unavailable(*args):
@@ -236,6 +264,34 @@ class StorageTests(unittest.IsolatedAsyncioTestCase):
             repeated, created = await recovered.intention("operator", "parameters/block", "recovery-key", {"value": 1})
             self.assertFalse(created)
             self.assertEqual(repeated["id"], intent["id"])
+        finally:
+            await recovered.close()
+
+    async def test_deleted_capture_stays_deleted_and_operation_replays_after_restart(self):
+        config = copy.deepcopy(self.config)
+        config["state_dir"] = str(Path(self.temp.name) / "deleted-state")
+        first = StateStore(config)
+        await first.open()
+        try:
+            capture = {"id": "discarded", "owner": self.session.actor, "revision": 1, "state": "DRAFT", "settings": {}}
+            await first.save_capture(capture)
+            recordings = RecordingManager(config, None, first)
+            recordings.objects[capture["id"]] = capture
+            target, body = "recordings/discarded/delete", {"delete_files": False}
+            operation = await Operations(first).run(self.session, target, "delete-once", body,
+                                                    lambda: recordings.delete(self.session, "discarded", False))
+            self.assertEqual(operation["status"], "complete")
+        finally:
+            await first.close()
+        recovered = StateStore(config)
+        await recovered.open()
+        try:
+            self.assertEqual(await recovered.captures(), [])
+            async def forbidden():
+                self.fail("A completed deletion must never execute again.")
+            repeated = await Operations(recovered).run(self.session, target, "delete-once", body, forbidden, replay_only=True)
+            self.assertEqual(repeated["id"], operation["id"])
+            self.assertEqual(repeated["status"], "complete")
         finally:
             await recovered.close()
 

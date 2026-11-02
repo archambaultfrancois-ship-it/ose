@@ -33,7 +33,7 @@ is Unix milliseconds and `sequence` is a decimal observation-order string.
 | Measures | `GET /measurements`, `POST /measurement-watches`, `DELETE /measurement-watches/{id}`. |
 | History | `GET /series?ids=...&start=...&end=...&max_points=...`, `GET /series/export?ids=...`. |
 | Capture discovery | `GET /recording-points`, `POST /recording-points/refresh`, `GET /recording-points/{id}/schema`, `POST /recording-filters/validate`. |
-| Captures | `GET/POST /recordings`, `GET/PATCH /recordings/{id}`, `POST /recordings/{id}/start`, `POST /recordings/{id}/stop`. |
+| Captures | `GET/POST /recordings`, `GET/PATCH/DELETE /recordings/{id}`, `POST /recordings/{id}/start`, `POST /recordings/{id}/stop`. |
 | Artifacts | `GET /recordings/{id}/files`, `GET /files/{id}/download`, `POST /files/{id}/validate`. |
 | Parameters | `GET /parameters`, `GET /parameters/{id}`, `GET /parameters/{id}/schema`, `POST /parameters/{id}/validate`, `PUT /parameters/{id}`. |
 | Parameter files | `POST /parameter-imports/preview`, `POST /parameter-imports/{id}/apply`, `POST /parameter-exports`. |
@@ -55,6 +55,26 @@ mapped by exact topic, `label`, `format`, `capacity`, `byte_budget`, `max_size`
 and `cycle`. Creation returns a durable operation whose result is a DRAFT with
 its concrete selection. PATCH replaces the draft configuration and requires
 its current local `revision`. Start and stop return asynchronous operations.
+
+`DELETE /recordings/{id}` requires an explicit `{"delete_files":false}` to keep
+files or `{"delete_files":true}` to remove them. It returns a durable operation.
+Only `DRAFT`, `STOPPED`, `FAILED` and `INTERRUPTED` captures can be deleted;
+an active capture returns `CAPTURE_ACTIVE` in the failed operation. List/detail
+responses include `permissions.delete` for the current user. Deletion requires
+the owner with `recordings.delete` access or an administrator; sharing read or
+stop access never shares deletion rights.
+
+Deletion removes capture and file metadata, while preserving operations and
+audit entries. Kept files remain under the returned `retained_directory`,
+relative to the state directory, with no remaining web access. File deletion
+never follows symbolic links or removes unexpected directory entries. Such
+entries produce `CAPTURE_FILES_CHANGED` and leave the capture listed. Disk
+and SQLite updates cannot form one transaction: a storage failure may leave
+missing files with the capture still listed. Inspect the state before retrying.
+The same actor/key/body retrieves the original deletion operation even after
+the capture disappears or the console restarts, within the key retention period.
+A different body with that key is rejected; a new key for a missing capture
+returns HTTP 404. Downloads already holding an open file descriptor may finish.
 
 Commands with effects require an `Idempotency-Key` of 8–200 characters. Persist
 the key when implementing an external client. Reuse it only for a retry of

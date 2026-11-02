@@ -94,6 +94,7 @@ An example policy fragment, merged with the defaults:
           "recordings.read": ["*"],
           "recordings.stop": ["*"],
           "recordings.download": ["*"],
+          "recordings.delete": ["*"],
           "parameters.read": ["machine/settings"],
           "parameters.write": ["machine/settings"]
         }
@@ -122,6 +123,11 @@ ID can explicitly share that operation with another user; `*` does not share
 other users' captures. Administrators can access all captures. Effective OSE rights are always checked
 by OSE in addition to web policy. All web users use the configured technical OSE
 client identity; the audit retains their separate web identities.
+
+Deletion requires `recordings.delete` scoped to a capture ID or `*` for the
+owner's captures. It cannot be delegated to another owner; administrators may
+delete any inactive capture. Granting read or stop access does not grant delete
+access. Local-token administrators already have this permission.
 
 An API client with only parameter write permission can inspect its contract and
 validate a supplied value, but cannot read/export the current value or use the
@@ -177,11 +183,18 @@ queue budgets per service, shared with other recorders. Default source queue:
 256 messages / 8 MiB per endpoint. A source refusal remains possible even when
 local quotas permit a capture.
 
-Finished capture metadata is capped at 10,000 objects. There is no deletion
-API; archive an inactive state directory to start with a new metadata store.
+Capture metadata is capped at 10,000 objects. Delete unused drafts and finished
+captures to release their metadata quotas. Keeping files when deleting a capture
+does not release disk space; those files require separate offline management.
 The free-disk threshold blocks new captures and attempts to drain active ones.
 ENOSPC may still occur before the periodic check.
 
 Exit codes: `0` normal exit/check, `2` invalid configuration, `3` initialization
 failure (including state lock, port and local storage). Transient OSE absence
 does not fail startup.
+
+`STATE_IN_USE` at startup means another console still owns the state directory;
+the message includes its PID when available. Stop that console with Ctrl+C or
+SIGTERM before restarting. A leftover `server.lock` file or old PID alone does
+not block startup: the operating system releases the lock when its owner exits.
+Do not delete the lock file to bypass an active server's ownership.
