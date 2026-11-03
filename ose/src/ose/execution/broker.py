@@ -460,8 +460,14 @@ class Broker(Sessions):
                 except asyncio.TimeoutError:
                     return identity, "full"
         matching = [(identity, sub) for identity, sub in self.subscriptions.items() if sub["from"] == topic]
-        for identity, result in await asyncio.gather(*(admit(*pair) for pair in matching)):
+        if len(matching) == 1:
+            identity, result = await admit(*matching[0])
             results[identity] = result
+            # Keep delivery and ACK tasks running when admission completes inline.
+            await asyncio.sleep(0)
+        else:
+            for identity, result in await asyncio.gather(*(admit(*pair) for pair in matching)):
+                results[identity] = result
         return {"delivery": results, "sequence": record["sequence"], "publication_id": record["id"], "epoch": self.epoch}
 
     def _header(self, identity, record):

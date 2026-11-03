@@ -79,6 +79,56 @@ class BrokerTests(unittest.IsolatedAsyncioTestCase):
         _, text = await client.request("catalogue", catalogue_id=self.codec.identity(CATALOGUE))
         self.assertEqual(text.decode(), CATALOGUE)
 
+    async def test_single_subscriber_publications_leave_delivery_running(self):
+        await self.start(Policy(capacity=1))
+        records = []
+
+        async def receive(header, body, address):
+            records.append(body)
+
+        await self.consumer(receive)
+        accepted = []
+        for number in range(20):
+            result = await self.broker.publish("source.output", self.envelope(number))
+            status = result["delivery"]["link"]
+            self.assertIn(status, ("accepted", "full"))
+            if status == "accepted":
+                accepted.append(number)
+            self.assertLessEqual(self.broker.engines["link"].store.size(), 1)
+        # A one-slot reject queue can refuse a burst, but delivery must make
+        # progress during the burst and retain every accepted item in order.
+        self.assertGreater(len(accepted), 1)
+        await eventually(lambda: len(records) == len(accepted))
+        self.assertEqual([self.codec.validate(CATALOGUE, "Measurement", body).fields["sequence"]
+                          for body in records], accepted)
+
+    async def test_single_subscriber_wait_can_be_cancelled_and_delivery_resumed(self):
+        await self.start(Policy(capacity=1, overflow="wait", wait_timeout_ms=5000))
+        await self.broker.publish("source.output", self.envelope(1))
+        waiting = asyncio.create_task(self.broker.publish("source.output", self.envelope(2)))
+        try:
+            await eventually(lambda: self.broker.engines["link"].buffer.metrics["refused"] > 0)
+            self.assertFalse(waiting.done())
+            waiting.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await asyncio.wait_for(waiting, 1)
+        finally:
+            waiting.cancel()
+            await asyncio.gather(waiting, return_exceptions=True)
+        self.assertEqual(self.broker.engines["link"].store.size(), 1)
+        records = []
+
+        async def receive(header, body, address):
+            records.append(body)
+
+        await self.consumer(receive)
+        await eventually(lambda: self.broker.engines["link"].store.size() == 0)
+        result = await self.broker.publish("source.output", self.envelope(3))
+        self.assertEqual(result["delivery"], {"link": "accepted"})
+        await eventually(lambda: len(records) == 2)
+        self.assertEqual([self.codec.validate(CATALOGUE, "Measurement", body).fields["sequence"]
+                          for body in records], [1, 3])
+
     async def test_udp_lost_data_and_lost_ack_deduplicate(self):
         policy = Policy.resolve({"ack": "received", "retry": {"ack_timeout_ms": 20}}, "udp")
         await self.start(policy)
