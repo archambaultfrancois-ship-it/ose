@@ -1,7 +1,7 @@
 """Generate Python wrappers without overwriting user callback implementations."""
 from pathlib import Path
 import shutil
-import sys
+from ose.modeling.python_stdlib import STDLIB_MODULE_NAMES
 
 
 def generate_python(name, node, handler, sdl_root, schemas, destination):
@@ -13,7 +13,7 @@ def generate_python(name, node, handler, sdl_root, schemas, destination):
     for directory, types in schemas:
         directory = Path(directory)
         for module, _ in types.values():
-            if module.split(".")[0] in sys.stdlib_module_names | {"sdl_runtime", "ose"}:
+            if module.split(".")[0] in STDLIB_MODULE_NAMES | {"sdl_runtime", "ose"}:
                 raise ValueError(f"Python schema module shadows the standard library or SDK: {module}")
         for source in directory.rglob("*.py"):
             if source.name == "__init__.py":
@@ -88,7 +88,9 @@ def scaffold_handler(node, handler, types):
     if len(node["inputs"]) == 1:
         port, desc = next(iter(node["inputs"].items()))
         module, symbol = types[desc["root"]]
-        annotation = "InputMessage | None" if "timeout" in desc else "InputMessage"
+        annotation = "Optional[InputMessage]" if "timeout" in desc else "InputMessage"
+        if "timeout" in desc:
+            lines.append("from typing import Optional")
         lines += [f"from {module} import {symbol} as InputMessage", "", "",
                   f"def on_{port}(ctx, message: {annotation}):",
                   '    raise NotImplementedError("Implement the input callback")']

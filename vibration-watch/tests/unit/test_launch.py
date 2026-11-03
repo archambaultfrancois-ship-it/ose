@@ -15,6 +15,29 @@ spec.loader.exec_module(workflow)
 
 
 class LaunchTests(unittest.TestCase):
+    def test_old_python_is_rejected_before_preparing_or_building(self):
+        with patch.object(sys, "argv", ["vibration.py", "build"]), \
+                patch.object(sys, "version_info", (3, 8, 20)), \
+                patch.object(sys, "version", "3.8.20"), \
+                patch.object(workflow, "compile_app") as build, \
+                patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual(workflow.main(), 1)
+            self.assertIn("Python 3.9+ is required", stderr.getvalue())
+            self.assertIn("is Python 3.8.20", stderr.getvalue())
+            self.assertIn(sys.executable, stderr.getvalue())
+            self.assertIn("OSE_PYTHON=", stderr.getvalue())
+            self.assertIn("make build PYTHON=", stderr.getvalue())
+            build.assert_not_called()
+
+    def test_supported_python_builds(self):
+        for version in ((3, 9, 0), (3, 10, 0), (3, 12, 12)):
+            with self.subTest(version=version), \
+                    patch.object(sys, "argv", ["vibration.py", "build"]), \
+                    patch.object(sys, "version_info", version), \
+                    patch.object(workflow, "compile_app") as build:
+                self.assertEqual(workflow.main(), 0)
+                build.assert_called_once()
+
     def test_sync_is_rejected_for_simulation_before_building(self):
         with patch.object(sys, "argv", ["vibration.py", "simulate", "--params-sync"]), \
                 patch.object(workflow, "compile_app") as build, patch("sys.stderr", new_callable=io.StringIO) as stderr:

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, asdict
+from typing import Optional
 from ose.delivery.policies import SubscriptionPolicy
 
 @dataclass(frozen=True)
@@ -12,7 +13,7 @@ class Fifo:
     capacity: int = 256
     overflow: str = "reject_new"
     ack: str = "none"
-    retry: Retry | None = None
+    retry: Optional[Retry] = None
     wait_timeout_ms: int = 100
 
     def policy(self, transport):
@@ -23,7 +24,7 @@ class Fifo:
 @dataclass(frozen=True)
 class Latest:
     ack: str = "none"
-    retry: Retry | None = None
+    retry: Optional[Retry] = None
 
     def policy(self, transport):
         return SubscriptionPolicy.resolve(dict(buffer="latest", ack=self.ack,

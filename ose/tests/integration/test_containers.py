@@ -179,6 +179,19 @@ def on_tick(ctx, inputs):
             self.compile()
         self.assertEqual(handler.read_text(), "# user code to preserve\n")
 
+    def test_scaffolded_timed_callback_imports_and_accepts_none(self):
+        self.model["components"]["sink"]["inputs"]["input"]["timeout"] = .05
+        self.documents()
+        plan_path = build(self.model_path, self.deployment_path, SDL_ROOT, self.destination)
+        plan = json.loads(plan_path.read_text())
+        handler = self.root / "sink.py"
+        handler.write_text(handler.read_text().replace(
+            'raise NotImplementedError("Implement the input callback")',
+            'assert message is None'))
+        result, messages = self.run_node(plan, "sink", frame("D", port_data("input", b"", "")) + frame("T"))
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual([op for op, _ in messages], ["R", "F"])
+
     def test_received_catalogue_drives_typed_decode_after_schema_evolution(self):
         (self.root / "measurement.sdl").write_text("message Alpha {1: int32 x;} " +
             "message Measurement {1: required uint64 sequence; 2: required fl64 value; 3: optional string note;}")
@@ -209,7 +222,10 @@ def on_input(ctx, message):
             self.compile()
 
     def test_python_stdlib_module_collision_is_reported_during_compilation(self):
-        (self.root / "types.sdl").write_text(SCHEMA)
-        self.model["schemas"] = "types.sdl"
-        with self.assertRaisesRegex(ValueError, "shadows the standard library"):
-            self.compile()
+        for module in ("types", "json", "sys", "math", "_socket", "email", "winreg", "winsound", "msvcrt",
+                       "sdl_runtime", "ose"):
+            with self.subTest(module=module):
+                (self.root / f"{module}.sdl").write_text(SCHEMA)
+                self.model["schemas"] = f"{module}.sdl"
+                with self.assertRaisesRegex(ValueError, "shadows the standard library"):
+                    self.compile()

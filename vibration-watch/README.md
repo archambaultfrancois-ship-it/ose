@@ -7,7 +7,7 @@ The sensor uses the OSE clock and a seeded generator, so simulation is reproduci
 
 ## Requirements and first run
 
-Python 3.10+, a C99 compiler, Rust/Cargo and Git. OpenSSL is needed to generate
+Python 3.9+, a C99 compiler, Rust/Cargo and Git. OpenSSL is needed to generate
 development TLS certificates. The optional parameter directory sync uses
 `inotify-simple` on Linux/Termux; ordinary runs need no third-party Python packages.
 
@@ -49,6 +49,20 @@ subcommands, options and option choices. Source `./setenv.sh`, then press Tab.
 `ose app record inspect FILE` displays all recorded messages; use `--limit N` to show
 only the first N selected messages.
 
+If the system `python3` is older than 3.9, select an installed compatible
+interpreter for the application commands:
+
+```sh
+export OSE_PYTHON=/path/to/python3.12
+source ./setenv.sh
+app-build
+```
+
+`OSE_PYTHON` also applies when set after sourcing. For direct Make commands, use
+`make build PYTHON=/path/to/python3.12`. The application passes the selected
+interpreter to OSE and records it in the generated component commands, so rebuild
+after changing Python.
+
 ### Web console for a local run
 
 The framework includes the English-language OSE Web Console. Install its
@@ -58,6 +72,21 @@ optional Python dependencies once (no Node.js build is needed):
 source ./setenv.sh
 ose-ws setup
 ```
+
+The optional web console requires Python 3.10+. When running the application
+with Python 3.9, set `OSE_WS_PYTHON` to an installed Python 3.10+ interpreter
+before `ose-ws setup`, then unset it so the launcher uses the prepared `.venv`:
+
+```sh
+export OSE_WS_PYTHON=/usr/bin/python3.12
+ose-ws setup
+unset OSE_WS_PYTHON
+```
+
+`setup` reuses an existing `.venv`; changing `OSE_WS_PYTHON` does not change that
+environment's Python version. To change versions, preserve the old environment
+and create a new `.venv` with the selected interpreter before running `setup`.
+The application keeps using `OSE_PYTHON`.
 
 Start the local application in one Bash terminal:
 

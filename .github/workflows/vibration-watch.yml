@@ -10,6 +10,9 @@ jobs:
   test:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
+    strategy:
+      matrix:
+        python: ['3.9', '3.12']
     defaults:
       run:
         working-directory: vibration-watch
@@ -17,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python }}
       - name: Install parameter synchronization dependencies
         run: python -m pip install '../ose[sync]'
       - name: Select Rust toolchain

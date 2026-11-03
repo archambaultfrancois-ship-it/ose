@@ -21,8 +21,9 @@ SDL_ROOT = os.environ.get("SDL_ROOT")
 SCHEMA = "message Measurement {1: required uint64 sequence;2: required fl64 value;}"
 
 PYTHON_NAMED = '''from measurement import Measurement
+from typing import Optional
 
-def on_input(ctx, message: Measurement | None):
+def on_input(ctx, message: Optional[Measurement]):
     if message is None:
         ctx.publish_result(Measurement(sequence=0, value=-1.0))
     else:

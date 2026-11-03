@@ -446,6 +446,11 @@ def main():
     parser.add_argument("--image-pull-secret", action="append", default=[])
     args = parser.parse_args()
     try:
+        if sys.version_info < (3, 9):
+            raise ValueError(
+                f"Python 3.9+ is required; {sys.executable} is Python {sys.version.split()[0]}. "
+                "Select a compatible interpreter with 'export OSE_PYTHON=/path/to/python3.12' "
+                "for app-build/app-run, or 'make build PYTHON=/path/to/python3.12'.")
         finite(args.duration, 1e-6, 1e9, "duration")
         finite(args.workers, 1, 256, "workers", True)
         if args.loops < 0:

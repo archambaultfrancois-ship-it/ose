@@ -35,7 +35,7 @@ class TickTimings:
             while True:
                 start = self.clock()
                 try:
-                    event = await anext(events)
+                    event = await events.__anext__()
                 except StopAsyncIteration:
                     elapsed += self.clock() - start
                     self.samples.append((self.clock(), elapsed * 1000))

@@ -14,8 +14,23 @@ class MemoryStore:
         self._versions = {}
         self._order = {}
         self._serial = 0
-        self.changed = asyncio.Event()
+        self._changed = None
+        self._changed_pending = False
         self.on_change = None
+
+    @property
+    def changed(self):
+        # Python 3.9 binds Event to a loop at construction. RAM stores can be
+        # prepared synchronously, before asyncio.run creates their owning loop.
+        if self._changed is None:
+            self._changed = asyncio.Event()
+            if self._changed_pending:
+                self._changed.set()
+        return self._changed
+
+    @changed.setter
+    def changed(self, event):
+        self._changed = event
 
     def records(self):
         return list(self.items.values())
@@ -48,7 +63,9 @@ class MemoryStore:
         return self._deadlines[0][0] if self._deadlines else None
 
     def notify(self):
-        self.changed.set()
+        self._changed_pending = True
+        if self._changed is not None:
+            self._changed.set()
         if self.on_change is not None:
             self.on_change()
 
@@ -111,4 +128,6 @@ class MemoryStore:
         self._versions.clear()
         self._order.clear()
         self.on_change = None
-        self.changed.clear()
+        self._changed_pending = False
+        if self._changed is not None:
+            self._changed.clear()

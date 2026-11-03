@@ -408,8 +408,8 @@ def execute(args, parser=None):
         else:
             from ose.execution.adapter import Adapter
             plan = json.loads(Path(args.plan).read_text())
-            adapter = Adapter(plan, args.node)
             async def execute():
+                adapter = Adapter(plan, args.node)
                 task = asyncio.create_task(adapter.run("127.0.0.1", args.port))
                 loop = asyncio.get_running_loop()
                 for sig in (signal.SIGINT, signal.SIGTERM):

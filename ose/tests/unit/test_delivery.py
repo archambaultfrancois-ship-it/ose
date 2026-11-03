@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from unittest.mock import patch
 from ose.delivery.policies import SubscriptionPolicy as Policy
@@ -11,6 +12,25 @@ def record(n, epoch="session"):
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_store_can_be_prepared_before_its_event_loop(self):
+        # Leave no default loop, as after an earlier asyncio.run invocation.
+        asyncio.run(asyncio.sleep(0))
+        store = MemoryStore()
+        store.put(record(1))
+
+        async def consume():
+            self.assertTrue(store.changed.is_set())
+            store.changed.clear()
+            waiter = asyncio.create_task(store.changed.wait())
+            await asyncio.sleep(0)
+            self.assertFalse(waiter.done())
+            store.put(record(2))
+            self.assertTrue(await asyncio.wait_for(waiter, 1))
+            store.close()
+            self.assertFalse(store.changed.is_set())
+
+        asyncio.run(consume())
+
     def test_fifo_is_arrival_order_and_deduplicates(self):
         buffer = Buffer(Policy(), MemoryStore())
         for n in (3, 1, 2):
