@@ -67,10 +67,10 @@ def main(argv=None):
     parser.add_argument("--host", help="HTTP bind address; network access requires proxy authentication")
     parser.add_argument("--port", type=int, help="HTTP port (default: 8080)")
     args = parser.parse_args(argv)
-    framework = Path(os.environ.get("FRAMEWORK_ROOT", ROOT / "deps/sdl-ose")).resolve()
+    framework = Path(os.environ.get("FRAMEWORK_ROOT", ROOT.parent)).resolve()
     try:
         if not (framework / "ose-ws/src/ose_ws/cli.py").is_file():
-            raise ValueError("The selected framework has no web console. Initialize the pinned submodule with git submodule update --init --recursive.")
+            raise ValueError("The selected framework has no web console. Use the parent SDL/OSE checkout or set FRAMEWORK_ROOT.")
         return setup(framework) if args.command == "setup" else launch(args, framework)
     except ImportError as error:
         print(f"Web console dependency unavailable: {error.name}. Run ose-ws setup first.", file=sys.stderr)

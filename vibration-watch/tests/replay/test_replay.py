@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-FRAMEWORK = Path(os.environ.get("FRAMEWORK_ROOT", ROOT / "deps/sdl-ose")).resolve()
+FRAMEWORK = Path(os.environ.get("FRAMEWORK_ROOT", ROOT.parent)).resolve()
 sys.path.insert(0, str(FRAMEWORK / "ose/src"))
 
 from ose.codec.sdl2 import SDL2

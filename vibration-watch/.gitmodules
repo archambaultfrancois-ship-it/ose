@@ -1,3 +1,0 @@
-[submodule "deps/sdl-ose"]
-	path = deps/sdl-ose
-	url = https://github.com/archambaultfrancois-ship-it/sdl.git

@@ -29,9 +29,9 @@ def write(path, value):
 
 
 def framework(args):
-    root = Path(args.framework_root or os.environ.get("FRAMEWORK_ROOT", ROOT / "deps/sdl-ose")).resolve()
+    root = Path(args.framework_root or os.environ.get("FRAMEWORK_ROOT", ROOT.parent)).resolve()
     if not (root / "sdl/sdlc/generator.py").is_file() or not (root / "ose/src/ose/cli.py").is_file():
-        raise ValueError("initialize deps/sdl-ose with git submodule update --init --recursive")
+        raise ValueError("framework not found; use the parent SDL/OSE checkout or set FRAMEWORK_ROOT")
     return root
 
 
@@ -375,18 +375,19 @@ def set_parameters(args):
 def images(args):
     if not args.registry:
         raise ValueError("pass --registry REGISTRY/PROJECT (for example registry.lan/vibration-watch)")
-    if framework(args) != ROOT / "deps/sdl-ose":
-        raise ValueError("images use the pinned deps/sdl-ose submodule; omit FRAMEWORK_ROOT")
-    revision = subprocess.check_output(["git", "-C", str(ROOT / "deps/sdl-ose"), "rev-parse", "HEAD"], text=True).strip()[:12]
-    if subprocess.check_output(["git", "-C", str(ROOT / "deps/sdl-ose"), "status", "--porcelain"], text=True).strip():
-        raise ValueError("framework submodule must be clean before building release images")
+    root = framework(args)
+    if root != ROOT.parent:
+        raise ValueError("images use the parent SDL/OSE checkout; omit FRAMEWORK_ROOT")
+    revision = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()[:12]
+    if subprocess.check_output(["git", "-C", str(root), "status", "--porcelain"], text=True).strip():
+        raise ValueError("repository must be clean before building release images")
     source_hash = sources_digest()
     published = {}
     for name in read(ROOT / "model.json")["components"]:
         image = f"{args.registry.rstrip('/')}/{name.replace('_', '-')}:{revision}-{source_hash[:12]}-{args.scenario}-{args.routing}"
-        subprocess.run(["docker", "build", "-f", "packaging/Dockerfile", "--build-arg", "COMPONENT=" + name,
+        subprocess.run(["docker", "build", "-f", "vibration-watch/packaging/Dockerfile", "--build-arg", "COMPONENT=" + name,
                         "--build-arg", "SCENARIO=" + args.scenario, "--build-arg", "ROUTING=" + args.routing,
-                        "-t", image, "."], cwd=ROOT, check=True)
+                        "-t", image, "."], cwd=root, check=True)
         if args.push:
             subprocess.run(["docker", "push", image], check=True)
             refs = json.loads(subprocess.check_output(["docker", "image", "inspect", image, "--format", "{{json .RepoDigests}}"], text=True))

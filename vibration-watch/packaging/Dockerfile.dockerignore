@@ -1,6 +1,8 @@
 .git
 **/.git
-.venv
+**/.venv
+**/.ose-ws
+vibration-watch/ose-ws.json
 **/__pycache__
 **/build
 **/target

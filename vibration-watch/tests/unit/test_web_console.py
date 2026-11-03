@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
-FRAMEWORK = ROOT / "deps/sdl-ose"
+FRAMEWORK = ROOT.parent
 spec = importlib.util.spec_from_file_location("vibration_web", ROOT / "tools/web_console.py")
 web = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(web)

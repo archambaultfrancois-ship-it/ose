@@ -1,7 +1,7 @@
 # Vibration Watch
 
-A standalone SDL/OSE application: two synthetic C sensors, two Rust analyzers,
-Python alarm policy and a Python terminal observer. Each signal block contains
+An SDL/OSE application in the framework repository: two synthetic C sensors,
+two Rust analyzers, Python alarm policy and a Python terminal observer. Each signal block contains
 16,384 float samples by default (64 KiB); results and alarm observations are small messages.
 The sensor uses the OSE clock and a seeded generator, so simulation is reproducible.
 
@@ -12,7 +12,7 @@ development TLS certificates. The optional parameter directory sync uses
 `inotify-simple` on Linux/Termux; ordinary runs need no third-party Python packages.
 
 ```sh
-git submodule update --init --recursive
+cd vibration-watch  # from the SDL/OSE repository root
 make validate
 make demo-local DURATION=3
 make simulate WORKERS=4 DURATION=2
@@ -23,17 +23,16 @@ On Android/Termux, keep the host awake during real-time/distributed tests with
 `termux-wake-lock`, then release it with `termux-wake-unlock` afterwards. Host
 suspension expires worker leases by design.
 
-The pinned framework lives in `deps/sdl-ose`; for
-framework development, set
+The framework is the parent directory of `vibration-watch`; no submodule is needed.
+To use another framework checkout with the command-line tools, set
 `FRAMEWORK_ROOT=/absolute/path/to/sdl-ose`. Build artifacts and prepared absolute
 paths live in `build/`. Rebuild after moving a checkout. The workflow uses the
 public `python -m ose.cli` interface from the selected framework checkout.
 
-For local development, initialize the pinned framework submodule, then load its
-environment and shortcuts in each Bash terminal:
+For local development, load the application environment and shortcuts in each
+Bash terminal from `vibration-watch`:
 
 ```sh
-git submodule update --init --recursive
 source ./setenv.sh
 app-run
 # In a second terminal, source ./setenv.sh again, then:
@@ -41,7 +40,7 @@ ose app record
 ```
 
 The application environment selects Vibration Watch as `OSE_APP_ROOT` and sources
-`deps/sdl-ose/setenv.sh`, including when `FRAMEWORK_ROOT` was previously set to
+`../setenv.sh`, including when `FRAMEWORK_ROOT` was previously set to
 another checkout. `app-run` builds and runs until Ctrl+C;
 `app-run DURATION=60` limits the run. `ose app record` prepares missing recording/filter
 dependencies and opens the external console. `ose app env` shows the selected paths; `ose app --help` lists workflows.
@@ -52,7 +51,7 @@ only the first N selected messages.
 
 ### Web console for a local run
 
-The pinned framework includes the English-language OSE Web Console. Install its
+The framework includes the English-language OSE Web Console. Install its
 optional Python dependencies once (no Node.js build is needed):
 
 ```sh
@@ -94,16 +93,16 @@ configuration, or `ose-ws --config /path/to/console.json` for an explicit
 configuration (which must already exist). Endpoint overrides follow the caller's
 directory. Closing the console leaves the application running. After replacing
 the framework, restart the application when new engine capabilities are needed.
-See the [console guide](deps/sdl-ose/ose-ws/README.md) for captures, permissions,
+See the [console guide](../ose-ws/README.md) for captures, permissions,
 network access and the complete-block parameter overwrite semantics.
 
 Recording content filters are evaluated at the source: in the broker for local
 execution, or in each producer worker for distributed execution, before capture
 queue admission and network delivery. Each recorder has independent filters.
-Build the SDL filter service with `make -C deps/sdl-ose/sdl filter-python` using
+Build the SDL filter service with `make -C ../sdl filter-python` using
 the application's Python interpreter, then restart the application with the
 updated framework. Cluster images build this service for their own interpreter;
-rebuild and redeploy images after updating the framework submodule.
+rebuild and redeploy images after updating the framework.
 
 The `normal` scenario keeps both motors below their RMS thresholds. The default
 `increasing-vibration` profile raises motor 1's amplitude with elapsed OSE time;
@@ -132,12 +131,11 @@ has its own point: `analyzer_1.record.dsp.input` and
 `analyzer_2.record.dsp.input`. No additional output or graph subscription is needed.
 The SDK skips serialization while the point is disabled.
 
-The pinned OSE framework includes the required component SDK. Initialize the
-submodule and rebuild before starting the application:
+The OSE framework in the parent directory includes the required component SDK.
+Rebuild before starting the application:
 
 ```sh
 # First terminal, from the Vibration Watch directory:
-git submodule update --init --recursive
 make run DURATION=60
 
 # Second Bash terminal, also from the Vibration Watch directory:
@@ -165,7 +163,7 @@ and updates it after calculating the RMS of each input block. Values use the sam
 m/s² unit as the `Analysis.rms` output. Each component retains only its latest
 value in OSE RAM, without a measurement history or restoration after restart.
 
-After updating the framework submodule, rebuild and launch the application, then
+After updating the framework, rebuild and launch the application, then
 read the measurements from a second Bash terminal:
 
 ```sh
@@ -188,7 +186,7 @@ between readings are not retained.
 Install the optional watcher once using the application's Python interpreter:
 
 ```sh
-python3 -m pip install './deps/sdl-ose/ose[sync]'
+python3 -m pip install '../ose[sync]'
 make run PARAMS_SYNC=1 DURATION=60
 make run PARAMS_SYNC=1 PARAMS_DIR=./my-parameters SCENARIO=normal DURATION=60
 make demo-distributed PARAMS_SYNC=1 DURATION=60
@@ -268,7 +266,7 @@ ose app logs --level FATAL --format jsonl
 Levels are DEBUG, INFO, WARNING, ERROR, CRITICAL and FATAL. FATAL is a log level;
 the handler decides whether to stop. Logs survive component replacements while
 the runtime remains running, within 10,000 entries and 8 MiB. They disappear when
-the runtime exits. See [the SDK log service](deps/sdl-ose/ose/docs/logs.md) for
+the runtime exits. See [the SDK log service](../ose/docs/logs.md) for
 deposit APIs, retention and distributed access.
 
 ## Change settings while running
@@ -335,7 +333,7 @@ app-run SCENARIO=normal
 ```
 
 In a second Bash terminal, source the application environment again. It selects
-the pinned framework. Parameter commands resolve the selected client token at invocation:
+the parent framework. Parameter commands resolve the selected client token at invocation:
 
 ```sh
 source ./setenv.sh
@@ -430,7 +428,7 @@ Captures contain signal messages, not parameter updates: replay uses the replay
 plan's settings. Reproducing a session with changed settings requires supplying
 those settings separately. Deterministic simulations can schedule complete block
 updates using `ose run --mode simulated --scenario FILE`, as described in the
-[framework parameter guide](deps/sdl-ose/ose/docs/parameters.md).
+[framework parameter guide](../ose/docs/parameters.md).
 
 The same commands accept `--host`, `--port` and `--plan`; use
 `--plan build/replay/plan.json --endpoint build/replay/endpoint.json` for a local
@@ -445,7 +443,7 @@ See [cluster deployment](deploy/README.md) for credentials and connectivity.
 
 ## Replay captured signals
 
-The pinned framework provides `ose replay`. During framework development,
+The parent framework provides `ose replay`. During framework development,
 set `FRAMEWORK_ROOT=/absolute/path/to/sdl-ose` to select another checkout. In that
 case, source that checkout's `setenv.sh` from the application directory instead
 of the application environment below.
@@ -508,7 +506,7 @@ latter case, commands, signals or an optional global `--duration` stop playback.
 
 `make replay-build PROFILE=cluster` builds the four-worker distributed version.
 Start its coordinator and workers using `build/replay/plan.json`, as described
-in the [framework's distributed guide](deps/sdl-ose/ose/docs/distributed.md).
+in the [framework's distributed guide](../ose/docs/distributed.md).
 Feed it with the same replay command plus `--host HOST --port PORT` and the TLS
 credentials of a client certificate named `replay`. For a loopback development
 cluster, use `--host 127.0.0.1 --port 7000 --insecure`. External signal routes use
@@ -532,5 +530,7 @@ SDL runtime, native recording filter service and OSE adapter. Cluster images are
 Distributed execution is real time; deterministic simulation remains local.
 
 No images are published and no cluster is modified by `make test`.
-The GitHub workflow runs the same checks. If the framework repository is private,
-configure a read-only `FRAMEWORK_ACCESS_TOKEN` that can fetch its pinned revision.
+The separate `.github/workflows/vibration-watch.yml` workflow at the repository
+root runs the same checks. Changes to the application, SDL, OSE, web console or
+shared environment script trigger it. It uses the current framework checkout
+without a submodule or a separate framework access token.

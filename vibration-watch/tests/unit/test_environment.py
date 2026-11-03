@@ -1,4 +1,4 @@
-"""The application shell selects its pinned framework and keeps minimal aliases."""
+"""The application shell selects its parent framework and keeps minimal aliases."""
 import json
 import os
 from pathlib import Path
@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @unittest.skipUnless(shutil.which('bash'), 'requires Bash')
 class EnvironmentTests(unittest.TestCase):
-    def test_setup_selects_pinned_framework_and_does_not_load_credentials(self):
+    def test_setup_selects_parent_framework_and_does_not_load_credentials(self):
         with tempfile.TemporaryDirectory() as temporary:
             env = dict(os.environ, APP_ENV=str(ROOT / 'setenv.sh'), OSE_PYTHON=sys.executable,
                        FRAMEWORK_ROOT='/previous/framework', OSE_APP_ROOT='/previous/application')
@@ -30,7 +30,7 @@ done
             result = subprocess.run(['bash', '--noprofile', '--norc', '-c', script],
                                     cwd=temporary, env=env, capture_output=True, text=True, check=True)
             self.assertEqual(json.loads(result.stdout), {'application': str(ROOT),
-                'framework': str(ROOT / 'deps/sdl-ose'), 'token': None})
+                'framework': str(ROOT.parent), 'token': None})
 
     def test_retained_run_shortcut_forwards_to_the_application_cli(self):
         with tempfile.TemporaryDirectory() as temporary:

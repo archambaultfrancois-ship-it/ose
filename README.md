@@ -1,6 +1,6 @@
 # SDL and OSE
 
-This repository contains three projects that evolve together:
+This repository contains four projects that evolve together:
 
 - **[SDL](sdl/README.md)** (Schema Design Language) generates message codecs
   for C99, Rust, Python, Java, Ada, and Matlab/Octave. It also provides catalogue filtering,
@@ -11,6 +11,8 @@ This repository contains three projects that evolve together:
 - **[OSE Web Console](ose-ws/README.md)** (`ose-ws`) provides an independent
   English-language web interface for diagnostics, scalar measurements, message
   captures and typed parameter editing in a running OSE application.
+- **[Vibration Watch](vibration-watch/README.md)** is a runnable SDL/OSE application
+  with C sensors, Rust analyzers, Python alarms, and local, simulated or distributed execution.
 
 OSE depends on SDL's public generator and runtime APIs. SDL builds and
 runs independently of OSE. Each project owns its sources, tests,
@@ -33,7 +35,13 @@ ose/                    OSE project root
   docs/                 OSE documentation
 .github/workflows/      Repository CI
 ose-ws/                 Standalone Python web server and bundled Vue frontend
+vibration-watch/         Application sources, scenarios, tests and deployment tools
 ```
+
+Each project has a separate GitHub Actions workflow. Vibration Watch uses this
+checkout's SDL/OSE framework directly and is also tested when its framework or
+web console dependencies change. From the repository root, run
+`make -C vibration-watch validate` and `make -C vibration-watch test`.
 
 The optional web console is installed separately: `python -m pip install ./ose ./ose-ws`.
 Run `ose-ws init --config ose-ws.json` in an application directory, then

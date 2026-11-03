@@ -13,9 +13,9 @@ fi
 _app_source_environment() {
     local application_root framework_root
     application_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)" || return
-    framework_root="$application_root/deps/sdl-ose"
+    framework_root="$(cd -- "$application_root/.." && pwd -P)" || return
     if [[ ! -r "$framework_root/setenv.sh" ]]; then
-        printf 'Framework environment not found: %s/setenv.sh\nRun git submodule update --init --recursive from the application repository.\n' \
+        printf 'Framework environment not found: %s/setenv.sh\nUse vibration-watch inside the SDL/OSE repository.\n' \
             "$framework_root" >&2
         return 1
     fi

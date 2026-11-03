@@ -23,7 +23,7 @@ class LaunchTests(unittest.TestCase):
             build.assert_not_called()
 
     def test_missing_watcher_is_reported_before_launch(self):
-        args = argparse.Namespace(framework_root=str(ROOT / "deps/sdl-ose"))
+        args = argparse.Namespace(framework_root=str(ROOT.parent))
         with patch.object(workflow, "environment", return_value={}), \
                 patch.object(workflow.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)):
             with self.assertRaisesRegex(ValueError, "optional watcher"):

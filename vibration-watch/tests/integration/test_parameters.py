@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-FRAMEWORK = Path(os.environ.get("FRAMEWORK_ROOT", ROOT / "deps/sdl-ose")).resolve()
+FRAMEWORK = Path(os.environ.get("FRAMEWORK_ROOT", ROOT.parent)).resolve()
 
 
 def observations(path):
