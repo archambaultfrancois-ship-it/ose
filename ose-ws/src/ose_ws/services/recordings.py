@@ -270,6 +270,8 @@ class RecordingManager:
     async def sync(self, identity, recorder):
         capture = self.objects[identity]
         status = recorder.status()
+        status["file_size_bytes"] = await asyncio.to_thread(
+            self.file_size, identity, Path(status.get("file") or "").name)
         capture["status"] = status
         if status["state"] in ("failed", "stopped"):
             if capture["state"] != "INTERRUPTED":
@@ -297,6 +299,21 @@ class RecordingManager:
                 raise
             except Exception as error:
                 self.error = str(error)[:500]
+
+    def file_size(self, identity, name):
+        """Sample the current file on disk, without following replaced links."""
+        if not re.fullmatch(r"capture(?:_[0-9]{3,})?\.(?:pcapng|mcap)", name):
+            return None
+        directory = None
+        try:
+            directory = self.directory_fd(identity)
+            info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            return info.st_size if stat.S_ISREG(info.st_mode) else None
+        except OSError:
+            return None
+        finally:
+            if directory is not None:
+                os.close(directory)
 
     def directory_fd(self, identity):
         captures = os.open(self.store.root / "captures", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)

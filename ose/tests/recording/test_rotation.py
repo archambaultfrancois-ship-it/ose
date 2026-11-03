@@ -78,6 +78,7 @@ class RotationTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(base.exists())
             status = capture.status()
             self.assertEqual(status["counts"]["written"], 100)
+            self.assertEqual(status["topic_bytes"]["source.value"], sum(map(len, payloads)))
             self.assertEqual(status["rotations"], len(paths) - 1)
             self.assertEqual(status["file_count"], len(paths))
             self.assertEqual(capture.feeds[0]["session"], session)
@@ -103,6 +104,28 @@ class RotationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(capture.status()["rotations"], 6)
                 self.assertEqual(capture.status()["file_count"], limit)
                 self.assertEqual(capture.status()["counts"]["written"], 7)
+                self.assertEqual(capture.status()["topic_bytes"]["source.value"], 7 * 17)
+
+    async def test_point_counts_and_payload_bytes_are_independent_during_rotation(self):
+        self.broker.topics['source.other'] = self.broker.topics['source.value']
+        await self.recorder.refresh()
+        self.recorder.selected = {'source.value': None, 'source.other': None}
+        self.recorder.set_max_size(1)
+        for format in ('pcapng', 'mcap'):
+            capture = await self.recorder.start(self.root / ('points.' + format), format=format)
+            self.assertEqual(capture.status()['topic_bytes'], {'source.value': 0, 'source.other': 0})
+            for number in range(3):
+                await self.publish(number)
+            payload = b'\x01' + struct.pack('>Qd', 9, 9.)
+            await self.broker.publish('source.other', self.codec.wrap(CAT, payload))
+            async def written():
+                while capture.status()['counts'].get('written', 0) != 4:
+                    await asyncio.sleep(.01)
+            await asyncio.wait_for(written(), 3)
+            self.assertEqual(capture.status()['topics'], {'source.value': 3, 'source.other': 1})
+            self.assertEqual(capture.status()['topic_bytes'], {'source.value': 51, 'source.other': 17})
+            await self.recorder.stop()
+            self.assertEqual(capture.status()['topic_bytes'], {'source.value': 51, 'source.other': 17})
 
     async def test_empty_rotating_capture_creates_one_valid_file(self):
         self.recorder.set_max_size(1)
@@ -114,6 +137,7 @@ class RotationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(records, [])
             self.assertEqual(final["final"], "true")
             self.assertEqual(capture.status()["rotations"], 0)
+            self.assertEqual(capture.status()["topic_bytes"], {"source.value": 0})
 
     async def test_existing_series_and_late_collisions_leave_unrelated_files_untouched(self):
         self.recorder.set_max_size(1)

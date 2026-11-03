@@ -124,6 +124,7 @@ class Capture:
         self.feeds, self.pumps = [], []
         self.counts = Counter()
         self.topic_counts = Counter()
+        self.topic_bytes = Counter({topic: 0 for topic in descriptions})
         self.state, self.error = "starting", None
         self.writer = None
         self.channels = {}
@@ -217,6 +218,7 @@ class Capture:
                                   publish_time_ns=now, sequence=record["sequence"] % (2**32))
         self.counts["written"] += 1
         self.topic_counts[topic] += 1
+        self.topic_bytes[topic] += len(payload)
         self.file_messages += 1
         self.file_topics[topic] += 1
         if self.max_size is not None:
@@ -328,6 +330,7 @@ class Capture:
                 "base_file": str(self.files.base), "max_size": self.max_size, "cycle": self.cycle,
                 **self.files.status(), "file_message_count": self.file_messages, "file_topics": dict(self.file_topics),
                 "counts": dict(counts), "topics": dict(self.topic_counts),
+                "topic_bytes": dict(self.topic_bytes),
                 "capture_counts": dict(remote), "error": self.error,
                 "point_counts": {topic: dict(counts) for topic, counts in point_counts.items()},
                 "selected": dict(self.filters)}

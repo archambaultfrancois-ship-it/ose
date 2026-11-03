@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from ose_ws.auth import Session
@@ -22,6 +23,34 @@ from ose_ws.util import APIError, loads
 CATALOGUE = "SDL2|Settings{1:bool:enabled;2:uint64:counter;3:fl32:threshold;4?:string:label;5*:int64:samples;6:fl32:quantized@b12,q0.1;}"
 VALUE = {"enabled": True, "counter": "18446744073709551615", "threshold": 1.23456789,
          "label": None, "samples": ["-9223372036854775808", "9223372036854775807"], "quantized": 1.23}
+
+
+class RecordingSizeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_current_rotated_missing_and_replaced_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / 'captures' / 'capture'
+            directory.mkdir(parents=True)
+            manager = RecordingManager({}, None, SimpleNamespace(root=root))
+            first = directory / 'capture_001.pcapng'
+            second = directory / 'capture_002.mcap'
+            first.write_bytes(b'a' * 1234)
+            second.write_bytes(b'b' * 5678)
+            self.assertEqual(manager.file_size('capture', first.name), 1234)
+            self.assertEqual(manager.file_size('capture', second.name), 5678)
+            self.assertIsNone(manager.file_size('capture', 'capture_003.pcapng'))
+            self.assertIsNone(manager.file_size('capture', '../capture_001.pcapng'))
+            first.unlink()
+            first.symlink_to(second)
+            self.assertIsNone(manager.file_size('capture', first.name))
+            first.unlink()
+            first.mkdir()
+            self.assertIsNone(manager.file_size('capture', first.name))
+            first.rmdir()
+            second.unlink()
+            directory.rmdir()
+            directory.symlink_to(root)
+            self.assertIsNone(manager.file_size('capture', second.name))
 
 
 class SchemaTests(unittest.TestCase):

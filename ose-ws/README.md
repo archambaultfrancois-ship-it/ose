@@ -80,10 +80,21 @@ an exclusive lock refuses another console using the same state directory.
   retention; independent capture counters, explicit stop, protected download
   and offline validation. Closing a browser does not stop a capture. Capture
   configuration can be duplicated into a new one-shot object.
+
 - **Parameters:** exact-path access, schema exploration, recursive typed fields,
   fixed multidimensional arrays, paged sequences, optional presence, enums and
   complex values. Validation round-trips through the SDL codec and previews
   `fl32`/wire quantization. Import/export preserves exact 64-bit integers.
+
+Capture cards show the current file's size on disk, refreshed every second, in
+decimal KB, MB or GB with three significant digits (for example, `12.3 MB`).
+The value follows the current file after rotation; finalized file lists use the
+same units. Buffered data appears when the recording writer writes it to disk.
+Expanding a capture's point list also shows each point's recorded message count
+and cumulative encoded SDL data size, refreshed every second. These totals span
+rotations and include only messages successfully written; data sizes exclude
+shared file metadata. Older captures without byte statistics show an unavailable
+size rather than zero.
 
 Parameter access requires a declared OSE client with the appropriate rights.
 Set its existing token without putting it in the configuration:

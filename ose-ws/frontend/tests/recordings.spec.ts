@@ -34,6 +34,59 @@ async function until(predicate: () => boolean) {
   expect(predicate()).toBe(true)
 }
 
+it('updates current file size from live snapshots, including rotation and unavailable sizes', async () => {
+  const captures = ref([{ ...capture('live', 'RECORDING'), status: { file_size_bytes: 12345 } }])
+  const root = document.createElement('div')
+  document.body.append(root)
+  app = createApp({ render: () => h(RecordingsPage, { points: [], captures: captures.value }) })
+  app.mount(root)
+  expect(root.querySelector('.capture-file-size')?.textContent).toContain('12.3 KB')
+  captures.value[0].status.file_size_bytes = 12345678
+  await nextTick()
+  expect(root.querySelector('.capture-file-size')?.textContent).toContain('12.3 MB')
+  captures.value[0].status.file_size_bytes = 0 // A new file after rotation.
+  await nextTick()
+  expect(root.querySelector('.capture-file-size')?.textContent).toContain('0.00 KB')
+  captures.value = [{ ...capture('live', 'STOPPED'), status: { file_size_bytes: null as any } }]
+  await nextTick()
+  expect(root.querySelector('.capture-file-size')?.textContent).toContain('—')
+})
+
+it('shows independent point counts and data sizes as live capture snapshots change', async () => {
+  const selection = [
+    { topic: 'source.first', root: 'Value' },
+    { topic: 'source.second', root: 'Value', filter: 'value > 0' },
+  ]
+  const captures = ref<any[]>([{ ...capture('live', 'DRAFT'), selection }])
+  const root = document.createElement('div')
+  document.body.append(root)
+  app = createApp({ render: () => h(RecordingsPage, { points: [], captures: captures.value }) })
+  app.mount(root)
+  const rows = () => root.querySelectorAll('.point-selection li')
+  expect(rows()).toHaveLength(2)
+  expect(rows()[0].querySelector('.point-recording-count')?.textContent).toContain('0 recorded')
+  expect(rows()[0].querySelector('.point-recording-size')?.textContent).toContain('0.00 KB')
+  captures.value = [{ ...capture('live', 'RECORDING'), selection, status: {
+    topics: { 'source.first': 40, 'source.second': 7 },
+    topic_bytes: { 'source.first': 12345, 'source.second': 12345678 },
+  } }]
+  await nextTick()
+  expect(rows()[0].querySelector('.point-recording-count')?.textContent).toContain('40 recorded')
+  expect(rows()[0].querySelector('.point-recording-size')?.textContent).toContain('12.3 KB')
+  expect(rows()[1].querySelector('.point-recording-count')?.textContent).toContain('7 recorded')
+  expect(rows()[1].querySelector('.point-recording-size')?.textContent).toContain('12.3 MB')
+  expect(rows()[1].textContent).toContain('value > 0')
+  captures.value[0].status.topics['source.first'] = 81
+  captures.value[0].status.topic_bytes['source.first'] = 1234567890
+  await nextTick()
+  expect(rows()[0].querySelector('.point-recording-count')?.textContent).toContain('81 recorded')
+  expect(rows()[0].querySelector('.point-recording-size')?.textContent).toContain('1.23 GB')
+  // Captures made by older engines have no byte statistics.
+  captures.value = [{ ...capture('legacy', 'STOPPED'), selection, status: { topics: { 'source.first': 2 } } }]
+  await nextTick()
+  expect(rows()[0].querySelector('.point-recording-size')?.textContent).toContain('—')
+})
+
 it.each([false, true])('confirms capture removal with delete_files=%s and refreshes the list', async deleteFiles => {
   account.actor = 'recordings-test'
   const captures = ref([capture()])

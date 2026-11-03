@@ -374,6 +374,43 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(identity, manager.recorders)
         self.assertEqual(self.broker.recording.sessions, {})
 
+    async def test_live_file_size_grows_and_final_size_matches_download(self):
+        created = await self.wait_operation(await self.request('POST', '/recordings', {
+            'selection': ['source.settings'], 'format': 'pcapng'}))
+        identity = created['result']['id']
+        await self.wait_operation(await self.request('POST', f'/recordings/{identity}/start'))
+        manager = self.app.state.recordings
+        payload = self.broker.codec.wrap(CATALOGUE, self.broker.parameters.service.values['machine/settings'])
+
+        async def publish_batch():
+            for _ in range(200):
+                await self.broker.publish('source.settings', payload)
+                await asyncio.sleep(.001)
+
+        await publish_batch()
+        await self.until(lambda: (manager.objects[identity].get('status', {}).get('file_size_bytes') or 0) > 0)
+        first = (await self.client.get(f'/api/v1/recordings/{identity}')).json()
+        self.assertEqual(first['state'], 'RECORDING')
+        first_size = first['status']['file_size_bytes']
+        point = 'source.settings'
+        self.assertGreater(first['status']['topics'][point], 0)
+        self.assertGreater(first['status']['topic_bytes'][point], 0)
+        self.assertNotIn('file', first['status'])
+        self.assertNotIn('base_file', first['status'])
+        await publish_batch()
+        await self.until(lambda: (manager.objects[identity]['status']['file_size_bytes'] or 0) > first_size)
+        await self.wait_operation(await self.request('POST', f'/recordings/{identity}/stop'))
+        final = (await self.client.get(f'/api/v1/recordings/{identity}')).json()
+        artifact = (await self.client.get(f'/api/v1/recordings/{identity}/files')).json()['items'][0]
+        self.assertGreater(final['status']['file_size_bytes'], first_size)
+        self.assertEqual(final['status']['file_size_bytes'], artifact['size'])
+        self.assertEqual(final['status']['topics'][point], 400)
+        _, encoded = self.broker.codec.api.unpack_envelope(payload)
+        self.assertEqual(final['status']['topic_bytes'][point], 400 * len(encoded))
+        # The per-point statistics survive a console restart through capture metadata.
+        stored = next(c for c in await self.app.state.store.captures() if c['id'] == identity)
+        self.assertEqual(stored['status']['topic_bytes'][point], final['status']['topic_bytes'][point])
+
     async def test_capture_original_messages_finalize_validate_and_protect_files(self):
         response = await self.request("POST", "/recordings", {"selection": ["source.settings"], "label": "Integration capture", "format": "pcapng"})
         created = await self.wait_operation(response)
