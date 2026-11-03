@@ -2,6 +2,7 @@
 
 Executable component graphs with SDL2 contracts and per-subscription quality of
 service. See the [feature overview](docs/features.md) for the available user-facing services.
+The shared [technical glossary](../GLOSSARY.md) defines SDL, OSE and Web Console terminology.
 
 For a browser interface, install the separate [OSE Web Console](../ose-ws/README.md)
 package. It observes running applications and edits parameters through existing

@@ -6,6 +6,8 @@ through the existing OSE RPCs; it does not launch, build, stop or redeploy OSE.
 
 The interface, source code, messages and documentation are in English.
 
+See the shared [technical glossary](../GLOSSARY.md) for SDL, OSE and Web Console terminology.
+
 ## Install from this repository
 
 Run these commands from the [OSE repository root](../README.md), which contains

@@ -18,6 +18,9 @@ OSE depends on SDL's public generator and runtime APIs. SDL builds and
 runs independently of OSE. Each project owns its sources, tests,
 examples, documentation, dependencies, and build outputs.
 
+See the shared [technical glossary](GLOSSARY.md) for terminology used across
+SDL, OSE and the Web Console.
+
 Clone the repository and enter its root:
 
 ```sh
