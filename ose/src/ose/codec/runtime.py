@@ -1,10 +1,13 @@
 """Runtime-only SDL operations; no model, generator or checkout is required."""
 import importlib
+from functools import lru_cache
 
 
 class Runtime:
     def __init__(self, api=None):
         self.api = api or importlib.import_module("sdl_runtime")
+        # Per-instance, bounded, and keyed by full text rather than the short wire ID.
+        self._prepare_validation = lru_cache(maxsize=64)(self.api.prepare)
 
     def identity(self, text):
         return self.api.catalogue_id(text)
@@ -18,7 +21,7 @@ class Runtime:
         identity, payload = self.api.unpack_envelope(envelope)
         if identity != self.identity(text):
             raise ValueError("catalogue identity mismatch")
-        value = self.api.decode_dynamic(self.api.prepare(text), payload)
+        value = self.api.decode_dynamic(self._prepare_validation(text), payload)
         if value.type_name != root:
             raise ValueError("unexpected root message")
         return value

@@ -19,10 +19,11 @@ class SDL2(Runtime):
         if not (runtime / "sdl_runtime.py").is_file():
             raise ValueError(f"not an SDL checkout: {self.root}")
         sys.path.insert(0, str(runtime))
-        self.api = importlib.import_module("sdl_runtime")
-        origin = Path(self.api.__file__).resolve()
+        api = importlib.import_module("sdl_runtime")
+        origin = Path(api.__file__).resolve()
         if origin != runtime / "sdl_runtime.py":
             raise ValueError("a different SDL runtime is already loaded")
+        super().__init__(api)
 
     def generate(self, schema, destination, languages=()):
         subprocess.run([sys.executable, str(self.root / "sdlc/generator.py"), "-python", "-c", "-rust",

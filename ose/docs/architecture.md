@@ -14,6 +14,11 @@ generator CLI and runtime operations: catalogue description and identity,
 prepare, compare_catalogues, dynamic decode and envelope pack/unpack. Generated
 classes are enumerated using the public SdlMessage base class. No PoC internals
 are imported. The dependency revision is recorded in `sdl-dependency.json`.
+Validation reuses up to 64 prepared SDL contexts per codec instance in a bounded
+LRU cache keyed by the full catalogue text. Every message still undergoes envelope
+identity, payload decoding and expected-root checks; decoded values are not cached.
+See [validation CPU measurements](validation-performance.md) for microbenchmarks
+and a before/after measurement of all Vibration Watch application processes.
 
 ## Documents
 
