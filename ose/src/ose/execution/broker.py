@@ -43,6 +43,9 @@ class Broker(Sessions):
                     if direction == "outputs":
                         self.topics[f"{name}.{port_name}"] = port
         self.subscriptions = {sub["id"]: sub for sub in plan["subscriptions"]}
+        self.subscriptions_by_topic = {}
+        for identity, sub in self.subscriptions.items():
+            self.subscriptions_by_topic.setdefault(sub["from"], {})[identity] = sub
         self.init_sessions()
         self.recording = TapHub(self.recording_points, plan["max_frame"], codec=self.codec)
         self.internal_points = {}
@@ -459,7 +462,8 @@ class Broker(Sessions):
                     await asyncio.wait_for(engine.store.changed.wait(), max(0, deadline - time.monotonic()))
                 except asyncio.TimeoutError:
                     return identity, "full"
-        matching = [(identity, sub) for identity, sub in self.subscriptions.items() if sub["from"] == topic]
+        # Snapshot only this topic's routes before admission can suspend.
+        matching = list(self.subscriptions_by_topic.get(topic, {}).items())
         if len(matching) == 1:
             identity, result = await admit(*matching[0])
             results[identity] = result

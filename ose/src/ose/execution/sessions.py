@@ -76,13 +76,12 @@ class Sessions:
             raise ClientError("schema", "unknown root")
         contract = self.external_contracts.get(topic, self.topics.get(topic))
         consumers = [contract] if contract else []
-        for sub in self.subscriptions.values():
-            if sub["from"] == topic:
-                if "consumer" in sub:
-                    consumers.append(sub["consumer"])
-                else:
-                    node, port = sub["to"].split(".")
-                    consumers.append(self.plan["components"][node]["inputs"][port])
+        for sub in self.subscriptions_by_topic.get(topic, {}).values():
+            if "consumer" in sub:
+                consumers.append(sub["consumer"])
+            else:
+                node, port = sub["to"].split(".")
+                consumers.append(self.plan["components"][node]["inputs"][port])
         for consumer in consumers:
             if consumer["root"] != root:
                 raise ClientError("schema", "topic root differs from its contract")
@@ -126,6 +125,8 @@ class Sessions:
                 del self.subscriptions[identity], self.engines[identity]
                 raise ClientError("oversize", "retained state exceeds transport limit")
             engine.enqueue(record)
+        # Publish the route only after retained-state validation succeeds.
+        self.subscriptions_by_topic.setdefault(topic, {})[identity] = sub
         self.external_tasks[identity] = asyncio.create_task(self._send_loop(identity, engine))
         return {"subscription": identity, "policy": policy.to_dict()}
 
@@ -143,7 +144,11 @@ class Sessions:
         engine = self.engines.pop(identity)
         engine.store.notify()
         engine.store.close()
-        self.subscriptions.pop(identity)
+        sub = self.subscriptions.pop(identity)
+        routes = self.subscriptions_by_topic[sub["from"]]
+        routes.pop(identity)
+        if not routes:
+            self.subscriptions_by_topic.pop(sub["from"])
         peer = self.data_peers.pop(identity, None)
         if peer:
             await peer.close()

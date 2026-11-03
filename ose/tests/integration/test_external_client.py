@@ -8,7 +8,7 @@ import threading
 import unittest
 from ose.codec.sdl2 import SDL2
 from ose.execution.broker import Broker
-from ose.client import Client, Fifo, Latest, Retry, UnknownTopic, QoSError, PublicationRefused, CallbackFailed, SchemaError
+from ose.client import Client, ClientError, Fifo, Latest, Retry, UnknownTopic, QoSError, PublicationRefused, CallbackFailed, SchemaError
 from ose.delivery.policies import SubscriptionPolicy
 from ose.modeling.compiler import build
 
@@ -86,6 +86,120 @@ class ExternalTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.to_thread(pub.publish,self.Message(sequence=1,value=1.))
         with self.assertRaisesRegex(CallbackFailed,'user failed'):
             await asyncio.wait_for(asyncio.to_thread(other.run),3)
+
+    async def test_topic_routes_track_subscriptions_unsubscribe_and_disconnect(self):
+        producer = await self.client('route-producer')
+        first = await asyncio.to_thread(producer.publisher, 'first', self.Message)
+        second = await asyncio.to_thread(producer.publisher, 'second', self.Message)
+        self.assertEqual((await asyncio.to_thread(first.publish, self.Message(sequence=0, value=0.))).delivery, {})
+        one, two = await self.client('route-one'), await self.client('route-two')
+        values, other_values, shared_values = [], [], []
+        received, other_received, shared_received = threading.Event(), threading.Event(), threading.Event()
+
+        def receive(value, info):
+            values.append(value.sequence)
+            received.set()
+
+        def receive_other(value, info):
+            other_values.append(value.sequence)
+            other_received.set()
+
+        def receive_shared(value, info):
+            shared_values.append(value.sequence)
+            shared_received.set()
+
+        sub = await asyncio.to_thread(one.subscribe, 'first', self.Message, receive)
+        other = await asyncio.to_thread(two.subscribe, 'second', self.Message, receive_other)
+        result = await asyncio.to_thread(first.publish, self.Message(sequence=1, value=1.))
+        self.assertEqual(result.delivery, {sub.identity: 'accepted'})
+        self.assertTrue(await asyncio.to_thread(received.wait, 2))
+        self.assertEqual(other_values, [])
+        result = await asyncio.to_thread(second.publish, self.Message(sequence=10, value=10.))
+        self.assertEqual(result.delivery, {other.identity: 'accepted'})
+        self.assertTrue(await asyncio.to_thread(other_received.wait, 2))
+
+        shared = await asyncio.to_thread(two.subscribe, 'first', self.Message, receive_shared)
+        received.clear()
+        result = await asyncio.to_thread(first.publish, self.Message(sequence=2, value=2.))
+        self.assertEqual(result.delivery, {sub.identity: 'accepted', shared.identity: 'accepted'})
+        self.assertTrue(await asyncio.to_thread(received.wait, 2))
+        self.assertTrue(await asyncio.to_thread(shared_received.wait, 2))
+        await asyncio.to_thread(sub.close)
+        shared_received.clear()
+        result = await asyncio.to_thread(first.publish, self.Message(sequence=3, value=3.))
+        self.assertEqual(result.delivery, {shared.identity: 'accepted'})
+        self.assertTrue(await asyncio.to_thread(shared_received.wait, 2))
+        await asyncio.to_thread(two.close)
+
+        async def disconnected():
+            while any(s.client_id == 'route-two' for s in self.broker.sessions.values()):
+                await asyncio.sleep(.005)
+
+        await asyncio.wait_for(disconnected(), 2)
+        self.assertEqual((await asyncio.to_thread(first.publish, self.Message(sequence=4, value=4.))).delivery, {})
+        self.assertEqual((await asyncio.to_thread(second.publish, self.Message(sequence=11, value=11.))).delivery, {})
+        self.assertEqual(values, [1, 2])
+        self.assertEqual(other_values, [10])
+        self.assertEqual(shared_values, [2, 3])
+        self.assertEqual(self.broker.subscriptions_by_topic, {})
+
+    async def test_rejected_retained_state_leaves_no_route_and_can_be_retried(self):
+        producer = await self.client('retained-producer')
+        publisher = await asyncio.to_thread(producer.publisher, 'state', self.Message)
+        await asyncio.to_thread(publisher.publish, self.Message(sequence=1, value=1.))
+        consumer = await self.client('retained-consumer')
+        self.broker.plan['max_datagram'] = 64
+        with self.assertRaisesRegex(ClientError, 'retained state exceeds'):
+            await asyncio.to_thread(consumer.subscribe, 'state', self.Message, lambda v, i: None,
+                                    qos=Latest(), transport='udp')
+        self.assertEqual(self.broker.subscriptions, {})
+        self.assertEqual(self.broker.engines, {})
+        self.assertEqual(self.broker.subscriptions_by_topic, {})
+        result = await asyncio.to_thread(publisher.publish, self.Message(sequence=2, value=2.))
+        self.assertEqual(result.delivery, {})
+        received = threading.Event()
+        values = []
+
+        def receive(value, info):
+            values.append(value.sequence)
+            received.set()
+
+        sub = await asyncio.to_thread(consumer.subscribe, 'state', self.Message, receive, qos=Latest())
+        self.assertTrue(await asyncio.to_thread(received.wait, 2))
+        self.assertEqual(values, [2])
+        await asyncio.to_thread(sub.close)
+        self.assertEqual(self.broker.subscriptions_by_topic, {})
+
+    async def test_unsubscribe_releases_an_in_flight_publication(self):
+        from ose.transport.tcp import Client as RPC
+        producer = await self.client('pending-producer')
+        publisher = await asyncio.to_thread(producer.publisher, 'pending', self.Message)
+        control = await RPC.connect('127.0.0.1', self.broker.port)
+        self.addAsyncCleanup(control.close)
+        await control.request('client_hello', client_id='pending-consumer', udp_port=1)
+        policy = SubscriptionPolicy(capacity=1, overflow='wait', wait_timeout_ms=1000)
+        result, _ = await control.request('subscribe', CAT.encode(), topic='pending', root='Measurement',
+                                         policy=policy.to_dict())
+        identity = result['subscription']
+        await asyncio.to_thread(publisher.publish, self.Message(sequence=1, value=1.))
+        pending = asyncio.create_task(asyncio.to_thread(publisher.publish, self.Message(sequence=2, value=2.)))
+
+        async def waiting():
+            while not self.broker.engines[identity].buffer.metrics['refused']:
+                await asyncio.sleep(.005)
+
+        try:
+            await asyncio.wait_for(waiting(), 1)
+            self.assertFalse(pending.done())
+            await control.request('unsubscribe', subscription=identity)
+            result = await asyncio.wait_for(pending, 1)
+            self.assertEqual(result.delivery, {identity: 'closed'})
+        finally:
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+        result = await asyncio.to_thread(publisher.publish, self.Message(sequence=3, value=3.))
+        self.assertEqual(result.delivery, {})
+        self.assertEqual(self.broker.subscriptions_by_topic, {})
 
     async def test_slow_callback_does_not_block_control_or_other_subscription(self):
         c=await self.client('producer');p=await asyncio.to_thread(c.publisher,'topic',self.Message)
@@ -205,6 +319,7 @@ class ExternalTests(unittest.IsolatedAsyncioTestCase):
         from ose.delivery.engine import DeliveryEngine
         from ose.delivery.stores import MemoryStore
         self.broker.subscriptions['unattached']={'id':'unattached','from':'topic','to':'absent.input','policy':policy.to_dict()}
+        self.broker.subscriptions_by_topic.setdefault('topic', {})['unattached'] = self.broker.subscriptions['unattached']
         self.broker.engines['unattached']=DeliveryEngine(policy,MemoryStore(1))
         first=await asyncio.to_thread(p.publish,self.Message(sequence=1,value=1.))
         results=await asyncio.gather(*(asyncio.to_thread(p.publish,self.Message(sequence=n,value=float(n))) for n in range(2,6)))
@@ -218,6 +333,7 @@ class ExternalTests(unittest.IsolatedAsyncioTestCase):
         from ose.delivery.engine import DeliveryEngine
         from ose.delivery.stores import MemoryStore
         self.broker.subscriptions['long']={'id':'long','from':'topic','to':'offline.input','policy':policy.to_dict()}
+        self.broker.subscriptions_by_topic.setdefault('topic', {})['long'] = self.broker.subscriptions['long']
         self.broker.engines['long']=DeliveryEngine(policy,MemoryStore(1))
         c=await self.client('long-wait');p=await asyncio.to_thread(c.publisher,'topic',self.Message)
         await asyncio.to_thread(p.publish,self.Message(sequence=1,value=1.))
