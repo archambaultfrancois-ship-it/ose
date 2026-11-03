@@ -241,6 +241,36 @@ The alarm inputs are independent and optional: losing one motor's branch does
 not stall the other. Every analysis produces an observation with state 0 or 1;
 this application does not retain an alarm history or implement debouncing.
 
+## Follow component logs
+
+The SDKs deposit structured logs into a bounded in-memory runtime history.
+Sensors, analyzers, alarm policy and observer log their lifecycle under the
+`lifecycle` category. The web console's **Logs** page is the second navigation
+item, after **Components**; filter by component, minimum level, category or text,
+pause/resume the display, or export displayed entries as JSONL.
+
+Operational `logf` deposits include the machine and source sequence. Sensors,
+analyzers and the observer emit a `DEBUG` summary on the first block and every
+ten blocks under `acquisition`, `analysis` and `display`, respectively (about
+once per second with the default sensor period). The alarm policy reports its
+initial state and each transition under `detection`: `WARNING` for ALARM and
+`INFO` for NORMAL, plus a `DEBUG` summary every ten blocks when unchanged.
+
+```sh
+source ./setenv.sh
+ose app logs -f
+ose app logs 'sensor_*' --logger lifecycle
+ose app logs --level DEBUG -f
+ose app logs alarm --logger detection -f
+ose app logs --level FATAL --format jsonl
+```
+
+Levels are DEBUG, INFO, WARNING, ERROR, CRITICAL and FATAL. FATAL is a log level;
+the handler decides whether to stop. Logs survive component replacements while
+the runtime remains running, within 10,000 entries and 8 MiB. They disappear when
+the runtime exits. See [the SDK log service](deps/sdl-ose/ose/docs/logs.md) for
+deposit APIs, retention and distributed access.
+
 ## Change settings while running
 
 Each machine has two typed SDL parameter blocks, and the terminal observer has

@@ -12,7 +12,12 @@ impl Callbacks for Handler {
             "dsp.input",
             "Signal block received before RMS and peak calculation",
         )?;
-        ctx.declare_measurement("vibration.rms")
+        ctx.declare_measurement("vibration.rms")?;
+        ctx.logf(sdl_ose_component::LogLevel::Info, "lifecycle", format_args!("Analyzer started"))
+    }
+
+    fn on_stop(&mut self, ctx: &mut Context) -> Result {
+        ctx.logf(sdl_ose_component::LogLevel::Info, "lifecycle", format_args!("Analyzer stopped"))
     }
 
     fn on_input(&mut self, ctx: &mut Context, message: &SignalBlock) -> Result {
@@ -25,6 +30,13 @@ impl Callbacks for Handler {
             time_ns: message.time_ns,
             rms,
             peak,
-        })
+        })?;
+        if message.sequence == 1 || message.sequence % 10 == 0 {
+            ctx.logf(sdl_ose_component::LogLevel::Debug, "analysis", format_args!(
+                "Analyzed signal: machine={} sequence={} samples={} rms={:.3} peak={:.3}",
+                message.machine_id, message.sequence, message.samples.len(), rms, peak,
+            ))?;
+        }
+        Ok(())
     }
 }

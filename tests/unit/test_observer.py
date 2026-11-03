@@ -19,7 +19,7 @@ class ObserverSettingsTests(unittest.TestCase):
         output_format = SimpleNamespace(include_time_ns=include_time_ns, include_sequence=include_sequence)
         settings = SimpleNamespace(label=label, machine_ids=machine_ids,
                                    output=SimpleNamespace(format=output_format) if output_present else None)
-        ctx = SimpleNamespace(parameters_display=lambda: settings)
+        ctx = SimpleNamespace(parameters_display=lambda: settings, logf=lambda *args, **kwargs: None)
         output = io.StringIO()
         with redirect_stderr(output):
             for machine in (1, 2):

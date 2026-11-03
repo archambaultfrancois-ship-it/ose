@@ -1,6 +1,7 @@
 #include "component.h"
 #include "waveform.h"
 #include <errno.h>
+#include <inttypes.h>
 #include <stdlib.h>
 
 static uint32_t machine, count, random_state, configured_seed;
@@ -41,7 +42,8 @@ static int on_start(OseContext *ctx) {
         return ose_fail(ctx, "invalid VW_MACHINE identity");
     machine = (uint32_t)id;
     sample_index = 0;
-    return apply_settings(ctx, parameters_signal(ctx));
+    if (!apply_settings(ctx, parameters_signal(ctx))) return 0;
+    return ose_logf(ctx, OSE_LOG_INFO, "lifecycle", "Sensor started");
 }
 
 static int on_tick(OseContext *ctx) {
@@ -59,15 +61,20 @@ static int on_tick(OseContext *ctx) {
     message.sample_rate_hz = p->sample_rate_hz;
     message.samples_count = count;
     message.samples = samples;
-    return publish_signal(ctx, &message);
+    if (!publish_signal(ctx, &message)) return 0;
+    if (message.sequence == 1 || message.sequence % 10 == 0)
+        return ose_logf(ctx, OSE_LOG_DEBUG, "acquisition",
+            "Published signal: machine=%" PRIu32 " sequence=%" PRIu64
+            " samples=%" PRIu32 " sample_rate_hz=%.1f amplitude=%.3f",
+            machine, message.sequence, count, p->sample_rate_hz, level);
+    return 1;
 }
 
 static int on_stop(OseContext *ctx) {
-    (void)ctx;
     free(samples);
     samples = NULL;
     count = configured_seed = random_state = 0;
-    return 1;
+    return ose_logf(ctx, OSE_LOG_INFO, "lifecycle", "Sensor stopped");
 }
 
 const ComponentCallbacks component_callbacks = {
