@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# From the application root: source /path/to/framework/setenv.sh
+# From the application root: source /path/to/ose/setenv.sh
 # Optional settings before sourcing: OSE_APP_ROOT and OSE_PYTHON.
 
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -7,7 +7,7 @@ if [ -z "${BASH_VERSION:-}" ]; then
     return 1 2>/dev/null || exit 1
 fi
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    printf '%s\n' 'Use: source /path/to/framework/setenv.sh' >&2
+    printf '%s\n' 'Use: source /path/to/ose/setenv.sh' >&2
     exit 1
 fi
 

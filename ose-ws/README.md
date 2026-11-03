@@ -8,6 +8,9 @@ The interface, source code, messages and documentation are in English.
 
 ## Install from this repository
 
+Run these commands from the [OSE repository root](../README.md), which contains
+the `ose/`, `sdl/` and `ose-ws/` project directories.
+
 Requirements: Python 3.10+, Linux or Termux, the compatible OSE and SDL Python
 runtimes. Node.js 22 LTS (22.12+) or 24 LTS is needed only for frontend development.
 On Termux, install Rust/Cargo and a C toolchain if Pydantic's native dependency

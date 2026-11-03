@@ -1,5 +1,6 @@
 # SDL — Schema Design Language
 
+This is the SDL project inside the [OSE repository](../README.md).
 Run the commands below from this directory (`cd sdl` from the repository root).
 The sibling [OSE project](../ose/README.md) uses these public codecs.
 

@@ -17,7 +17,7 @@ to reading/updating that one Lease; workers do not mount Kubernetes API tokens.
 
 On a build machine with Docker:
 
-Run the commands below from `vibration-watch` in a clean SDL/OSE checkout.
+Run the commands below from `vibration-watch` in a clean OSE repository checkout.
 Image builds use the repository root as their Docker context, with
 `vibration-watch/packaging/Dockerfile` and its adjacent `Dockerfile.dockerignore` file.
 The images contain the application at `/app` and the same checkout's framework

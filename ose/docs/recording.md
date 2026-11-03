@@ -9,10 +9,10 @@ Simulation has no live network endpoint; use [recording replay](replay.md) to
 feed captured messages into a model's external inputs in virtual time.
 The running broker/workers must also use an OSE version providing recording taps;
 an older application runtime cannot gain them by upgrading only the console.
-Rebuild/restart the application with the updated framework. For Vibration Watch
-development, its existing `FRAMEWORK_ROOT=/path/to/sdl-ose make run DURATION=60`
-override selects this framework checkout without changing the model. Cluster
-deployments need updated worker images.
+Rebuild/restart the application with the updated framework. Vibration Watch in
+`ose/vibration-watch` uses its parent OSE repository by default. To select another
+checkout, run `FRAMEWORK_ROOT=/path/to/ose make run DURATION=60` from the
+application directory. Cluster deployments need updated worker images.
 
 ## Optional services and installation
 
@@ -26,7 +26,7 @@ For an installed OSE package, install `ose[recording]` and make the SDL
 Python modules importable. For a source checkout, from the OSE root:
 
 ```sh
-export SDL_ROOT=/absolute/path/to/sdl
+export SDL_ROOT=/absolute/path/to/ose/sdl
 make -C "$SDL_ROOT" recording-deps
 export PYTHONPATH="$PWD/src:$SDL_ROOT/runtime/python:$SDL_ROOT/build/recording-deps"
 ```

@@ -1,6 +1,6 @@
 # Vibration Watch
 
-An SDL/OSE application in the framework repository: two synthetic C sensors,
+An SDL/OSE application in the [OSE repository](../README.md): two synthetic C sensors,
 two Rust analyzers, Python alarm policy and a Python terminal observer. Each signal block contains
 16,384 float samples by default (64 KiB); results and alarm observations are small messages.
 The sensor uses the OSE clock and a seeded generator, so simulation is reproducible.
@@ -12,7 +12,7 @@ development TLS certificates. The optional parameter directory sync uses
 `inotify-simple` on Linux/Termux; ordinary runs need no third-party Python packages.
 
 ```sh
-cd vibration-watch  # from the SDL/OSE repository root
+cd vibration-watch  # from the OSE repository root
 make validate
 make demo-local DURATION=3
 make simulate WORKERS=4 DURATION=2
@@ -25,7 +25,7 @@ suspension expires worker leases by design.
 
 The framework is the parent directory of `vibration-watch`; no submodule is needed.
 To use another framework checkout with the command-line tools, set
-`FRAMEWORK_ROOT=/absolute/path/to/sdl-ose`. Build artifacts and prepared absolute
+`FRAMEWORK_ROOT=/absolute/path/to/ose`. Build artifacts and prepared absolute
 paths live in `build/`. Rebuild after moving a checkout. The workflow uses the
 public `python -m ose.cli` interface from the selected framework checkout.
 
@@ -444,7 +444,7 @@ See [cluster deployment](deploy/README.md) for credentials and connectivity.
 ## Replay captured signals
 
 The parent framework provides `ose replay`. During framework development,
-set `FRAMEWORK_ROOT=/absolute/path/to/sdl-ose` to select another checkout. In that
+set `FRAMEWORK_ROOT=/absolute/path/to/ose` to select another checkout. In that
 case, source that checkout's `setenv.sh` from the application directory instead
 of the application environment below.
 

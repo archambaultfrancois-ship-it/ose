@@ -1,6 +1,6 @@
-# SDL and OSE
+# OSE — Orchestration, Simulation, Exécution
 
-This repository contains four projects that evolve together:
+The `ose` repository contains four projects that evolve together:
 
 - **[SDL](sdl/README.md)** (Schema Design Language) generates message codecs
   for C99, Rust, Python, Java, Ada, and Matlab/Octave. It also provides catalogue filtering,
@@ -17,6 +17,17 @@ This repository contains four projects that evolve together:
 OSE depends on SDL's public generator and runtime APIs. SDL builds and
 runs independently of OSE. Each project owns its sources, tests,
 examples, documentation, dependencies, and build outputs.
+
+Clone the repository and enter its root:
+
+```sh
+git clone git@github.com:archambaultfrancois-ship-it/ose.git
+cd ose
+```
+
+Paths below are relative to this repository root. The engine project is in
+`ose/` inside the checkout (for example, `~/ose/ose`); SDL is in `sdl/`
+(`~/ose/sdl`).
 
 ```text
 sdl/                    SDL project root
@@ -55,10 +66,10 @@ the default application:
 
 ```sh
 cd /path/to/application
-source /path/to/framework/setenv.sh
+source /path/to/ose/setenv.sh
 # Or select another application before sourcing:
 export OSE_APP_ROOT=/path/to/application
-source /path/to/framework/setenv.sh
+source /path/to/ose/setenv.sh
 ose app env
 ```
 
@@ -76,6 +87,8 @@ other repository, and source the script again.
 With Vibration Watch, run the application and recorder in separate terminals:
 
 ```sh
+cd /path/to/ose/vibration-watch
+source ./setenv.sh
 app-run
 # In another Bash terminal, source setenv.sh again, then:
 ose app record
@@ -233,27 +246,4 @@ make -C ose demo
 See each project's README for its toolchains and optional dependencies.
 OSE uses `sdl/` by default. Set `SDL_ROOT` or pass `--sdl-root` to select
 another SDL project directory containing `sdlc/` and `runtime/`.
-The root Makefile also accepts `SDL_ROOT=/absolute/path/to/sdl` for OSE targets.
-
-## Migration from the previous layout
-
-SDL's former root-level directories now live under `sdl/`. The schema directory
-was renamed from `sdl/` to `sdl/schemas/`, `tst/` to `sdl/tests/`, and `samples/`
-to `sdl/examples/`. The compiler lives in `sdl/sdlc/`.
-The OSE project lives in `ose/`.
-Run the commands in SDL documentation from `sdl/`.
-For example:
-
-```sh
-cd sdl
-python3 sdlc/generator.py -c -rust -python -java -ada -matlab schemas build/generated
-make -C examples/abc-c run
-```
-
-Existing Git history is retained. Rebuild generated sources, executables and
-OSE plans after moving a checkout: they can contain absolute paths.
-SDL and OSE build products remain in `sdl/build/` and `ose/build/`.
-
-The standalone OSE workflow reads the SDL reference and subdirectory from
-`ose/sdl-dependency.json`. It follows `main` and uses its `sdl/` project,
-with the compiler at `sdl/sdlc/generator.py`.
+The root Makefile also accepts `SDL_ROOT=/absolute/path/to/ose/sdl` for OSE targets.

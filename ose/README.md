@@ -38,8 +38,9 @@ The shell keeps only `app-cd`, `app-build` and `app-run`, plus the `ose` checkou
 entry point. All workflow behavior also works from the installed package.
 
 This directory is a standalone project designed for extraction into a
-separate repository. By default, it uses the sibling `../sdl` project in this repository; an
-explicit path supports a separate SDL dependency checkout.
+separate repository. In the [OSE repository](../README.md), the engine is in
+`ose/` and uses the sibling `../sdl` project by default. An explicit path
+supports a separate SDL dependency checkout.
 
 Requirements: Python 3.10+, a C99 compiler, Rust/Cargo, and a compatible SDL
 checkout. Java components additionally need a Java 7-compatible compiler/JVM;
@@ -75,7 +76,7 @@ external inputs for simulation or paced local/distributed execution, with option
 interactive speed and pause controls.
 
 `SDL_ROOT` defaults to the sibling SDL project (`../sdl`). To use another checkout,
-set `SDL_ROOT=/absolute/path/to/sdl` in the environment or on the `make` command
+set `SDL_ROOT=/absolute/path/to/ose/sdl` in the environment or on the `make` command
 line. The CLI also accepts `--sdl-root`, which takes precedence over `SDL_ROOT`.
 For a separately extracted or installed project, set the dependency path explicitly.
 
