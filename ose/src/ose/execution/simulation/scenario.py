@@ -70,6 +70,6 @@ def read_scenario(path, topics, codec, parameters=None):
             raise ValueError("scenario envelope exceeds the component frame limit")
         body = envelope_bytes(source)
         desc = topics[event["topic"]]
-        codec.validate(desc["catalogue"], desc["root"], body)
+        codec.validate_only(desc["catalogue"], desc["root"], body)
         events.append(Event(seconds_ns(event["at"]), index, event["topic"], source, hashlib.sha256(body).hexdigest()))
     return sorted(events, key=lambda event: (event.at, event.index))

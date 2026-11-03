@@ -85,7 +85,7 @@ class Adapter:
                 if key not in self.compatibility:
                     self.codec.compare(text, self.node["inputs"][port]["catalogue"], self.node["inputs"][port]["root"])
                     self.compatibility.add(key)
-                self.codec.validate(text, self.node["inputs"][port]["root"], body)
+                self.codec.validate_only(text, self.node["inputs"][port]["root"], body)
                 record = {"id": header["id"], "epoch": header["epoch"], "sequence": header["sequence"],
                           "body": body, "payload": memoryview(body)[self.codec.api.ENVELOPE_HEADER_SIZE:], "catalogue": text}
                 deadline = time.monotonic() + buffer.policy.wait_timeout_ms / 1000

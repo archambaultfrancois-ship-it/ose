@@ -232,7 +232,7 @@ class Coordinator:
         if not self.activated:
             raise ValueError("graph is not activated")
         desc = self.plan["external_topics"][topic]
-        self.codec.validate(desc["catalogue"], desc["root"], body)
+        self.codec.validate_only(desc["catalogue"], desc["root"], body)
         session["sequence"] += 1
         sequence, token = session["sequence"], session["token"]
         record = dict(id=f"{token}:{sequence}", epoch=self.epoch, sequence=sequence,
@@ -376,7 +376,7 @@ class Coordinator:
             if source != name or port not in self.plan["components"][name]["outputs"]:
                 raise ValueError("publication from wrong component")
             desc = self.plan["components"][name]["outputs"][port]
-            self.codec.validate(desc["catalogue"], desc["root"], body)
+            self.codec.validate_only(desc["catalogue"], desc["root"], body)
             sequence = header["sequence"]
             if type(sequence) is not int or sequence < 1:
                 raise ValueError("invalid publication sequence")
@@ -504,7 +504,7 @@ class Worker:
         if topic not in self.recording.active_points():
             return
         envelope = self.codec.wrap(desc["catalogue"], payload)
-        self.codec.validate(desc["catalogue"], desc["root"], envelope)
+        self.codec.validate_only(desc["catalogue"], desc["root"], envelope)
         self.recording_sequence += 1
         self.recording.observe(topic, envelope, generation=self.token, sequence=self.recording_sequence,
                                catalogue=desc["catalogue"], root=desc["root"])
@@ -661,7 +661,7 @@ class Worker:
             source_name, source_port = sub["from"].split(".")
             desc = self.plan["components"][source_name]["outputs"][source_port]
         port = sub["to"].split(".")[1]
-        self.codec.validate(desc["catalogue"], desc["root"], body)
+        self.codec.validate_only(desc["catalogue"], desc["root"], body)
         value = dict(record, body=body, payload=body[self.codec.api.ENVELOPE_HEADER_SIZE:], catalogue=desc["catalogue"])
         # Latest sequence numbers belong to a source generation, not a whole run.
         value["epoch"] = record["source_token"]

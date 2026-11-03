@@ -11,14 +11,18 @@ component -> language SDK + generated SDL codec
 
 SDL has no dependency on this project. The codec facade uses the public SDL
 generator CLI and runtime operations: catalogue description and identity,
-prepare, compare_catalogues, dynamic decode and envelope pack/unpack. Generated
+prepare, compare_catalogues, payload validation, dynamic decode and envelope pack/unpack. Generated
 classes are enumerated using the public SdlMessage base class. No PoC internals
 are imported. The dependency revision is recorded in `sdl-dependency.json`.
 Validation reuses up to 64 prepared SDL contexts per codec instance in a bounded
 LRU cache keyed by the full catalogue text. Every message still undergoes envelope
-identity, payload decoding and expected-root checks; decoded values are not cached.
-See [validation CPU measurements](validation-performance.md) for microbenchmarks
-and a before/after measurement of all Vibration Watch application processes.
+identity, payload structure/content and expected-root checks; decoded values are not cached.
+Broker and adapter admission use `Runtime.validate_only`, backed by SDL's
+`validate_payload`, to check the complete payload without constructing decoded
+messages or numeric lists. The same path serves distributed routing, simulation
+and internal recording admission. `Runtime.validate` still returns decoded
+values for callers that need them. Deploy this facade with the updated SDL
+Python runtime providing `validate_payload`; no native extension is required.
 
 ## Documents
 

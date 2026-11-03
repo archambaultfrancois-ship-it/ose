@@ -100,7 +100,7 @@ class Broker(Sessions):
         desc = self.internal_points[topic]
         if topic in self.recording.active_points():
             envelope = self.codec.wrap(desc["catalogue"], body)
-            self.codec.validate(desc["catalogue"], desc["root"], envelope)
+            self.codec.validate_only(desc["catalogue"], desc["root"], envelope)
             self.recording_sequence += 1
             self.recording.observe(topic, envelope, generation=self.generations[node], sequence=self.recording_sequence,
                                    catalogue=desc["catalogue"], root=desc["root"])
@@ -399,7 +399,7 @@ class Broker(Sessions):
     async def publish(self, topic, envelope):
         port = self.topics[topic]
         try:
-            self.codec.validate(port["catalogue"], port["root"], envelope)
+            self.codec.validate_only(port["catalogue"], port["root"], envelope)
         except ValueError as error:
             raise ClientError("schema", str(error)) from error
         self.sequence += 1

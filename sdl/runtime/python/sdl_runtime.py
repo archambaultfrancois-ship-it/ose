@@ -1324,8 +1324,13 @@ def encode_into(ctx, message, buffer, offset=0):
 
 
 def _read_value(ctx, name, reader, dimensions=(), dynamic=False, skip=False):
+   # All bit patterns of ordinary numeric types are valid. Boolean and enum
+   # leaves still require content checks, including inside fixed arrays.
+   if skip and name in _PRIMITIVE_WIRE_SIZES and name != 'bool':
+      reader.take(_PRIMITIVE_WIRE_SIZES[name] * (math.prod(dimensions) if dimensions else 1))
+      return None
    if dimensions:
-      values = []
+      values = None if skip else []
       for unused in range(dimensions[0]):
          item = _read_value(ctx, name, reader, dimensions[1:], dynamic, skip)
          if not skip:
@@ -1370,7 +1375,7 @@ def _read_message(ctx, name, reader, dynamic=False, skip=False):
    cls = ctx.classes.get(name)
    if not dynamic and not skip and cls is None:
       raise CodecError('unknown local message type: ' + name)
-   result = {} if dynamic else (None if skip else cls())
+   result = None if skip else ({} if dynamic else cls())
    fields = ctx.local_fields.get(name, {})
    for f in ctx.messages[name]:
       modifier = f['modifier']
@@ -1387,7 +1392,7 @@ def _read_message(ctx, name, reader, dynamic=False, skip=False):
          raise CodecError('variable sequence too large')
       local = fields.get(f['id'])
       discard = skip or (not dynamic and local is None)
-      values = []
+      values = None if discard else []
       fmt = {'int8':'b', 'uint8': 'B', 'int16':'h', 'uint16': 'H', 'int32':'i', 'uint32': 'I', 'int64':'q', 'uint64': 'Q', 'fl32':'f', 'fl64':'d'}.get(f['type'])
       plan = ctx.packed_codecs.get((f['type'], tuple(f['dimensions']))) if modifier in ('packed', 'repeated') and not dynamic else None
       native = ctx.native_packed.get((f['type'], tuple(f['dimensions']))) if modifier in ('packed', 'repeated') and not dynamic else None
@@ -1436,7 +1441,7 @@ def _read_message(ctx, name, reader, dynamic=False, skip=False):
    return SdlDynamicMessage(name, result) if dynamic and not skip else result
 
 
-def _decode(ctx, data, dynamic, packed='objects'):
+def _decode(ctx, data, dynamic, packed='objects', *, skip=False, root=None):
    data = _transform(ctx, data, False)
    if packed not in ('objects', 'view'):
       raise CodecError('packed must be objects or view')
@@ -1455,9 +1460,12 @@ def _decode(ctx, data, dynamic, packed='objects'):
    type_id = reader.count()
    if not 1 <= type_id <= len(ctx.names):
       raise CodecError('unknown message type ID')
-   result = _read_message(ctx, ctx.names[type_id - 1], reader, dynamic)
+   name = ctx.names[type_id - 1]
+   result = _read_message(ctx, name, reader, dynamic, skip)
    if reader.offset != len(reader.data):
       raise CodecError('trailing data')
+   if root is not None and name != root:
+      raise CodecError('unexpected root message')
    return result
 
 
@@ -1467,6 +1475,17 @@ def decode(ctx, data, *, packed='objects'):
 
 def decode_dynamic(ctx, data):
    return _decode(ctx, data, True)
+
+
+def validate_payload(ctx, data, *, root=None):
+   """Validate every field without retaining decoded values; return None.
+
+   An optional root must match the payload's message name. Uses the dynamic
+   reader so validation is independent of local classes and typed shortcuts.
+   """
+   if not isinstance(ctx, Context):
+      raise CodecError('validate_payload expects a prepared context')
+   return _decode(ctx, data, True, skip=True, root=root)
 
 
 def _default_fixed_array(type_name, dimensions, namespace):

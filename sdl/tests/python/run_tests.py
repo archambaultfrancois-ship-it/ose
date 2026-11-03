@@ -14,11 +14,13 @@ import test_source_syntax
 import test_documentation_comments
 import test_expressions_aliases
 import test_schema_formats
+import test_validation
 
 
 PHASES = (
    ("Python runtime: ordinary codec behavior", (
       (test_codec.CodecTests, ("test_01_codec_",)),
+      (test_validation.ValidationTests, ("test_01_codec_",)),
       (test_native.NativeTests, ("test_01_codec_",)),
       (test_buffers.BufferTests, ("test_01_codec_",)),
       (test_representation.RepresentationTests, ("test_01_codec_",)),
@@ -34,12 +36,14 @@ PHASES = (
    )),
    ("Python runtime: malformed and rejected input", (
       (test_codec.CodecTests, ("test_02_invalid_",)),
+      (test_validation.ValidationTests, ("test_02_invalid_",)),
       (test_native.NativeTests, ("test_02_invalid_",)),
       (test_buffers.BufferTests, ("test_02_invalid_",)),
       (test_representation.RepresentationTests, ("test_02_invalid_",)),
    )),
    ("Boundary and size-limit cases (final phase)", (
       (test_codec.CodecTests, ("test_03_limits_",)),
+      (test_validation.ValidationTests, ("test_03_limits_",)),
       (test_generator.GeneratorValidationTests, ("test_03_limits_",)),
    )),
 )

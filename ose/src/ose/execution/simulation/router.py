@@ -34,7 +34,7 @@ class Router:
 
     def publish(self, topic, body, identity):
         desc = self.topics[topic]
-        self.codec.validate(desc["catalogue"], desc["root"], body)
+        self.codec.validate_only(desc["catalogue"], desc["root"], body)
         self.sequence += 1
         record = dict(id=identity, epoch="simulated", sequence=self.sequence, topic=topic,
                       body=body, payload=memoryview(body)[self.codec.api.ENVELOPE_HEADER_SIZE:], catalogue=desc["catalogue"])

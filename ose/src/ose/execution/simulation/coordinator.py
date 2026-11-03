@@ -122,7 +122,7 @@ class Simulation:
                     raise ValueError(f"{name}: tick outputs exceed max_tick_output_bytes={self.limit}")
                 desc = schedule.node["outputs"][port]
                 body = self.codec.wrap(desc["catalogue"], payload)
-                self.codec.validate(desc["catalogue"], desc["root"], body)
+                self.codec.validate_only(desc["catalogue"], desc["root"], body)
                 outputs.append((port, body))
             return outputs
 

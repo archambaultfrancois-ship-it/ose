@@ -29,6 +29,13 @@ class Runtime:
     def wrap(self, text, payload):
         return self.api.pack_envelope(self.identity(text), payload)
 
+    def validate_only(self, text, root, envelope):
+        """Check an envelope and every payload field without building a message."""
+        identity, payload = self.api.unpack_envelope(envelope)
+        if identity != self.identity(text):
+            raise ValueError("catalogue identity mismatch")
+        self.api.validate_payload(self._prepare_validation(text), payload, root=root)
+
 
 class TypedCodec:
     def __init__(self, message_type):

@@ -106,3 +106,24 @@ class RuntimeValidationTests(unittest.TestCase):
         for _ in range(2):
             self.assertEqual(codec.validate(CATALOGUE, 'Value', self.envelope()).fields, {'count': 1})
         self.prepare.assert_called_once_with(CATALOGUE)
+
+    def test_validation_only_reuses_context_without_decoding(self):
+        with patch.object(self.api, 'decode_dynamic', side_effect=AssertionError('decoded value')):
+            self.assertIsNone(self.runtime.validate_only(CATALOGUE, 'Value', self.envelope()))
+            self.assertIsNone(self.runtime.validate_only(CATALOGUE, 'Value', self.envelope()))
+        self.assertEqual(self.runtime.validate(CATALOGUE, 'Value', self.envelope()).fields, {'count': 1})
+        self.prepare.assert_called_once_with(CATALOGUE)
+
+    def test_validation_only_checks_envelope_root_and_every_payload(self):
+        catalogue = 'SDL2|Value{1:bool:enabled;}'
+        for method in (self.runtime.validate, self.runtime.validate_only):
+            method(catalogue, 'Value', self.envelope(catalogue, b'\x01\x01'))
+            for payload in (b'\x01\x02', b'\x01', b'\x02\x01', b'\x01\x01\x00'):
+                with self.subTest(method=method.__name__, payload=payload), self.assertRaises(ValueError):
+                    method(catalogue, 'Value', self.envelope(catalogue, payload))
+            with self.assertRaisesRegex(ValueError, 'unexpected root'):
+                method(catalogue, 'Other', self.envelope(catalogue, b'\x01\x01'))
+            with self.assertRaisesRegex(ValueError, 'catalogue identity mismatch'):
+                method(catalogue, 'Value', self.envelope())
+            with self.assertRaises(ValueError):
+                method(catalogue, 'Value', b'S2PS\x01' + b'\x00' * 8)

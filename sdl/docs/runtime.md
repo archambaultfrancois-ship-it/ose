@@ -287,7 +287,7 @@ See [fixed-codec benchmarks](benchmarks.md#automatic-fixed-codec-comparison).
 Put `runtime/python` and generated sources on `PYTHONPATH`.
 
 ```python
-from sdl_runtime import description, prepare, encode, decode, decode_dynamic
+from sdl_runtime import description, prepare, encode, decode, decode_dynamic, validate_payload
 from wire_example import Packet
 
 text = description([Packet])
@@ -296,6 +296,7 @@ packet = Packet(active=True, code=-2, label="été", samples=[300, -1])
 data = encode(ctx, packet)
 copy = decode(ctx, data)  # dispatches by catalogue message ID
 neutral = decode_dynamic(ctx, data)
+validate_payload(ctx, data, root="Packet")  # checks every field; returns None
 ```
 
 Optional values use `None`, sequences and fixed arrays lists. Codec failures
@@ -303,6 +304,15 @@ raise `CodecError`. Nested generated classes are discovered from root types.
 `prepare(text)` suffices for `decode_dynamic`; its result has `type_name` and a
 `fields` dictionary. Text is `str` (UTF-8 bytes also accepted by preparation),
 and encoded data is `bytes`. `display(value, indent_width)` needs no context.
+
+`validate_payload(ctx, data, *, root=None)` checks the entire payload and returns
+`None`, without building decoded message objects or numeric lists. `root` is
+an optional keyword-only expected message name. Preparation needs no generated
+classes. Validation uses the dynamic reader, including boolean, enum, UTF-8,
+counter, representation and trailing-data checks; numeric IEEE-754 NaNs and
+infinities remain accepted for ordinary float fields. UTF-8 validation and
+representation conversion can still allocate temporary values/buffers.
+`decode` and `decode_dynamic` retain their usual return values.
 
 With the optional native extension built (`make sdl-python-native`),
 `decode(ctx, data, packed='view')` returns immutable `PackedArray` views for
