@@ -1,25 +1,29 @@
 # OSE Web Console: functional and technical specification
 
-Status: implementation specification, version 0.3, 2 November 2026.
+Status: implementation specification, version 0.4, 3 November 2026.
 
-This document defines the independent `ose-ws` console. Version 0.3 incorporates
-the reviewed decisions and requires English source, documentation and frontend.
-The OSE protocol is unchanged. Concurrent parameter overwrites are accepted.
+This document defines the independent `ose-ws` console in the OSE repository.
+Version 0.4 includes component logs, workspace navigation, capture deletion and
+field-level parameter validation feedback. Source, documentation and frontend
+are in English. The console uses existing OSE services and accepts concurrent
+complete-block parameter overwrites. Acceptance criteria describe the contract;
+load and browser qualification limits remain explicit in the validation record.
 MUST, SHOULD and MAY indicate requirements, recommendations and optional behavior.
 Implementation and operational instructions are in
-[the console README](../../ose-ws/README.md),
-[configuration](../../ose-ws/docs/configuration.md) and
-[API reference](../../ose-ws/docs/api.md).
+[the console README](../README.md),
+[configuration](configuration.md), [API reference](api.md) and
+[validation record](validation.md).
 
 ## 1. Purpose and scope
 
 The console serves one already-running OSE application, local or distributed,
-and multiple authenticated users. It provides four workspaces:
+and multiple authenticated users. It provides five workspaces, in this order:
 
 1. Components: diagnostics equivalent to `ose top`.
-2. Measurements: scalar discovery, selection and observation history.
-3. Recordings: point discovery, source filtering and independent captures.
-4. Parameters: reading and replacing SDL blocks through a typed tree editor.
+2. Logs: bounded in-memory component logs, filtering, follow and JSONL export.
+3. Measurements: scalar discovery, selection and observation history.
+4. Recordings: point discovery, source filtering and independent captures.
+5. Parameters: reading and replacing SDL blocks through a typed tree editor.
 
 The server is an external OSE client, not a graph component or a distributed
 startup-barrier participant. Stopping it MUST leave the application running.
@@ -37,6 +41,7 @@ Message contracts and parameter declarations are not editable at runtime.
 | Frontend | Vue 3, TypeScript, ECharts, compiled assets included in the package. |
 | OSE access | Existing Python APIs and RPCs, never CLI-output parsing. |
 | Diagnostics | One shared periodic `status` collector. |
+| Logs | Existing `logs` RPC through a separate reusable control connection. |
 | History | Bounded RAM for followed logical measurements only. |
 | Recording | One Recorder per capture, disk writes outside HTTP processing. |
 | Parameters | Catalogue-derived schema, server-side SDL validation/encoding. |
@@ -55,7 +60,9 @@ Parameter client identities and rights must already exist in OSE.
 ## 3. Reuse of existing OSE services
 
 Diagnostics use the terminal-independent `ose.diagnostics.Observer`, also used
-by `ose top`. Recording selection uses the shared name/type/glob resolver.
+by `ose top`. Component logs use the existing `logs` control RPC, also used
+by `ose logs`; stderr is not automatically converted into structured entries.
+Recording selection uses the shared name/type/glob resolver.
 Captures reuse `ose.recording.recorder.Recorder`. Catalogue handling and values
 reuse the existing SDL runtime, `CatalogueTypes` and parameter `Values` codec.
 No runtime revision, CAS, conditional write or new parameter RPC is introduced.
@@ -72,6 +79,8 @@ No test write may be sent to probe a permission.
 - StatusCollector performs one non-overlapping periodic `status` RPC and shares
   the same snapshot with DiagnosticsService and MeasurementStore.
 - DiagnosticsService preserves the CLI's states, rate calculations and alerts.
+- LogReader serializes log reads on a separate reusable control connection;
+  logging is independent of the shared status collector and capture sessions.
 - MeasurementStore owns logical watches and generation-specific bounded buffers.
 - RecordingManager owns capture state machines and serializes each object's commands.
 - ParameterManager owns separate command and long-poll connections, grouped by
@@ -116,7 +125,7 @@ failure. The exact OSE/SDL compatibility is documented for the distribution.
 
 ## 6. Common interface
 
-All four workspaces share application name, local/distributed mode, OSE connection,
+All five workspaces share application name, local/distributed mode, OSE connection,
 last successful observation age, signed-in user and active captures. Failed
 connections MUST NOT look like a healthy application with an empty inventory.
 
@@ -125,8 +134,14 @@ without color. Trees/forms/commands have labels, keyboard access and visible
 focus. Technical SDL/OSE names are not translated. Navigation and frozen views
 MUST NOT stop acquisition or captures. A parameter draft stays in browser memory
 when navigating; discarding/reloading it requires an explicit user choice.
-Drafts, parameter values and secrets MUST NOT be persisted in localStorage by
-default. Reload/closing the page can lose a draft and should warn when dirty.
+Only the selected workspace is visible; inactive views preserve their local
+state, including parameter drafts. The selected page is represented by a known
+URL fragment: `#components`, `#logs`, `#measurements`, `#recordings` or
+`#parameters`. Reloading or returning to that URL restores it; an unknown fragment
+falls back to Components. Drafts, parameter values and secrets MUST NOT be
+persisted in localStorage by default. Reload/closing the page can lose a draft
+and requests the browser's dirty-page warning. Switching parameter blocks or
+reloading a dirty block asks before discarding its draft.
 
 ## 7. Components
 
@@ -142,7 +157,47 @@ loss. Normal latest-value replacement is not FIFO saturation. Tick p95 measures
 wall-clock protocol/execution duration, not CPU percentage. Default rendering is
 once per second, derived from the shared 500 ms collector. Freeze is visual only.
 
-## 8. Measurements
+## 8. Logs
+
+Logs is the second workspace, immediately after Components. It reads structured
+SDK deposits retained by the broker/coordinator, without adding graph
+subscriptions or recording points. Each entry includes sequence, adapter UTC
+`time_ns`, component, generation, level, optional logger/category and message.
+Sequence and nanosecond timestamps remain decimal strings on the API. The table
+shows local hours, minutes, seconds and milliseconds; the timestamp tooltip
+retains the original UTC nanoseconds. This is separate from simulated time.
+
+The minimum-severity selector includes DEBUG, INFO, WARNING, ERROR, CRITICAL and
+FATAL. FATAL is distinct from CRITICAL and does not automatically stop a
+component. Component and category filters use documented case-sensitive globs;
+message search is a case-insensitive substring. Filters MUST NOT expand the
+user's component-scoped `logs.read` permissions. Administrators may read all
+components. Log messages render as text, never interpreted HTML.
+
+`GET /api/v1/logs` uses a separate reusable OSE connection with serialized reads
+and a three-second RPC deadline. Requests accept component/level filters,
+`logger`, `search`, `limit` (1–200) and optional `after`/`epoch`. Initial reads
+return recent matching entries in chronological order. Follow requests use the
+returned cursor and epoch; `more` requests the next batch immediately.
+`truncated` reports retention loss or a runtime epoch change. Reading is
+non-consuming and MUST NOT remove entries for another reader.
+
+The visible, authorized, connected page polls once per second, without
+overlapping reads. Hidden or unauthorized log views do not poll. Pause stops
+automatic view updates while OSE continues collecting. Manual refresh remains
+available; Resume continues from the last cursor. A transport failure preserves
+the displayed entries and shows the error. A new epoch resets the displayed
+stream; missing/expired records are reported instead of silently filling gaps.
+Clear view only clears browser rows. JSONL export contains the displayed entries.
+Neither action deletes OSE's retained logs.
+
+The runtime retains at most 10,000 entries within 8 MiB, including entries from
+replaced component generations, until broker/coordinator shutdown. The browser
+keeps at most 1,000 entries and 2 MiB of component/category/message text; eviction
+is announced. Component logs are not stored in the console's SQLite database or
+capture files. They are best effort, with no durable or exhaustive-log guarantee.
+
+## 9. Measurements
 
 Discovery groups measures by component and dotted name. It shows current value,
 generation and availability. Units/descriptions are used only when provided,
@@ -181,7 +236,7 @@ Large histories are paginated by segments. CSV exports available raw observation
 with UTC time, observation order, segment, logical name, value and quality.
 This history is volatile and is not a PCAPNG/MCAP capture.
 
-## 9. Recordings
+## 10. Recordings
 
 Discovery shows topic, component/name when available, output/internal nature,
 root type, description, availability and generation. List filtering and source
@@ -229,20 +284,29 @@ Files are exclusively created below state_dir/captures/recording_id. The browser
 uses opaque file IDs. Paths and symbolic links MUST NOT escape the owned capture
 directory. Rotation preserves foreign files. Only terminated, closed artifacts
 can be downloaded. Interrupted files advertise unknown integrity until validated.
-Cyclically removed files are expired, not available. Drafts and finished captures
-can be deleted with a choice to keep their files or permanently remove them.
+Cyclically removed files are expired, not available. DRAFT, STOPPED, FAILED and
+INTERRUPTED captures can be deleted. The UI asks for confirmation and defaults
+to keeping files; permanent file deletion is an explicit alternative. Opening
+or cancelling the dialog sends no deletion request. Confirmation sends
+`DELETE /api/v1/recordings/{id}` with an explicit boolean `delete_files`.
 Deletion requires the owner's explicit delete permission or administrator access;
 active captures must be stopped first. Capture/file metadata is removed while
 audit and operation history is retained. Kept files remain on disk without web
 access. Deletion commands use the same durable idempotency rules as other
-mutations. Downloading a live file remains outside this version.
+mutations. The same actor/key/body retrieves the original operation after
+the capture disappears; a different body with the same key is rejected. Keeping
+files does not release disk space. Unexpected files or symbolic links refuse
+file deletion rather than removing unrelated content. Disk removal and SQLite
+metadata cannot be one atomic transaction, so a storage failure may leave a
+listed capture with some files already missing. Downloading a live file remains
+outside this version.
 
 Lost source, changed generation/catalogue or disk error terminates that capture,
 without stopping business components. Stop ceases admission, drains admitted
 queues and attempts finalization using the existing Recorder. No power-loss
 persistence or loss-free capture guarantee is made.
 
-## 10. Parameters and typed editing
+## 11. Parameters and typed editing
 
 Authorized exact paths form the block navigation. Branches do not grant inherited
 rights. Show root type, observation time, read-only/write policy and a recursive
@@ -284,6 +348,20 @@ encoding/decoding and previews normalized fl32/quantized values. Applying uses
 that exact validated preview; editing invalidates it. Rights/contracts/limits
 are rechecked at write time.
 
+Validation errors with a JSON Pointer mark the affected control and show an
+inline message, with `aria-invalid` and an associated accessible description.
+Parent branches expand, sequences select the page containing the invalid
+element, and focus/scroll move to the affected field. A nearby summary provides
+Go to field to return there. Escaped JSON Pointer names, optional fields and
+individual real/imaginary complex parts identify the correct control without
+marking unrelated siblings. An error without a field pointer stays in the
+editor action area and focuses its summary instead of guessing a field.
+
+Editing the rejected value clears its marker; unrelated edits do not clear it.
+Any draft edit invalidates the previous preview. Removing a marker does not
+validate the new value or enable Apply: validation must succeed again. These
+rules also apply to field errors returned when applying a validated block.
+
 A positive acknowledgement means stored by the OSE parameter service, not already
 used by all components. Without a draft, notifications refresh the displayed value.
 With a draft, they update the separate remote value and preserve input. There is
@@ -309,7 +387,7 @@ OSE parameter updates remain volatile. Export does not modify initial plan value
 Starting/restarting the console MUST NOT restore old values. Filesystem parameter
 sync remains a separate explicit workflow.
 
-## 11. Existing parameter RPCs
+## 12. Existing parameter RPCs
 
 Use parameters_open, parameters_list, parameters_describe, parameters_get,
 parameters_subscribe, parameters_next, parameters_unsubscribe and parameters_set.
@@ -327,15 +405,16 @@ After lost acknowledgement, the outcome remains uncertain. Read and show current
 state without automatically replaying the write. Equal current values alone do
 not establish that the particular operation was acknowledged.
 
-## 12. HTTP API and operation lifecycle
+## 13. HTTP API and operation lifecycle
 
 Business routes are authenticated under /api/v1. Opaque block IDs map to exact
 paths to avoid slash/encoding ambiguities. OpenAPI is available to administrators.
 The route inventory and request/response contracts are documented in the
-[API reference](../../ose-ws/docs/api.md).
+[API reference](api.md).
 
-Lists have cursor/limit pagination (maximum 200); changed inventory invalidates
-the cursor. Default filters are literals/documented globs, not arbitrary regexes.
+Inventory lists have cursor/limit pagination (maximum 200); changed inventory
+invalidates the cursor. Logs use the separate `after`/`epoch` follow contract
+from section 8. Default filters are literals/documented globs, not arbitrary regexes.
 Import plans are private, volatile, epoch-bound and expire after ten minutes.
 JSON rejects duplicate keys, non-finite numbers and excessive nesting/elements.
 Ordinary bodies are at most 2 MiB; explicit imports at most 16 MiB; depth 64.
@@ -362,7 +441,7 @@ non-durable and attempt drain/finalization. No parameter write, capture start or
 other new mutation gets this exception. This resolves the persist-before-effect
 rule without preventing an active capture from being stopped during disk failure.
 
-## 13. Live channel
+## 14. Live channel
 
 The authenticated same-origin WebSocket /api/v1/live has explicit subscriptions
 to application, components, measurements, recordings, parameters and operations.
@@ -377,11 +456,12 @@ snapshots, renew watches and refill curves from available history. No durable we
 event replay is promised. Measurements send observed points since the last send,
 with explicit framing. Coalescible latest-state invalidations may replace one
 another. Overflow produces resync_required or disconnects, never a hidden gap.
+Logs use HTTP follow requests and are not a WebSocket subscription stream.
 Commands use HTTP. Ping every 15 seconds, bounded response deadline, randomized
 exponential reconnect 1–30 seconds. Session expiry/revocation closes the channel.
 A slow client MUST NOT slow collection or another capture.
 
-## 14. Authentication and authorization
+## 15. Authentication and authorization
 
 Local mode uses a random token with at least 256 bits of entropy in an owner-only
 file. Login exchanges it for an HttpOnly, SameSite strict cookie; proxy HTTPS mode
@@ -396,19 +476,23 @@ identity headers must be overwritten. The application still enforces web policy.
 Effective rights are its intersection with configured technical OSE rights.
 Checks apply to commands, subscriptions, exports and downloads.
 
-Permission families: components.read, measurements.read, recordings.create,
+Permission families: components.read, logs.read, measurements.read, recordings.create,
 recordings.read/stop/download/delete, parameters.read/write and audit.read; administrators
 can also reconcile uncertain operations. Parameter scopes are exact paths or an
 explicit all-path administrative selection. Capture ownership is separate from
-labels and the technical OSE identity.
+labels and the technical OSE identity. `logs.read` scopes match component
+names/globs; read access to other services does not grant log access.
 
-## 15. Budgets
+## 16. Budgets
 
 | Resource | Default |
 | --- | --- |
 | Browser sessions | 20. |
 | Shared status cadence | 500 ms; minimum 100 ms. |
 | Control read deadline | 3 seconds. |
+| Runtime log retention | 10,000 entries / 8 MiB; volatile. |
+| Browser log view | 1,000 entries / 2 MiB of displayed text. |
+| Log view cadence | 1 second while visible, connected and authorized. |
 | History | 900 seconds; 128 logical watches; 250,000 points. |
 | Accounted history buffers | 32 MiB, not total process RSS. |
 | History response | 5,000 points/segment, 50,000 total per page. |
@@ -428,10 +512,11 @@ history is evictable. Source quotas are shared with other OSE recorders; remote
 admission may still fail. Disk thresholds refuse starts and attempt explicit
 stops; ENOSPC may occur between checks.
 
-## 16. Persistence, audit and recovery
+## 17. Persistence, audit and recovery
 
 SQLite stores capture/configuration/owner/operation/file/integrity/audit metadata;
-files store recordings. Measurement history and browser sessions remain volatile.
+files store recordings. Measurement history, component logs and browser
+sessions remain volatile; component logs remain owned by the OSE runtime.
 Audit identifies time, actor, action/target and outcome, without full parameter
 values or secrets by default. It is bounded by 30 days/100,000 events. Audit
 expiry does not remove capture files. Metadata quotas prevent indefinite growth.
@@ -442,13 +527,15 @@ require explicit reconciliation. Previously STARTING/RECORDING/STOPPING captures
 become INTERRUPTED. Existing files are never deemed complete merely because they
 exist; integrity remains unknown until validation. No automatic capture restart
 or parameter write is permitted. An audit/storage failure blocks new mutations
-while preserving the degraded capture-stop exception from section 12.
+while preserving the degraded capture-stop exception from section 13.
 
-## 17. Failures and shutdown
+## 18. Failures and shutdown
 
 Browser closure leaves captures and configured watches running; ordinary leases
 expire. Failed status yields unavailable diagnostics and curve gaps. Lost parameter
-subscriptions make values stale until fresh observations. OSE restart resets
+subscriptions make values stale until fresh observations. Log read failures
+preserve displayed entries and allow cursor-based resumption, subject to runtime
+retention and epoch changes. OSE restart resets
 rate/history generations and marks old drafts for reread. Source generation loss,
 invalid/runtime filter failure and disk errors terminate the affected capture.
 A lost write reply produces an uncertain operation with no automatic replay.
@@ -458,10 +545,11 @@ and storage. Deadline expiry marks unknown/incomplete artifacts. SIGKILL/power
 loss uses INTERRUPTED recovery next time. Authentication/contract errors are
 reported with corrective action; only transient failures receive bounded retries.
 
-## 18. Code and distribution
+## 19. Code and distribution
 
-The independent ose-ws/ project contains pyproject.toml, README, src/ose_ws CLI,
-configuration/auth/server, services, schema, storage, compiled static assets,
+The independent `ose-ws/` project in the `ose` repository contains
+`pyproject.toml`, README, the specification and operational references in `docs/`,
+the `src/ose_ws` CLI, configuration/auth/server, services, schema, storage, compiled static assets,
 frontend TypeScript/Vue sources and tests. The frontend tree widget supports typed
 parameter editing; recording contracts use the same schema description in a
 read-only explorer. Arbitrary message fields do not become scalar measurements.
@@ -470,9 +558,10 @@ The package depends on a compatible OSE Python package and available SDL runtime
 The optional recording extra supplies Python capture dependencies; the native
 filter service remains a separate preparation. Frontend dependencies are locked
 at build time. OSE engine users do not acquire FastAPI/Vue dependencies merely
-by installing OSE.
+by installing OSE. Source distributions include `docs/*.md`; the installed wheel
+includes the compiled offline frontend.
 
-## 19. Server observability
+## 20. Server observability
 
 Structured request logs carry request ID, method, path, result and duration without
 parameter values/secrets. Public authenticated application status exposes versions,
@@ -481,7 +570,7 @@ and audit identify storage, source and capture failures. Observing HTTP diagnost
 MUST NOT trigger a fresh status read per user. SQLite schema versions are explicit;
 a schema newer than the server fails startup.
 
-## 20. Acceptance criteria
+## 21. Acceptance criteria
 
 | ID | Verifiable result |
 | --- | --- |
@@ -517,6 +606,13 @@ a schema newer than the server fails startup.
 | A30 | Trees, editing and apply are keyboard accessible. |
 | A31 | Administrative uncertain closure is audited, remains undetermined and never replays a command. |
 | A32 | Storage failure still permits a visibly non-durable explicit capture stop. |
+| A33 | Five workspaces appear in order; only the active page is visible, its URL fragment is restored, and navigation preserves drafts. |
+| A34 | Log severity, component/category/text filters and cursor follow respect scoped read rights; FATAL stays distinct from CRITICAL. |
+| A35 | Log views preserve rows on transport loss, announce truncation/eviction, reset on an epoch change and respect display limits. |
+| A36 | Capture deletion asks for confirmation, keeps files by default and never deletes on dialog open/cancel. |
+| A37 | Capture deletion rejects active/unauthorized targets and preserves operation/audit history and idempotent retries. |
+| A38 | Invalid parameter fields expand/page/focus correctly; unrelated edits preserve markers and Apply still requires a fresh successful preview. |
+| A39 | Log times display local hours/minutes/seconds/milliseconds while the original UTC nanoseconds remain available. |
 
 Tests combine calculations/contract checks, real local/distributed OSE integrations,
 validated PCAPNG/MCAP files and frontend interaction checks. Load qualification
@@ -526,30 +622,39 @@ rates/losses and client count. Initial target: 100 components, 128 measures at 2
 curves outside application saturation. These are measurement targets, not real-time
 or universal capture-throughput guarantees.
 
-## 21. Delivery sequence
+## 22. Delivery sequence
 
 1. Independent package/config/auth/connection/storage and shared Components view.
-2. Logical leases, bounded measurement history, charts, export and live recovery.
-3. Recording discovery/schema/filters, capture lifecycle, files, quotas and recovery.
-4. Existing parameter client integration, policy, typed editor, drafts, normalized
-   previews, external updates, import/export and audit.
-5. Qualification of local/distributed use, concurrency, saturation, permissions,
+2. Component logs, scoped filters, bounded follow, millisecond display and JSONL export.
+3. Logical leases, bounded measurement history, charts, export and live recovery.
+4. Recording discovery/schema/filters, capture lifecycle, deletion, files, quotas
+   and recovery.
+5. Existing parameter client integration, policy, typed editor, drafts, normalized
+   previews, inline error navigation, external updates, import/export and audit.
+6. Qualification of local/distributed use, navigation, concurrency, saturation, permissions,
    bundled packaging and documented compatibility.
 
 Each feature includes explicit errors and limits. The full version includes all
-four workspaces and applicable acceptance criteria, while accepting parameter
+five workspaces and applicable acceptance criteria, while accepting parameter
 overwrites and requiring no OSE wire-protocol extension.
 
-## 22. Repository references
+## 23. Repository references
 
-- [OSE diagnostics](monitoring.md), [measurements](measurements.md),
-  [recording](recording.md), [parameters](parameters.md).
-- [Shared diagnostics](../src/ose/diagnostics.py),
-  [shared recording selection](../src/ose/recording/selection.py).
-- [Parameter client](../src/ose/parameters/client.py),
-  [service](../src/ose/parameters/service.py),
-  [values](../src/ose/parameters/values.py).
-- [Recorder](../src/ose/recording/recorder.py),
-  [catalogue types](../src/ose/codec/catalogue.py).
+- [Console README](../README.md), [configuration](configuration.md),
+  [API reference](api.md) and [validation record](validation.md).
+- [OSE diagnostics](../../ose/docs/monitoring.md),
+  [component logs](../../ose/docs/logs.md),
+  [measurements](../../ose/docs/measurements.md),
+  [recording](../../ose/docs/recording.md),
+  [parameters](../../ose/docs/parameters.md).
+- [Shared diagnostics](../../ose/src/ose/diagnostics.py),
+  [shared recording selection](../../ose/src/ose/recording/selection.py).
+- [Parameter client](../../ose/src/ose/parameters/client.py),
+  [service](../../ose/src/ose/parameters/service.py),
+  [values](../../ose/src/ose/parameters/values.py).
+- [Recorder](../../ose/src/ose/recording/recorder.py),
+  [catalogue types](../../ose/src/ose/codec/catalogue.py).
+- [Web log reader](../src/ose_ws/services/logs.py),
+  [runtime log service](../../ose/src/ose/execution/logs.py).
 - [SDL wire descriptor](../../sdl/docs/wire_descriptor.md),
   [SDL type/representation rules](../../sdl/docs/schema.md).

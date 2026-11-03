@@ -21,8 +21,9 @@ including repeated elements and fixed arrays. Ordinary OSE import/export files
 keep JSON integer literals. Upload/download those files as **text**, without
 passing their contents through JavaScript `JSON.parse` / `Number`.
 Other large counters are represented as decimal strings when they exceed the
-JavaScript exact-integer range. Timestamps are UTC RFC 3339; measurement `time`
-is Unix milliseconds and `sequence` is a decimal observation-order string.
+JavaScript exact-integer range. Timestamps use UTC RFC 3339 except measurement
+`time` (Unix milliseconds) and log `time_ns` (UTC nanoseconds as a decimal string).
+Observation and log `sequence` fields are decimal order strings.
 
 ## Resources
 
@@ -41,7 +42,7 @@ is Unix milliseconds and `sequence` is a decimal observation-order string.
 | Operations | `GET /operations` (uncertain), `GET /operations/{id}`, administrative `POST /operations/{id}/close-unknown`. |
 | Audit | `GET /audit`. |
 
-Lists use `items`, `next`, optional `cursor` and `limit` (1–200). Inventory
+Inventory lists use `items`, `next`, optional `cursor` and `limit` (1–200). Inventory
 changes invalidate a cursor with HTTP 409. Measurement watches accept
 `measurement_ids` and an optional existing watch `id`; renewal returns
 `lease_s: 60`. IDs identify logical component/name pairs, not one generation.
@@ -83,6 +84,29 @@ that same actor/target/body; do not generate a new key to retry an uncertain
 command. `GET /operations/{id}` can safely be polled. States are `pending`,
 `complete`, `failed`, `uncertain`, and `closed_unknown`. A completed operation's
 `result` carries the business outcome; inspect per-block import results too.
+
+## Follow component logs
+
+`GET /logs` accepts `components` (comma-separated globs), `levels`
+(comma-separated exact names), `logger` (category glob), `search`
+(case-insensitive message substring), `limit` (1–200), and optional `after` /
+`epoch`. Levels are DEBUG, INFO, WARNING, ERROR, CRITICAL and FATAL. The browser's
+minimum-level selector sends that level and all higher severities.
+
+The response contains `epoch`, `items`, `cursor`, `more`, `truncated`, `evicted`
+and `retained`. The initial page contains recent matching entries in
+chronological order. Continue with the returned `cursor` as `after` and its
+`epoch`; `more` requests immediate continuation. These are follow cursors, not
+inventory pagination tokens. `truncated` reports expired history or an epoch
+change. Reading does not consume logs for other clients.
+
+Each item contains `sequence`, `time_ns`, `component`, `generation`, `level`,
+`logger` and `message`. Sequence and UTC-nanosecond timestamps are decimal
+strings. The web table formats local time to milliseconds and exposes the
+original nanoseconds in its tooltip. Effective web scope is the intersection
+of the requested component patterns and `logs.read`; administrators can read
+all components. A missing scope is refused; matching filters cannot grant it.
+Log follow uses HTTP and is not a WebSocket stream.
 
 ## Validate and apply a parameter
 

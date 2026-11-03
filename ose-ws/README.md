@@ -61,20 +61,20 @@ The console shows a disconnected state and reconnects with exponential backoff.
 Endpoint files are reread on each connection attempt. Use one Uvicorn worker;
 an exclusive lock refuses another console using the same state directory.
 
-## Four workspaces
+## Five workspaces
 
 - **Components:** shared `status` sampling, the same diagnostics as `ose top`,
   sliding-window rates, freshness, FIFO occupancy, alerts and queue details.
   Freezing the view does not stop server collection.
+- **Logs:** the second page, after Components; an in-memory component log stream
+  with component/category/text filters, minimum severity through FATAL, pause,
+  resume and JSONL export. Scoped `logs.read` rights control access. See
+  [component logs](../ose/docs/logs.md) for SDK deposits, CLI access and retention.
 - **Measurements:** component/name discovery, leased logical selections, bounded
   in-memory history, ECharts zoom and separate-chart mode, CSV export. Points
   represent successful observations of latest values. They are not an exhaustive
   stream of emissions. Missing/stale values create gaps; generations create
   separate segments. History starts at selection and is lost on console restart.
-- **Logs:** the second page, after Components; an in-memory component log stream
-  with component/category/text filters, minimum severity through FATAL, pause,
-  resume and JSONL export. Scoped `logs.read` rights control access. See
-  [component logs](../ose/docs/logs.md) for SDK deposits, CLI access and retention.
 - **Recordings:** exact names, SDL types and globs; concrete draft selections;
   optional validated source predicates; PCAPNG/MCAP; rotation and cyclic
   retention; independent capture counters, explicit stop, protected download
@@ -111,7 +111,7 @@ Failures without a field location stay visible beside the editor's action button
 ## Configuration and network access
 
 See [configuration](docs/configuration.md) for paths, settings, proxy identity
-and web policies, and [the specification](../ose/docs/ose-ws-specification.md)
+and web policies, and [the specification](docs/ose-ws-specification.md)
 for the functional contract.
 
 The default is loopback with a local token and an HttpOnly/SameSite session
