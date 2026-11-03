@@ -1,0 +1,8 @@
+/** Summary of one complete sample block; values are in m/s^2. */
+message Analysis {
+    1: uint32 machine_id;
+    2: uint64 sequence;
+    3: uint64 time_ns;
+    4: fl64 rms;
+    5: fl64 peak;
+}

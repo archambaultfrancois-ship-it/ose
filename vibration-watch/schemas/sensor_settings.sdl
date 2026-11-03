@@ -1,0 +1,10 @@
+/** Complete synthetic sensor settings; identity and scheduling stay fixed. */
+message SensorSettings {
+    1: uint32 samples;
+    2: fl64 sample_rate_hz;
+    3: fl64 frequency_hz;
+    4: fl64 amplitude;
+    5: fl64 noise;
+    6: uint32 seed;
+    7: fl64 ramp_per_second;
+}

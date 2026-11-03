@@ -1,0 +1,6 @@
+{
+  "duration_seconds": 2,
+  "observations_per_machine": 20,
+  "increasing_vibration_first_alarm_sequence": 12,
+  "increasing_vibration_alarm_count": 9
+}

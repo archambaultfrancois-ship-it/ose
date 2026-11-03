@@ -1,0 +1,17 @@
+/** Fields included in each terminal observation. */
+message ObserverOutputFormat {
+    1: bool include_time_ns;
+    2: bool include_sequence;
+}
+
+/** Output options, including a nested format contract. */
+message ObserverOutputSettings {
+    1: ObserverOutputFormat format;
+}
+
+/** Display settings. An empty list shows all machines; absent output uses the default format. */
+message ObserverSettings {
+    1: optional string label;
+    2: repeated uint32 machine_ids;
+    3: optional ObserverOutputSettings output;
+}

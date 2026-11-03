@@ -1,0 +1,23 @@
+name: Vibration Watch
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.FRAMEWORK_ACCESS_TOKEN || github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install parameter synchronization dependencies
+        run: python -m pip install './deps/sdl-ose/ose[sync]'
+      - name: Select Rust toolchain
+        run: rustup toolchain install 1.85.1 --profile minimal && rustup default 1.85.1
+      - name: Validate application
+        run: make validate
+      - name: Test business logic, simulation and distributed processes
+        run: make test

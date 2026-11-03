@@ -1,0 +1,239 @@
+{
+  "version": 1,
+  "schemas": "schemas",
+  "components": {
+    "sensor_1": {
+      "inputs": {},
+      "outputs": {
+        "signal": {
+          "root": "SignalBlock"
+        }
+      },
+      "trigger": {
+        "mode": "periodic",
+        "period_ms": 100
+      },
+      "parameters": {
+        "machine_id": 1
+      },
+      "parameter_bindings": {
+        "signal": {
+          "path": "machines/1/sensor",
+          "access": "read"
+        }
+      }
+    },
+    "analyzer_1": {
+      "inputs": {
+        "input": {
+          "root": "SignalBlock"
+        }
+      },
+      "outputs": {
+        "result": {
+          "root": "Analysis"
+        }
+      },
+      "trigger": {
+        "mode": "on_change"
+      }
+    },
+    "sensor_2": {
+      "inputs": {},
+      "outputs": {
+        "signal": {
+          "root": "SignalBlock"
+        }
+      },
+      "trigger": {
+        "mode": "periodic",
+        "period_ms": 100
+      },
+      "parameters": {
+        "machine_id": 2
+      },
+      "parameter_bindings": {
+        "signal": {
+          "path": "machines/2/sensor",
+          "access": "read"
+        }
+      }
+    },
+    "analyzer_2": {
+      "inputs": {
+        "input": {
+          "root": "SignalBlock"
+        }
+      },
+      "outputs": {
+        "result": {
+          "root": "Analysis"
+        }
+      },
+      "trigger": {
+        "mode": "on_change"
+      }
+    },
+    "alarm": {
+      "inputs": {
+        "machine_1": {
+          "root": "Analysis",
+          "required": false
+        },
+        "machine_2": {
+          "root": "Analysis",
+          "required": false
+        }
+      },
+      "outputs": {
+        "event": {
+          "root": "Alarm"
+        }
+      },
+      "trigger": {
+        "mode": "on_change"
+      },
+      "parameter_bindings": {
+        "detection_1": {
+          "path": "machines/1/detection",
+          "access": "read"
+        },
+        "detection_2": {
+          "path": "machines/2/detection",
+          "access": "read"
+        }
+      }
+    },
+    "observer": {
+      "inputs": {
+        "input": {
+          "root": "Alarm"
+        }
+      },
+      "outputs": {},
+      "trigger": {
+        "mode": "on_change"
+      },
+      "parameter_bindings": {
+        "display": {
+          "path": "observer/display",
+          "access": "read"
+        }
+      }
+    }
+  },
+  "subscriptions": [
+    {
+      "id": "signal_1",
+      "from": "sensor_1.signal",
+      "to": "analyzer_1.input",
+      "qos": {
+        "buffer": "fifo",
+        "capacity": 4,
+        "overflow": "drop_oldest",
+        "ack": "received",
+        "retry": {
+          "max_retries": 2
+        }
+      }
+    },
+    {
+      "id": "analysis_1",
+      "from": "analyzer_1.result",
+      "to": "alarm.machine_1",
+      "qos": {
+        "buffer": "fifo",
+        "capacity": 64,
+        "ack": "received",
+        "retry": {}
+      }
+    },
+    {
+      "id": "signal_2",
+      "from": "sensor_2.signal",
+      "to": "analyzer_2.input",
+      "qos": {
+        "buffer": "fifo",
+        "capacity": 4,
+        "overflow": "drop_oldest",
+        "ack": "received",
+        "retry": {
+          "max_retries": 2
+        }
+      }
+    },
+    {
+      "id": "analysis_2",
+      "from": "analyzer_2.result",
+      "to": "alarm.machine_2",
+      "qos": {
+        "buffer": "fifo",
+        "capacity": 64,
+        "ack": "received",
+        "retry": {}
+      }
+    },
+    {
+      "id": "events",
+      "from": "alarm.event",
+      "to": "observer.input",
+      "qos": {
+        "buffer": "fifo",
+        "capacity": 128,
+        "ack": "received",
+        "retry": {}
+      }
+    }
+  ],
+  "shared_parameters": {
+    "observer/display": {
+      "root": "ObserverSettings",
+      "initial": {
+        "label": null,
+        "machine_ids": [1, 2],
+        "output": {
+          "format": {
+            "include_time_ns": true,
+            "include_sequence": true
+          }
+        }
+      }
+    },
+    "machines/1/detection": {
+      "root": "DetectionSettings",
+      "initial": {
+        "rms_threshold": 1.0
+      }
+    },
+    "machines/2/detection": {
+      "root": "DetectionSettings",
+      "initial": {
+        "rms_threshold": 1.0
+      }
+    },
+    "machines/1/sensor": {
+      "root": "SensorSettings",
+      "initial": {
+        "samples": 16384,
+        "sample_rate_hz": 163840,
+        "frequency_hz": 640,
+        "amplitude": 0.4,
+        "noise": 0.01,
+        "seed": 42,
+        "ramp_per_second": 1.0
+      }
+    },
+    "machines/2/sensor": {
+      "root": "SensorSettings",
+      "initial": {
+        "samples": 16384,
+        "sample_rate_hz": 163840,
+        "frequency_hz": 960,
+        "amplitude": 0.6,
+        "noise": 0.01,
+        "seed": 43,
+        "ramp_per_second": 0.0
+      }
+    }
+  }
+}

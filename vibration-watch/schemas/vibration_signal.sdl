@@ -1,0 +1,8 @@
+/** Acceleration samples in m/s^2. Sequence restarts with each source instance. */
+message SignalBlock {
+    1: uint32 machine_id;
+    2: uint64 sequence;
+    3: uint64 time_ns;
+    4: fl64 sample_rate_hz;
+    5: packed fl32 samples;
+}

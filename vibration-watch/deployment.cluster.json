@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "components": {
+    "sensor_1": {
+      "container": {
+        "language": "c",
+        "handler": "components/sensor/handler.c"
+      },
+      "placement": {
+        "node_selector": {
+          "kubernetes.io/os": "linux"
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "memory": "512Mi"
+          }
+        }
+      }
+    },
+    "analyzer_1": {
+      "container": {
+        "language": "rust",
+        "handler": "components/analyzer/handler.rs"
+      },
+      "placement": {
+        "node_selector": {
+          "kubernetes.io/os": "linux"
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "memory": "512Mi"
+          }
+        }
+      }
+    },
+    "sensor_2": {
+      "container": {
+        "language": "c",
+        "handler": "components/sensor/handler.c"
+      },
+      "placement": {
+        "node_selector": {
+          "kubernetes.io/os": "linux"
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "memory": "512Mi"
+          }
+        }
+      }
+    },
+    "analyzer_2": {
+      "container": {
+        "language": "rust",
+        "handler": "components/analyzer/handler.rs"
+      },
+      "placement": {
+        "node_selector": {
+          "kubernetes.io/os": "linux"
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "memory": "512Mi"
+          }
+        }
+      }
+    },
+    "alarm": {
+      "container": {
+        "language": "python",
+        "handler": "components/alarm/handler.py"
+      },
+      "placement": {
+        "node_selector": {
+          "kubernetes.io/os": "linux"
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "memory": "512Mi"
+          }
+        }
+      }
+    },
+    "observer": {
+      "container": {
+        "language": "python",
+        "handler": "components/observer/handler.py"
+      },
+      "placement": {
+        "node_selector": {
+          "kubernetes.io/os": "linux"
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "memory": "512Mi"
+          }
+        }
+      }
+    }
+  },
+  "execution": "distributed",
+  "subscriptions": {
+    "signal_1": {
+      "routing": "direct",
+      "transport": "tcp"
+    },
+    "signal_2": {
+      "routing": "direct",
+      "transport": "tcp"
+    }
+  },
+  "parameter_clients": {
+    "operator": {
+      "read": [
+        "observer/display",
+        "machines/1/detection",
+        "machines/2/detection",
+        "machines/1/sensor",
+        "machines/2/sensor"
+      ],
+      "write": [
+        "observer/display",
+        "machines/1/detection",
+        "machines/2/detection",
+        "machines/1/sensor",
+        "machines/2/sensor"
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+/** One observation per analysis. State 0 is normal, 1 is over threshold. */
+message Alarm {
+    1: uint32 machine_id;
+    2: uint64 sequence;
+    3: uint64 time_ns;
+    4: fl64 rms;
+    5: fl64 peak;
+    6: uint8 state;
+}

@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "machines": {
+    "1": {"name": "motor_1", "samples": 16384, "sample_rate_hz": 163840, "frequency_hz": 640, "amplitude": 0.4, "noise": 0.01, "seed": 42},
+    "2": {"name": "motor_2", "samples": 16384, "sample_rate_hz": 163840, "frequency_hz": 960, "amplitude": 0.6, "noise": 0.01, "seed": 43}
+  }
+}

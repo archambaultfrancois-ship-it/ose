@@ -1,0 +1,1 @@
+{"version": 1, "description": "Motor 1 crosses its threshold; motor 2 remains normal.", "ramp_per_second": {"1": 1.0, "2": 0.0}}

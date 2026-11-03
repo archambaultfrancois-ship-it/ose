@@ -1,0 +1,4 @@
+/** Runtime alarm settings for one machine; RMS is in m/s^2. */
+message DetectionSettings {
+    1: fl64 rms_threshold;
+}
