@@ -55,6 +55,40 @@ class ParameterTests(unittest.IsolatedAsyncioTestCase):
         self.service.set('machine/detection', latest)
         self.assertEqual((await self.service.next(owner))[1], latest)
 
+    async def test_long_wait_has_no_quarter_second_empty_reply_and_wakes_on_latest_value(self):
+        owner = object()
+        self.service.subscribe(owner, ['machine/detection'])
+        await self.service.next(owner)
+        task = asyncio.create_task(self.service.next(owner, wait=True))
+        try:
+            with self.assertRaises(asyncio.TimeoutError):
+                await asyncio.wait_for(asyncio.shield(task), .35)
+            for n in range(100):
+                latest = self.values.encode({**self.value, 'threshold': float(n)})
+                self.service.set('machine/detection', latest)
+            self.assertEqual((await asyncio.wait_for(task, 1))[1], latest)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def test_long_wait_cancellation_disconnect_and_legacy_empty_response(self):
+        owner = object()
+        subscription = self.service.subscribe(owner, ['machine/detection'])
+        await self.service.next(owner)
+        self.assertEqual((await asyncio.wait_for(self.service.next(owner), 1))[0], {'empty': True})
+        task = asyncio.create_task(self.service.next(owner, wait=True))
+        await asyncio.sleep(0)
+        with self.assertRaises(ValueError):
+            await self.service.next(owner, wait=True)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        self.assertFalse(subscription.polling)
+        task = asyncio.create_task(self.service.next(owner, wait=True))
+        await asyncio.sleep(0)
+        self.service.disconnect(owner)
+        with self.assertRaisesRegex(ValueError, 'closed'):
+            await asyncio.wait_for(task, 1)
+
     async def test_adapter_poll_stops_after_absorbed_cancellation(self):
         node = {'parameter_bindings': {'detection': {'path': 'machine/detection', 'access': 'read'}}}
         started = asyncio.Event()

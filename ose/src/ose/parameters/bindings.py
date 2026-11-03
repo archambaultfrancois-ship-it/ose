@@ -34,7 +34,7 @@ class RemoteBindings:
 
     async def _poll(self):
         while not self.closed:
-            header, payload = await self.request('parameters_next')
+            header, payload = await self.request('parameters_next', wait=True)
             if self.closed:
                 return
             if 'path' in header:

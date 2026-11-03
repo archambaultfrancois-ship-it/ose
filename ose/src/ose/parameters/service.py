@@ -93,7 +93,9 @@ class ParameterService:
             reader.pending.clear()
             reader.changed.set()
 
-    async def next(self, owner):
+    async def next(self, owner, *, wait=False):
+        if type(wait) is not bool:
+            raise ValueError('parameter wait must be boolean')
         reader = self.sessions.get(owner)
         if reader is None or reader.polling:
             raise ValueError('one active poll per parameter subscription required')
@@ -102,7 +104,9 @@ class ParameterService:
             reader.changed.clear()
             if not reader.pending and not reader.closed:
                 try:
-                    await asyncio.wait_for(reader.changed.wait(), .25)
+                    # Opt-in long waits leave legacy/native clients' empty-poll
+                    # behavior unchanged and stay below the 15 s RPC timeout.
+                    await asyncio.wait_for(reader.changed.wait(), 10 if wait else .25)
                 except asyncio.TimeoutError:
                     pass
             if reader.closed:
@@ -123,7 +127,7 @@ class ParameterService:
             self.disconnect(owner)
             return {}, None
         if op == 'parameters_next':
-            return await self.next(owner)
+            return await self.next(owner, wait=header.get('wait', False))
         if op == 'parameters_subscribe':
             paths = header.get('paths')
             if not isinstance(paths, list) or not all(isinstance(p, str) and 'read' in rights.get(p, ()) for p in paths):

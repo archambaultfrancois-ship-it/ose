@@ -129,7 +129,9 @@ automatically converted into log entries.
 Each adapter buffers at most 128 waiting entries within 256 KiB; new entries
 are dropped when full. The cumulative `logs_dropped` count appears in component
 metrics. A batch contains at most 32 entries within roughly 64 KiB of raw text.
-Batches travel with component reports, independently of application deliveries.
+Batches wake the report sender immediately and can travel in log-only reports,
+independently of the 500 ms metric coalescing interval and application deliveries.
+Queued bursts drain in bounded batches with normal network backpressure.
 Initialization and clean-shutdown deposits are flushed best effort as well.
 
 The runtime retains at most 10,000 entries within 8 MiB. Oldest entries expire

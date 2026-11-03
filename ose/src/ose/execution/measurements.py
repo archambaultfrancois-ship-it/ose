@@ -31,8 +31,9 @@ def validate_snapshot(values):
 
 
 class Measurements:
-    def __init__(self):
+    def __init__(self, on_change=None):
         self.values = {}
+        self.on_change = on_change
 
     def declare(self, body):
         name, payload = unpack_port(body)
@@ -40,12 +41,16 @@ class Measurements:
         if payload or name in self.values or len(self.values) >= MAX_POINTS:
             raise ValueError('measurement declarations require unique names (max 128) and no payload')
         self.values[name] = None
+        if self.on_change:
+            self.on_change()
 
     def update(self, body):
         name, payload = unpack_port(body)
         if name not in self.values or len(payload) != 8:
             raise ValueError('measurement requires a declared name and an fl64 payload')
         self.values[name] = validate_value(struct.unpack('>d', payload)[0])
+        if self.on_change:
+            self.on_change()
 
     def snapshot(self):
         return dict(self.values)

@@ -227,8 +227,13 @@ record> stop
 ```
 
 All points start disabled. At least one active capture must select a point to
-enable it. In local execution the adapter refreshes activation every 50 ms; in
-distributed execution the worker reads its local taps. Changes reach callbacks
+enable it. In local execution the adapter watches a versioned activation snapshot:
+an open, stop, disconnect or invalidation wakes its pending request immediately.
+An unchanged watch is renewed after ten seconds, below the RPC timeout; it does
+not block ACKs or other control requests on that connection. A fresh watch reads
+the full state, including after reconnection. Older brokers retain the legacy
+50 ms refresh behavior. In distributed execution the worker reads its local taps.
+Changes reach callbacks
 between ticks, so activation remains fixed during each callback. Stopping one of
 several captures leaves a point enabled for the others. `recording_enabled` can
 also avoid constructing costly diagnostic values; `ose app record` itself skips encoding

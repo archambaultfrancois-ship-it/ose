@@ -55,13 +55,14 @@ class ComponentRecording:
 
 
 class RemoteRecording:
-    """Bounded adapter queue and independent control polling for the local broker."""
+    """Bounded adapter queue and versioned activation watch for the local broker."""
     def __init__(self, codec, request):
         self.request = request
         self.active = set()
         self.queue = asyncio.Queue(maxsize=64)
         self.bytes = 0
         self.counts = Counter()
+        self.closed = False
         self.endpoint = ComponentRecording(codec, declare=self.declare,
             active=lambda: self.active, emit=self.emit)
 
@@ -77,10 +78,28 @@ class RemoteRecording:
         self.bytes += len(payload)
 
     async def poll(self):
-        while True:
-            result, _ = await self.request("recording_component_state")
+        version = None
+        self.active.clear()
+        while not self.closed:
+            result, _ = await self.request("recording_component_state", watch=True, after=version)
+            if self.closed:
+                return
+            next_version = result.get('version')
+            if next_version is None:
+                # Older brokers ignore watch/after and return an immediate snapshot.
+                self.active = set(result['active'])
+                await asyncio.sleep(.05)
+                continue
+            if type(next_version) is not int or next_version < 0:
+                raise ValueError('invalid recording activation version')
+            if version is not None and next_version < version:
+                raise ValueError('recording activation generation changed')
+            version = next_version
             self.active = set(result["active"])
-            await asyncio.sleep(.05)
+
+    def close(self):
+        self.closed = True
+        self.active.clear()
 
     async def send(self):
         while True:

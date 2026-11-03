@@ -1,7 +1,50 @@
 """Bounded real-time observations, independent of delivery and logical time."""
 from collections import deque
+import asyncio
 import math
 import time
+
+
+class ReportSchedule:
+    """Coalesce dirty metrics, send logs promptly, and retain an idle heartbeat."""
+    def __init__(self, interval=.5, heartbeat=1., clock=time.monotonic):
+        self.interval, self.heartbeat, self.clock = interval, heartbeat, clock
+        self.changed = None
+        self.dirty, self.closed = True, False
+        self.next_full = self.next_heartbeat = 0.
+
+    def mark(self):
+        if not self.dirty:
+            self.dirty = True
+            self.wake()
+
+    def wake(self):
+        if self.changed is not None:
+            self.changed.set()
+
+    def close(self):
+        self.closed = True
+        self.wake()
+
+    async def next(self, logs):
+        """True: full snapshot; False: logs only; None: shutdown."""
+        if self.changed is None:
+            self.changed = asyncio.Event()
+        while not self.closed:
+            self.changed.clear()
+            now = self.clock()
+            if now >= self.next_heartbeat or self.dirty and now >= self.next_full:
+                self.dirty = False
+                self.next_full, self.next_heartbeat = now + self.interval, now + self.heartbeat
+                return True
+            if logs.pending:
+                return False
+            deadline = self.next_full if self.dirty else self.next_heartbeat
+            try:
+                await asyncio.wait_for(self.changed.wait(), max(0, deadline - now))
+            except asyncio.TimeoutError:
+                pass
+        return None
 
 
 def describe(plan):

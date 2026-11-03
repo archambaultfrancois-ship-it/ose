@@ -95,6 +95,8 @@ The supervisor hosts the broker and launches a Python adapter process per
 component. Each adapter starts its component process. All components initialize
 and send READY before the supervisor enables publication and delivery. Startup
 has a 20-second readiness limit. A process failure stops OSE execution.
+The local supervisor waits on READY notifications, child-exit futures and the
+stop event; it does not periodically scan child return codes during execution.
 SIGINT/SIGTERM stop adapters, their children, then the broker. Startup and run
 failures also clean up children. Infinite execution is the default; `--duration`
 supports demonstrations and integration tests.
@@ -106,6 +108,12 @@ Messages, catalogues, retry state and deduplication history exist only in RAM.
 No runtime state directory or database is created; restarting begins with empty
 queues and the model's catalogues. Diagnostic files do not restore delivery state.
 There is no automatic restart.
+
+Control requests remain independent of data admission. Local recording activation
+uses versioned change watches; adapter parameter readers use bounded ten-second
+event waits. Changed metrics coalesce over 500 ms, with one-second idle presence
+reports. Logs wake their sender independently. These paths retain the same
+process isolation, transport profiles, queue bounds and component protocols.
 
 ## Public boundary
 

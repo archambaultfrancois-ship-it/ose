@@ -25,6 +25,27 @@ class TapHub:
         self.points, self.max_frame = points, max_frame
         self.codec = codec
         self.sessions = {}
+        self.activation_version = 0
+        self.activation_changed = None
+
+    def _activation_changed(self):
+        self.activation_version += 1
+        if self.activation_changed is not None:
+            self.activation_changed.set()
+        self.activation_changed = None
+
+    async def activation(self, after=None):
+        """Versioned, coalesced state; one bounded wait without per-message work."""
+        if after is not None and (type(after) is not int or after < 0):
+            raise ValueError('invalid recording activation version')
+        if after == self.activation_version:
+            if self.activation_changed is None:
+                self.activation_changed = asyncio.Event()
+            try:
+                await asyncio.wait_for(self.activation_changed.wait(), 10)
+            except asyncio.TimeoutError:
+                pass
+        return self.activation_version, self.active_points()
 
     async def request(self, peer, header):
         op = header["op"]
@@ -78,6 +99,7 @@ class TapHub:
                 capacity=capacity, budget=budget, queue=deque(), bytes=0, active=True,
                 predicates=predicates, identities=identities,
                 changed=asyncio.Event(), polling=False, error=None, counts=Counter())
+            self._activation_changed()
             return {"session": token, "label": label, "filtering": "source"}, None
         session = self.sessions[header["session"]]
         if session["peer"] is not peer:
@@ -119,13 +141,15 @@ class TapHub:
                 "point_counts": {name: dict(counts) for name, counts in points},
                 "queued_bytes": session["bytes"], "stopped": not session["active"], "capture_error": session["error"]}
 
-    @staticmethod
-    def deactivate(session):
+    def deactivate(self, session):
+        was_active = session['active']
         session["active"] = False
         for predicate in session["predicates"].values():
             predicate.close()
         session["predicates"].clear()
         session["changed"].set()
+        if was_active:
+            self._activation_changed()
 
     def observe(self, topic, body, *, generation, sequence, catalogue, root):
         # Keep the hot path constant when nobody is recording.

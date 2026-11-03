@@ -91,6 +91,14 @@ writing application, or in an explicit application component.
 
 ## Retention, reconnects and limits
 
+Adapters opt into event-driven `parameters_next` requests with `wait: true`.
+An unchanged request waits up to ten seconds; a parameter change wakes it
+immediately. Pending values still coalesce per block, and disconnect wakes the
+reader and releases its subscription. Only one wait per subscription is allowed.
+Legacy requests without this flag retain their 250 ms empty response, including
+native clients. Python clients can opt in with `await client.next(wait=True)`;
+`client.next()` preserves the legacy bounded-poll behavior.
+
 The local broker or distributed coordinator owns the same parameter service.
 A slow reader retains only a pending indication per block and receives the latest
 value when it next polls. Intermediate values may disappear. A disconnected

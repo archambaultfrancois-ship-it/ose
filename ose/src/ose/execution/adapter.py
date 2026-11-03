@@ -10,7 +10,7 @@ from ose.delivery.stores import MemoryStore
 from ose.parameters.bindings import RemoteBindings, updates
 from ose.execution.process import start_component, tick_events, stop_component
 from ose.execution.scheduler import Scheduler, reserve_snapshot
-from ose.execution.observation import TickTimings
+from ose.execution.observation import TickTimings, ReportSchedule
 from ose.transport.tcp import Client
 from ose.transport.udp import UDP
 from ose.recording.component import RemoteRecording
@@ -20,7 +20,8 @@ from ose.execution.logs import ComponentLogs
 class Adapter:
     def __init__(self, plan, name):
         self.plan, self.name, self.node = plan, name, plan["components"][name]
-        self.component_logs = ComponentLogs()
+        self.reports = ReportSchedule()
+        self.component_logs = ComponentLogs(on_change=self.reports.wake)
         self.codec = SDL2(plan["sdl_root"])
         self.subscriptions = {s["id"]: s for s in plan["subscriptions"] if s["to"].split(".")[0] == name}
         self.buffers, self.catalogues, self.metrics = {}, {}, {}
@@ -34,12 +35,16 @@ class Adapter:
         for identity, sub in self.subscriptions.items():
             policy = SubscriptionPolicy.from_dict(sub["policy"])
             store = MemoryStore(policy.capacity)
-            store.on_change = self.activity.set
+            store.on_change = self._changed
             self.buffers[sub["to"].split(".")[1]] = Buffer(policy, store)
         self.scheduler = Scheduler(self.node, self.buffers)
         self.timings = TickTimings()
         self.started_at = time.monotonic()
         self.timed_ticks, self.tick_index, self.activated_at_ns = False, 0, 0
+
+    def _changed(self):
+        self.activity.set()
+        self.reports.mark()
 
     async def _tcp_data(self, header, body):
         # This callback runs on the subscription's data connection, never the control reader.
@@ -52,6 +57,7 @@ class Adapter:
             self.network_queues[header["subscription"]].put_nowait((header, body, address))
         except asyncio.QueueFull:
             self.metrics["network_refused"] = self.metrics.get("network_refused", 0) + 1
+            self.reports.mark()
 
     async def _receiver(self, subscription):
         queue = self.network_queues[subscription]
@@ -106,24 +112,29 @@ class Adapter:
                         await self.udp.send(ack, address=address)
             except (ValueError, KeyError) as error:
                 self.metrics["invalid"] = self.metrics.get("invalid", 0) + 1
+                self.reports.mark()
                 print(f"{self.name}: rejected data: {error}", file=sys.stderr)
             # Cached catalogue/in-memory admissions may otherwise run without any suspension.
             await asyncio.sleep(0)
 
     async def _report(self):
         while True:
-            elapsed = max(time.monotonic() - self.started_at, .001)
-            metrics = {"inputs": {p: b.snapshot() for p, b in self.buffers.items()},
-                "ticks_hz": self.metrics.get("ticks", 0) / elapsed,
-                "publications_hz": self.metrics.get("publications", 0) / elapsed,
-                "running": bool(self.activated_at_ns), **self.metrics, **self.timings.snapshot(self.scheduler)}
-            if hasattr(self, "component_recording"):
-                metrics["recording"] = dict(self.component_recording.counts)
-            metrics['measurements'] = self.process.measurements.snapshot()
+            full = await self.reports.next(self.process.logs)
+            if full is None:
+                return
+            metrics = {}
+            if full:
+                elapsed = max(time.monotonic() - self.started_at, .001)
+                metrics = {"inputs": {p: b.snapshot() for p, b in self.buffers.items()},
+                    "ticks_hz": self.metrics.get("ticks", 0) / elapsed,
+                    "publications_hz": self.metrics.get("publications", 0) / elapsed,
+                    "running": bool(self.activated_at_ns), **self.metrics, **self.timings.snapshot(self.scheduler)}
+                if hasattr(self, "component_recording"):
+                    metrics["recording"] = dict(self.component_recording.counts)
+                metrics['measurements'] = self.process.measurements.snapshot()
             metrics['log_records'] = self.process.logs.drain()
             metrics['logs_dropped'] = self.process.logs.dropped
             await self.client.request("metrics", json.dumps(metrics).encode())
-            await asyncio.sleep(.1)
 
     async def _work(self):
         while True:
@@ -139,6 +150,7 @@ class Adapter:
                 continue
             # Reserve the complete snapshot atomically before any pipe write can suspend.
             reserve_snapshot(self.buffers, selected)
+            self.reports.mark()
             self.tick_index += 1
             timestamp = time.monotonic_ns() - self.activated_at_ns if self.timed_ticks else None
             async for port, payload in self.timings.events(
@@ -154,6 +166,7 @@ class Adapter:
                     print(f"{self.name}: delivery refused {refused}", file=sys.stderr)
             self.scheduler.complete(selected)
             self.metrics["ticks"] = self.metrics.get("ticks", 0) + 1
+            self.reports.mark()
 
     async def run(self, host, port):
         tasks = []
@@ -175,6 +188,7 @@ class Adapter:
             self.parameters = await RemoteBindings(self.node, self.client.request, self.activity).open()
             self.component_recording = RemoteRecording(self.codec, self.client.request)
             self.process, self.timed_ticks = await start_component(self.node, self.parameters, self.component_recording.endpoint, self.component_logs)
+            self.process.measurements.on_change = self.reports.mark
             await self.client.request("ready")
             # Supervisor activates delivery only after every component is ready.
             while True:
@@ -197,6 +211,9 @@ class Adapter:
                 task.result()
             raise RuntimeError(f"component {self.name} stopped unexpectedly")
         finally:
+            self.reports.close()
+            if hasattr(self, 'component_recording'):
+                self.component_recording.close()
             if hasattr(self, "parameters"):
                 await self.parameters.close()
             for task in tasks:

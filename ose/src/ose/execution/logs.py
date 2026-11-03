@@ -49,9 +49,10 @@ def log_body(level, message, logger=''):
 
 class ComponentLogs:
     """The IPC reader never waits for a remote log consumer."""
-    def __init__(self):
+    def __init__(self, on_change=None):
         self.pending = deque()
         self.bytes = self.dropped = 0
+        self.on_change = on_change
 
     def emit(self, body):
         if len(body) < 4:
@@ -63,10 +64,14 @@ class ComponentLogs:
             raise ValueError('oversized log frame')
         if len(self.pending) >= 128 or self.bytes + len(body) > 256 * 1024:
             self.dropped += 1
+            if self.on_change:
+                self.on_change()
             return
         record['time_ns'] = str(time.time_ns())
         self.pending.append((record, len(body)))
         self.bytes += len(body)
+        if self.on_change:
+            self.on_change()
 
     def drain(self):
         records = []

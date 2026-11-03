@@ -122,6 +122,7 @@ class Broker(Sessions):
         return identity
 
     async def start(self, port=0):
+        self.readiness = asyncio.Event()
         host = self.plan.get("broker", {}).get("host", "127.0.0.1")
         self.udp = await UDP.bind(self._udp, self.plan["max_datagram"], host=host)
         self.server = await asyncio.start_server(self._connection, host, port)
@@ -138,6 +139,7 @@ class Broker(Sessions):
         session = None
         publications = set()
         parameter_polls = set()
+        recording_watch = set()
         try:
             while not self.closing:
                 header, body = await peer.receive()
@@ -186,6 +188,18 @@ class Broker(Sessions):
                         publication = asyncio.create_task(self._publish_reply(peer, node, header, body, session))
                         publications.add(publication)
                         publication.add_done_callback(publications.discard)
+                    continue
+                if op == 'recording_component_state' and header.get('watch'):
+                    if node is None or recording_watch:
+                        await self._reply(peer, header.get('request'), error='one recording watch per component connection required')
+                    else:
+                        watch = asyncio.create_task(self._recording_reply(peer, node, header))
+                        recording_watch.add(watch)
+                        def completed_watch(watch):
+                            recording_watch.discard(watch)
+                            if not watch.cancelled():
+                                watch.exception()
+                        watch.add_done_callback(completed_watch)
                     continue
                 try:
                     result = {}
@@ -277,6 +291,7 @@ class Broker(Sessions):
                         if node is None:
                             raise ValueError("hello required")
                         self.ready.add(node)
+                        self.readiness.set()
                     elif op in ("recording_declare", "recording_component_state", "recording_emit"):
                         result = self.component_recording(node, op, header, body)
                     elif op == "status":
@@ -312,6 +327,9 @@ class Broker(Sessions):
         except (asyncio.IncompleteReadError, ConnectionError, ValueError):
             pass
         finally:
+            for watch in recording_watch:
+                watch.cancel()
+            await asyncio.gather(*recording_watch, return_exceptions=True)
             for poll in parameter_polls:
                 poll.cancel()
             await asyncio.gather(*parameter_polls, return_exceptions=True)
@@ -339,6 +357,17 @@ class Broker(Sessions):
                     self.engines[data_subscription].store.notify()
             self.connections.discard(task)
             await peer.close()
+
+    async def _recording_reply(self, peer, node, header):
+        try:
+            if header['watch'] is not True:
+                raise ValueError('recording watch must be boolean')
+            version, active = await self.recording.activation(header.get('after'))
+            prefix = f'{node}.record.'
+            await self._reply(peer, header['request'], dict(version=version,
+                active=sorted(topic[len(prefix):] for topic in active if topic.startswith(prefix))))
+        except (ValueError, KeyError, TypeError) as error:
+            await self._reply(peer, header.get('request'), error=str(error))
 
     async def _parameter_reply(self, peer, header, body, node):
         try:

@@ -44,6 +44,12 @@ force them. JSONL never contains ANSI sequences.
 
 ## Reading the report
 
+Local adapters and distributed workers mark metrics dirty on processing, queue
+or measurement changes and coalesce full reports over 500 ms. Idle components
+send a one-second heartbeat, below the three-second stale threshold. Log batches
+can arrive sooner without forcing a full metric snapshot. CLI refresh frequency
+does not change the application's reporting cadence.
+
 The table shows recent input admissions/s, publications/s and completed ticks/s,
 the fullest FIFO's depth/capacity, recent delivery losses, and tick p95 in ms.
 Details show each input and outgoing delivery queue, its capacity, FIFO/latest

@@ -79,7 +79,9 @@ Rust returns an error. No activation or declaration type argument is needed.
 These calls use ordinary CH/1 IPC flow control; they do not contact a dashboard
 or wait for a CLI reader. An emission means the update was sent to the adapter,
 not that a particular reader has observed it. Local status reports normally
-refresh every 100 ms; distributed worker metrics refresh every 500 ms.
+coalesce changes over 500 ms, as do distributed worker reports. Idle runtimes
+send a full status heartbeat every second. Measurements retain their latest
+values while waiting for the next report.
 Multiple emissions can therefore be coalesced into one observed latest value.
 Old component binaries remain valid without measurements. Rebuild generated
 containers and update the application runtime before using the new APIs.

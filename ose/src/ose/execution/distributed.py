@@ -24,7 +24,7 @@ from ose.delivery.stores import MemoryStore
 from ose.execution.leadership import lease_clock
 from ose.execution.process import start_component, stop_component, tick_events
 from ose.execution.scheduler import Scheduler, reserve_snapshot
-from ose.execution.observation import TickTimings, describe
+from ose.execution.observation import TickTimings, describe, ReportSchedule
 from ose.transport.protocol import encode
 from ose.transport.secure import RPCServer, connect, finish_cleanup, identity, loopback
 from ose.recording.taps import TapHub, OPERATIONS as RECORDING_OPERATIONS
@@ -458,13 +458,16 @@ class Worker:
                          if s["from"].split(".")[0] == name and s.get("routing", "broker") == "direct"}
         self.activity = asyncio.Event()
         self.buffers, self.locks = {}, {}
+        self.reports = ReportSchedule()
         for key, sub in self.incoming.items():
             policy = SubscriptionPolicy.from_dict(sub["policy"])
             store = MemoryStore(policy.capacity)
-            store.on_change = self.activity.set
+            store.on_change = self._changed
             self.buffers[sub["to"].split(".")[1]] = Buffer(policy, store)
             self.locks[key] = asyncio.Lock()
         self.engines = {key: engine(sub) for key, sub in self.outgoing.items()}
+        for delivery in self.engines.values():
+            delivery.store.on_change = self.reports.mark
         self.scheduler = Scheduler(self.node, self.buffers)
         self.timings = TickTimings()
         self.recording = TapHub(self.recording_points, plan["max_frame"], codec=self.codec)
@@ -473,13 +476,17 @@ class Worker:
         self.recording_sequence = 0
         self.rpc = RPCServer(plan["max_frame"], self.receive, server_context, self.recording.disconnected)
         self.metrics = Counter()
-        self.component_logs = ComponentLogs()
+        self.component_logs = ComponentLogs(on_change=self.reports.wake)
         self.directory = {"nodes": {}, "enabled": False}
         self.started = asyncio.Event()
         self.started_at = 0
         self.sequence = 0
         self.direct_clients = {}
         self.closing = False
+
+    def _changed(self):
+        self.activity.set()
+        self.reports.mark()
 
     def recording_points(self):
         points = {f"{self.name}.{port}": dict(topic=f"{self.name}.{port}", root=desc["root"], catalogue=desc["catalogue"], kind="output",
@@ -537,6 +544,7 @@ class Worker:
                     task.result()
                 raise RuntimeError("control connection failed during initialization")
             self.process, self.timed_ticks = initialization.result()
+            self.process.measurements.on_change = self.reports.mark
             tasks.remove(initialization)
             if not self.timed_ticks:
                 raise ValueError("distributed components require timestamped ticks; regenerate containers")
@@ -558,6 +566,7 @@ class Worker:
         # Python 3.10 wait_for can absorb cancellation when its child has just
         # completed. Wakeups and explicit state stop those loops anyway.
         self.closing = True
+        self.reports.close()
         self.activity.set()
         if hasattr(self, "parameters"):
             await self.parameters.close()
@@ -615,19 +624,23 @@ class Worker:
 
     async def _metrics(self):
         while not self.closing:
-            metrics = {**self.metrics, "running": bool(self.started_at),
-                       **self.timings.snapshot(self.scheduler),
-                       "inputs": {key: value.snapshot() for key, value in self.buffers.items()},
-                       "direct": {key: value.snapshot() for key, value in self.engines.items()}}
             process = getattr(self, 'process', None)
-            metrics['measurements'] = process.measurements.snapshot() if process is not None else {}
+            full = await self.reports.next(self.component_logs)
+            if full is None:
+                return
+            metrics = {}
+            if full:
+                metrics = {**self.metrics, "running": bool(self.started_at),
+                           **self.timings.snapshot(self.scheduler),
+                           "inputs": {key: value.snapshot() for key, value in self.buffers.items()},
+                           "direct": {key: value.snapshot() for key, value in self.engines.items()}}
+                metrics['measurements'] = process.measurements.snapshot() if process is not None else {}
             if process is not None:
                 metrics['log_records'] = process.logs.drain()
                 metrics['logs_dropped'] = process.logs.dropped
             await self.control("metrics", json.dumps(metrics).encode())
             if self.closing:
                 return
-            await asyncio.sleep(.5)
 
     async def receive(self, peer, header, body):
         if not hasattr(self, "token"):
@@ -716,6 +729,7 @@ class Worker:
                     pass
                 continue
             reserve_snapshot(self.buffers, selected)
+            self.reports.mark()
             self.metrics["ticks"] += 1
             async for port, payload in self.timings.events(tick_events(self.process, self.node, selected,
                     time.monotonic_ns() - self.started_at, self.metrics["ticks"], **({"parameters": self.parameters} if self.node.get("parameter_bindings") else {}))):
@@ -723,6 +737,7 @@ class Worker:
                 await self.publish(f"{self.name}.{port}", self.codec.wrap(desc["catalogue"], payload))
             self.scheduler.complete(selected)
             self.metrics["completed_ticks"] += 1
+            self.reports.mark()
 
     async def publish(self, topic, body):
         self.sequence += 1

@@ -74,8 +74,8 @@ class ParameterClient:
                 await self.block(path)
         await self.rpc.request('parameters_subscribe', paths=paths)
 
-    async def next(self):
-        result, payload = await self.rpc.request('parameters_next')
+    async def next(self, *, wait=False):
+        result, payload = await self.rpc.request('parameters_next', wait=wait)
         if result.get('empty'):
             return None
         path = result['path']
