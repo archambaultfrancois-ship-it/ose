@@ -4,6 +4,7 @@ import App from '../src/App.vue'
 import { account } from '../src/api'
 
 vi.mock('../src/components/ComponentsPage.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('../src/components/LogsPage.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../src/components/MeasurementsPage.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../src/components/RecordingsPage.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../src/components/ParametersPage.vue', () => ({ default: { template: '<div />' } }))
@@ -51,7 +52,7 @@ async function mount() {
 }
 function heading() { return root.querySelector('.page-heading h1')?.textContent }
 
-it.each(['measurements', 'recordings', 'parameters'])('restores %s after the browser reloads the tab', async page => {
+it.each(['logs', 'measurements', 'recordings', 'parameters'])('restores %s after the browser reloads the tab', async page => {
   await mount()
   const label = page[0].toUpperCase() + page.slice(1)
   const button = [...root.querySelectorAll('nav button')].find(node => node.textContent?.includes(label)) as HTMLButtonElement
@@ -64,7 +65,7 @@ it.each(['measurements', 'recordings', 'parameters'])('restores %s after the bro
   await mount()
   expect(heading()).toBe(label)
   expect(root.querySelector('nav button.active')?.textContent).toContain(label)
-  await until(() => vi.mocked(fetch).mock.calls.some(([path]) => String(path).startsWith('/api/v1/' + (page === 'recordings' ? 'recording-points' : page))))
+  if (page !== 'logs') await until(() => vi.mocked(fetch).mock.calls.some(([path]) => String(path).startsWith('/api/v1/' + (page === 'recordings' ? 'recording-points' : page))))
   expect(vi.mocked(fetch).mock.calls.some(([path]) => path === '/api/v1/components')).toBe(false)
 })
 

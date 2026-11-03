@@ -30,6 +30,7 @@ is Unix milliseconds and `sequence` is a decimal observation-order string.
 | --- | --- |
 | Application | `GET /application`: connection, epoch, versions, capabilities, freshness and service errors. |
 | Components | `GET /components`, `GET /components/{id}`: shared diagnostics, never a fresh RPC per browser. |
+| Logs | `GET /logs`: bounded in-memory component history with component, level, category and text filters; follow with `after`/`epoch`. Requires component-scoped `logs.read`. FATAL is distinct from CRITICAL. |
 | Measures | `GET /measurements`, `POST /measurement-watches`, `DELETE /measurement-watches/{id}`. |
 | History | `GET /series?ids=...&start=...&end=...&max_points=...`, `GET /series/export?ids=...`. |
 | Capture discovery | `GET /recording-points`, `POST /recording-points/refresh`, `GET /recording-points/{id}/schema`, `POST /recording-filters/validate`. |

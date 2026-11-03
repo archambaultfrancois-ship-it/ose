@@ -10,7 +10,33 @@ import sdl.runtime.SdlCodec;
 /** CH/1 component runtime. Standard output belongs exclusively to this protocol. */
 public final class Component {
     public static final int MAX_FRAME = 1024 * 1024;
+    public enum LogLevel {
+        DEBUG(10), INFO(20), WARNING(30), ERROR(40), CRITICAL(50), FATAL(60);
+        final int code;
+        LogLevel(int code) { this.code = code; }
+    }
+    private static void depositLog(OutputStream output, LogLevel level, String logger, String message) throws IOException {
+        byte[] name = utf8(logger), text = utf8(message);
+        if (name.length > 200 || text.length == 0 || logger.indexOf(0) >= 0 || message.indexOf(0) >= 0)
+            throw new IllegalArgumentException("invalid log category/message");
+        byte[] suffix = utf8("… [truncated]");
+        int kept = text.length;
+        boolean truncated = kept > 8192;
+        if (truncated) {
+            kept = 8192 - suffix.length;
+            while (kept > 0 && (text[kept] & 0xc0) == 0x80) kept--;
+        }
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream data = new DataOutputStream(bytes);
+        data.writeByte(level.code); data.writeShort(name.length); data.write(name); data.write(text, 0, kept);
+        if (truncated) data.write(suffix);
+        send(output, 'L', bytes.toByteArray());
+    }
     private static final Charset UTF8 = Charset.forName("UTF-8");
+    /** Deposit a formatted log; use "%s", message for preformatted text. */
+    public static void logf(OutputStream output, LogLevel level, String logger, String format, Object... arguments) throws IOException {
+        depositLog(output, level, logger, String.format(Locale.ROOT, format, arguments));
+    }
     private static final BigInteger MAX_U64 = BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE);
     public static String text(byte[] bytes) throws IOException {
         return UTF8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
@@ -74,6 +100,9 @@ public final class Component {
         }
     }
     public static class Context {
+        public final void logf(LogLevel level, String logger, String format, Object... arguments) throws IOException {
+            Component.logf(stream, level, logger, format, arguments);
+        }
         public final String name;
         public String configJson;
         private BigInteger time = BigInteger.ZERO, index = BigInteger.ZERO;

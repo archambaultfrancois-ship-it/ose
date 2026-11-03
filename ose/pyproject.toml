@@ -20,7 +20,7 @@ ose = "ose.cli:main"
 where = ["src"]
 
 [tool.setuptools.data-files]
-"share/ose/sdk/c" = ["sdk/c/ose_component.h", "sdk/c/ose_component.c", "sdk/c/ose_callbacks.h", "sdk/c/ose_callbacks.c"]
+"share/ose/sdk/c" = ["sdk/c/ose_component.h", "sdk/c/ose_component_internal.h", "sdk/c/ose_component.c", "sdk/c/ose_callbacks.h", "sdk/c/ose_callbacks.c"]
 "share/ose/sdk/rust" = ["sdk/rust/Cargo.toml"]
 "share/ose/sdk/rust/src" = ["sdk/rust/src/lib.rs"]
 

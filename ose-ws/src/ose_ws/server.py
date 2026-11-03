@@ -18,6 +18,8 @@ from ose_ws.auth import Auth
 from ose_ws.config import loopback
 from ose_ws.schema.adapter import SchemaAdapter
 from ose_ws.services.connection import ApplicationConnection
+from ose_ws.services.logs import LogReader
+from ose.execution.logs import LEVELS
 from ose_ws.services.measurements import MeasurementStore
 from ose_ws.services.operations import Operations
 from ose_ws.services.parameters import ParameterManager
@@ -47,6 +49,7 @@ async def body(request, limit=2 * 1024**2):
 def create_app(config):
     auth = Auth(config)
     connection = ApplicationConnection(config)
+    logs = LogReader(connection)
     store = StateStore(config)
     measurements = MeasurementStore(config)
     collector = StatusCollector(config, connection, measurements)
@@ -70,6 +73,7 @@ def create_app(config):
             await recordings.close()
             await parameters.close()
             await collector.close()
+            await logs.close()
             await store.close()
 
     app = FastAPI(title="OSE Web Console", version=__version__, lifespan=lifespan,
@@ -80,6 +84,7 @@ def create_app(config):
                           ("measurements", measurements), ("collector", collector), ("parameters", parameters),
                           ("recordings", recordings), ("operations", operations)):
         setattr(app.state, name, service)
+    app.state.logs = logs
 
     def session(request, *, mutation=False):
         return auth.get(request, mutation=mutation)
@@ -187,6 +192,21 @@ def create_app(config):
     async def components(request: Request):
         session(request).check("components.read")
         return public(collector.diagnostics())
+
+    @app.get('/api/v1/logs')
+    async def log_records(request: Request, components: str = '*', levels: str = '', search: str = '',
+                          logger: str = '*', after: str = None, epoch: str = None, limit: int = 200):
+        signed_in = session(request)
+        scopes = ['*'] if signed_in.allows('admin') else signed_in.permissions.get('logs.read', [])
+        require(bool(scopes), 'Permission denied.', 403, 'FORBIDDEN')
+        selected_levels = levels.split(',') if levels else None
+        require(selected_levels is None or all(level in LEVELS.values() for level in selected_levels), 'Invalid log levels.')
+        require(1 <= limit <= 200 and len(search) <= 500 and len(logger) <= 200 and len(components) <= 2000,
+                'Invalid log filters or page size.')
+        require(after is None or after.isascii() and after.isdecimal() and len(after) <= 20, 'Invalid log cursor.')
+        result = await logs.query(dict(components=components.split(','), scopes=scopes, levels=selected_levels,
+                                       search=search, logger=logger, after=after, epoch=epoch, limit=limit))
+        return public(result)
 
     @app.get("/api/v1/components/{identity}")
     async def component(request: Request, identity: str):

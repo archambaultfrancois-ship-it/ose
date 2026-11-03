@@ -57,10 +57,12 @@ it('shows only the selected page and preserves parameter drafts across navigatio
 
   const pages = [
     ['Components', 'Search components'],
+    ['Logs', 'Minimum level'],
     ['Measurements', 'Measurement catalogue'],
     ['Recordings', 'Recording points'],
     ['Parameters', 'Parameter blocks'],
   ]
+  expect([...root.querySelectorAll('nav button')][1].textContent).toContain('Logs')
   function checkPage(label: string) {
     expect(root.querySelector('.page-heading h1')?.textContent).toBe(label)
     for (const [name, marker] of pages) {

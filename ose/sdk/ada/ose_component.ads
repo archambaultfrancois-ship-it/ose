@@ -22,6 +22,8 @@ package Ose_Component is
    procedure Record_Bytes (Name : String; Payload : SDL_Runtime.Bytes);
    procedure Declare_Measurement (Name : String);
    procedure Measure (Name : String; Value : SDL_Runtime.Float64);
+   type Log_Level is (Debug, Info, Warning, Error, Critical, Fatal);
+   procedure Log (Level : Log_Level; Logger, Message : String);
    overriding procedure Finalize (E : in out Event);
 private
    type Raw_Event is record

@@ -29,6 +29,7 @@ from ose.transport.protocol import encode
 from ose.transport.secure import RPCServer, connect, finish_cleanup, identity, loopback
 from ose.recording.taps import TapHub, OPERATIONS as RECORDING_OPERATIONS
 from ose.recording.component import ComponentRecording, validate_name, MAX_POINTS
+from ose.execution.logs import LogStore, ComponentLogs
 
 
 def fingerprint(plan):
@@ -86,6 +87,7 @@ class Coordinator:
         self.lease_seconds = lease_seconds
         self.authority = authority
         self.epoch, self.plan_id = uuid.uuid4().hex, fingerprint(plan)
+        self.logs = LogStore(self.epoch)
         self.sessions, self.metrics = {}, Counter()
         self.observation = describe(plan)
         self.external_peers, self.external_owners, self.external_generations = {}, {}, {}
@@ -283,6 +285,8 @@ class Coordinator:
             return await self.recording.request(peer, header)
         if op == "status":
             return self.snapshot(), None
+        if op == 'logs':
+            return self.logs.query(**header.get('filters', {})), None
         if op in ("external_open", "external_publish", "external_close"):
             return await self.external_request(peer, header, body, caller)
         if peer in self.external_peers:
@@ -348,9 +352,12 @@ class Coordinator:
             value = json.loads(body)
             if not isinstance(value, dict):
                 raise ValueError("metrics must be an object")
+            if set(value) <= {'log_records', 'logs_dropped'}:
+                value = {**session['metrics'], **value}
             if 'measurements' in value:
                 from ose.execution.measurements import validate_snapshot
                 value['measurements'] = validate_snapshot(value['measurements'])
+            self.logs.append(name, session['observation_generation'], value.pop('log_records', []))
             session["metrics"] = value
             session["metric_time"] = time.monotonic()
             return {}, None
@@ -419,7 +426,7 @@ class Coordinator:
             "report_age_ms": (time.monotonic() - self.sessions[name]["metric_time"]) * 1000
                 if self.sessions.get(name, {}).get("metric_time") is not None else None}
             for name, desc in self.observation["components"].items()}}
-        return {"epoch": self.epoch, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
+        return {"epoch": self.epoch, "logs_version": 1, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
                 "enabled": self.activated, "metrics": dict(self.metrics),
                 "external_publishers": len(self.external_peers),
                 "components": {name: {"ready": session["ready"], "host": session["host"],
@@ -466,6 +473,7 @@ class Worker:
         self.recording_sequence = 0
         self.rpc = RPCServer(plan["max_frame"], self.receive, server_context, self.recording.disconnected)
         self.metrics = Counter()
+        self.component_logs = ComponentLogs()
         self.directory = {"nodes": {}, "enabled": False}
         self.started = asyncio.Event()
         self.started_at = 0
@@ -519,7 +527,7 @@ class Worker:
             self.parameters = await RemoteBindings(self.node, self.control, self.activity).open()
             if self.parameters.task:
                 tasks.append(self.parameters.task)
-            initialization = asyncio.create_task(start_component(self.node, self.parameters, self.internal_recording))
+            initialization = asyncio.create_task(start_component(self.node, self.parameters, self.internal_recording, self.component_logs))
             tasks.append(initialization)
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             if initialization not in done:
@@ -564,6 +572,13 @@ class Worker:
         await self.rpc.close()
         if hasattr(self, "process"):
             await stop_component(self.process)
+        if hasattr(self, 'token'):
+            try:
+                while self.component_logs.pending:
+                    await asyncio.wait_for(self.control('metrics', json.dumps({
+                        'log_records': self.component_logs.drain(), 'logs_dropped': self.component_logs.dropped}).encode()), .5)
+            except (OSError, EOFError, ValueError, asyncio.TimeoutError):
+                pass
         if hasattr(self, "token"):
             try:
                 await asyncio.wait_for(self.control("unregister"), .5)
@@ -606,6 +621,9 @@ class Worker:
                        "direct": {key: value.snapshot() for key, value in self.engines.items()}}
             process = getattr(self, 'process', None)
             metrics['measurements'] = process.measurements.snapshot() if process is not None else {}
+            if process is not None:
+                metrics['log_records'] = process.logs.drain()
+                metrics['logs_dropped'] = process.logs.dropped
             await self.control("metrics", json.dumps(metrics).encode())
             if self.closing:
                 return

@@ -12,6 +12,7 @@ The broker accepts at most 32 concurrent publications per connection.
 | Request | Metadata in addition to op/request | Body | Result |
 | --- | --- | --- | --- |
 | `client_hello` | `client_id`, `udp_port` | empty | `session`, `udp_port`, `max_frame`, `max_datagram`, `max_wait_timeout_ms` |
+| `logs` | optional `filters` object | empty | epoch, ordered items, cursor, more, truncated, evicted, retained |
 | `list_topics` | none | empty | `topics`: topic/root/catalogue_id/publisher_connected |
 | `catalogue` | `catalogue_id` | empty | raw SDL2 catalogue |
 | `declare_publisher` | `topic`, `root` | SDL2 catalogue | topic/catalogue_id |
@@ -27,10 +28,16 @@ The broker accepts at most 32 concurrent publications per connection.
 existing internal admission waits and the limit for future external subscriptions;
 publication RPC deadlines must exceed that bound. A TCP subscription attaches a
 **separate** data connection with `attach_client`. Its reply precedes any DATA.
+
 UDP uses the control connection's observed IP and declared UDP port. Register
 local queues/workers before `activate_subscription`; the broker may already
 queue a retained state or new publications while the subscription is inactive.
 FIFO starts at subscription creation. Latest enqueues the retained state.
+
+`logs` is a read-only observer operation and does not require `client_hello`.
+Filters select components (globs), exact levels including FATAL, category,
+message text and bounded cursor pagination. It is also available on a distributed
+coordinator with its normal TLS access rules. See [component logs](../../docs/logs.md).
 
 Policy is a resolved object with buffer (`fifo`/`latest`), capacity, overflow
 (`reject_new`/`drop_oldest`/`wait`), ack (`none`/`received`), max_retries,

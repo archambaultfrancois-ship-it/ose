@@ -68,6 +68,10 @@ an exclusive lock refuses another console using the same state directory.
   represent successful observations of latest values. They are not an exhaustive
   stream of emissions. Missing/stale values create gaps; generations create
   separate segments. History starts at selection and is lost on console restart.
+- **Logs:** the second page, after Components; an in-memory component log stream
+  with component/category/text filters, minimum severity through FATAL, pause,
+  resume and JSONL export. Scoped `logs.read` rights control access. See
+  [component logs](../ose/docs/logs.md) for SDK deposits, CLI access and retention.
 - **Recordings:** exact names, SDL types and globs; concrete draft selections;
   optional validated source predicates; PCAPNG/MCAP; rotation and cyclic
   retention; independent capture counters, explicit stop, protected download

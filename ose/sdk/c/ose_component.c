@@ -1,9 +1,15 @@
-#include "ose_component.h"
+#include "ose_component_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #define MAX_SIZE (1024U * 1024U)
+#define MAX_LOG_MESSAGE 8192U
+static const char log_truncation[] = "\xe2\x80\xa6 [truncated]";
+static size_t log_prefix(const char *message, size_t limit) {
+    while (limit && ((unsigned char)message[limit] & 0xc0U) == 0x80U) --limit;
+    return limit;
+}
 static uint32_t number(const uint8_t *b) {
     return ((uint32_t)b[0]<<24)|((uint32_t)b[1]<<16)|((uint32_t)b[2]<<8)|b[3];
 }
@@ -52,6 +58,42 @@ int ose_send(char op, const void *data, size_t size) {
     header(b,(uint32_t)size+1);
     return fwrite(b,1,4,stdout)==4 && fwrite(&op,1,1,stdout)==1 &&
            (!size || fwrite(data,1,size,stdout)==size) && fflush(stdout)==0;
+}
+int ose_internal_log(OseLogLevel level, const char *logger, const char *message) {
+    size_t n, m, prefix;
+    uint8_t *data;
+    int ok;
+    if (!logger || !message || (level != OSE_LOG_DEBUG && level != OSE_LOG_INFO &&
+        level != OSE_LOG_WARNING && level != OSE_LOG_ERROR && level != OSE_LOG_CRITICAL && level != OSE_LOG_FATAL)) return 0;
+    n = strlen(logger); m = strlen(message);
+    if (n > 200 || !m) return 0;
+    prefix = m;
+    if (m > MAX_LOG_MESSAGE) {
+        prefix = log_prefix(message, MAX_LOG_MESSAGE - (sizeof(log_truncation) - 1));
+        m = prefix + sizeof(log_truncation) - 1;
+    }
+    data = malloc(3 + n + m);
+    if (!data) return 0;
+    data[0] = (uint8_t)level; data[1] = (uint8_t)(n >> 8); data[2] = (uint8_t)n;
+    memcpy(data + 3, logger, n); memcpy(data + 3 + n, message, prefix);
+    if (prefix != m) memcpy(data + 3 + n + prefix, log_truncation, sizeof(log_truncation) - 1);
+    ok = ose_send('L', data, 3 + n + m);
+    free(data); return ok;
+}
+int ose_internal_vlogf(OseLogLevel level, const char *logger, const char *format, va_list arguments) {
+    char message[MAX_LOG_MESSAGE + 1];
+    va_list copy;
+    int size;
+    if (!format) return 0;
+    va_copy(copy, arguments);
+    size = vsnprintf(message, sizeof(message), format, copy);
+    va_end(copy);
+    if (size <= 0 || memchr(message, '\0', (size_t)size > MAX_LOG_MESSAGE ? MAX_LOG_MESSAGE : (size_t)size)) return 0;
+    if ((size_t)size > MAX_LOG_MESSAGE) {
+        size_t prefix = log_prefix(message, MAX_LOG_MESSAGE - (sizeof(log_truncation) - 1));
+        memcpy(message + prefix, log_truncation, sizeof(log_truncation));
+    }
+    return ose_internal_log(level, logger, message);
 }
 static int named_send(char op, const char *port, const void *payload, size_t size) {
     size_t n=strlen(port);

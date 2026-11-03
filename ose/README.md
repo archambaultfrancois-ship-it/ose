@@ -113,6 +113,12 @@ python3 -m ose.cli top
 tick p95 and colored diagnostics locally or through the distributed coordinator.
 Use arrows/Enter for details, Space to freeze, or `--format jsonl` for collection.
 
+[`ose logs`](docs/logs.md) reads component logs retained in runtime memory;
+`ose logs -f` follows the stream. Python, C, Rust, Java and Ada SDKs deposit
+DEBUG, INFO, WARNING, ERROR, CRITICAL and FATAL entries. The web console's
+second page displays selectively filtered logs. Entries are volatile, with
+bounded retention and explicit loss reporting.
+
 [`ose measure`](docs/measurements.md) reads application-defined fl64 values,
 retaining only the last value per declared dot-separated name in RAM. Declare
 with `ctx.declare_measurement("moteur.temperature")` in Python `on_start`, emit

@@ -16,6 +16,7 @@ from ose.parameters.service import ParameterEndpoint, OPERATIONS as PARAMETER_OP
 from ose.recording.taps import TapHub, OPERATIONS as RECORDING_OPERATIONS
 from ose.execution.observation import describe
 from ose.recording.component import validate_name, MAX_POINTS
+from ose.execution.logs import LogStore
 
 
 class Broker(Sessions):
@@ -24,6 +25,7 @@ class Broker(Sessions):
         self.parameters = ParameterEndpoint(plan, self.codec)
         self.catalogues, self.topics, self.engines = {}, {}, {}
         self.epoch, self.sequence = uuid.uuid4().hex, 0
+        self.logs = LogStore(self.epoch)
         self.retained, self.peers, self.ready, self.metrics = {}, {}, set(), Counter()
         self.observation = describe(plan)
         self.metric_times, self.generations = {}, {}
@@ -188,6 +190,10 @@ class Broker(Sessions):
                 try:
                     result = {}
                     response_body = b""
+                    if op == 'logs':
+                        result = self.logs.query(**header.get('filters', {}))
+                        await self._reply(peer, header['request'], result)
+                        continue
                     attach_subscription = None
                     if op == "client_hello":
                         if node is not None or session is not None or data_subscription is not None:
@@ -285,9 +291,12 @@ class Broker(Sessions):
                         metrics = json.loads(body) if body else header["metrics"]
                         if not isinstance(metrics, dict):
                             raise ValueError("metrics must be an object")
+                        if set(metrics) <= {'log_records', 'logs_dropped'}:
+                            metrics = {**self.metrics.get(node, {}), **metrics}
                         if 'measurements' in metrics:
                             from ose.execution.measurements import validate_snapshot
                             metrics['measurements'] = validate_snapshot(metrics['measurements'])
+                        self.logs.append(node, self.generations[node], metrics.pop('log_records', []))
                         self.metrics[node] = metrics
                         self.metric_times[node] = time.monotonic()
                     else:
@@ -483,7 +492,7 @@ class Broker(Sessions):
             "generation": self.generations.get(name),
             "report_age_ms": (time.monotonic() - self.metric_times[name]) * 1000 if name in self.metric_times else None}
             for name, desc in self.observation["components"].items()}}
-        return {"epoch": self.epoch, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
+        return {"epoch": self.epoch, "logs_version": 1, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
                 "enabled": self.enabled, "ready": sorted(self.ready), "subscriptions": {key: engine.snapshot() for key, engine in self.engines.items()},
                 "components": dict(self.metrics), "udp_errors": self.udp.errors, "errors": self.errors,
                 "topics": {topic: {"root": port["root"], "publications": self.topic_counts[topic],

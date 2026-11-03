@@ -7,9 +7,10 @@ import struct
 from ose.execution import ipc
 from ose.parameters.bindings import updates, write_reply
 from ose.execution.measurements import Measurements
+from ose.execution.logs import ComponentLogs
 
 
-async def start_component(node, parameters=None, recording=None):
+async def start_component(node, parameters=None, recording=None, logs=None):
     env = dict(os.environ, **node.get("env", {}))
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2]) + os.pathsep + env.get("PYTHONPATH", "")
     # Terminal Ctrl+C belongs to the supervisor. Components stop through IPC so
@@ -22,6 +23,7 @@ async def start_component(node, parameters=None, recording=None):
         recording = ComponentRecording(None)
     process.recording = recording
     process.measurements = Measurements()
+    process.logs = logs if logs is not None else ComponentLogs()
     try:
         async def initialize():
             await ipc.send(process.stdin, "I", json.dumps(node).encode())
@@ -30,8 +32,10 @@ async def start_component(node, parameters=None, recording=None):
                     raise ValueError("shared parameter service is required")
                 await updates(process, node, parameters.initial)
             op, body = await ipc.receive(process.stdout)
-            while op in ("S", "N", "M"):
-                if op == 'M':
+            while op in ("S", "N", "M", "L"):
+                if op == 'L':
+                    process.logs.emit(body)
+                elif op == 'M':
                     process.measurements.declare(body)
                 elif op == "N":
                     await recording.declare(body)
@@ -72,6 +76,9 @@ async def tick_events(process, node, selected, time_ns=None, tick_index=1, param
             continue
         if op == "F" and not body:
             return
+        if op == 'L':
+            process.logs.emit(body)
+            continue
         if op == 'V':
             process.measurements.update(body)
             continue
@@ -95,8 +102,15 @@ async def stop_component(process):
     async def discard_stdout():
         # A cancelled tick can leave a paused, full StreamReader behind. Drain it
         # while reaping so neither Process.wait() nor pipe cleanup gets stuck.
-        while await process.stdout.read(65536):
-            pass
+        try:
+            while True:
+                op, body = await ipc.receive(process.stdout)
+                if op == 'L' and hasattr(process, 'logs'):
+                    process.logs.emit(body)
+        except (EOFError, asyncio.IncompleteReadError, ValueError):
+            # Malformed/truncated output during failure still needs draining.
+            while await process.stdout.read(65536):
+                pass
     draining = asyncio.create_task(discard_stdout())
     async def stop():
         if process.returncode is None:

@@ -72,6 +72,15 @@ class ComponentSession:
     def publish(self, port, payload):
         self.send("P", port_data(port, payload))
 
+    def log(self, level, message, logger=''):
+        from ose.execution.logs import log_body
+        self.send('L', log_body(level, message, logger))
+
+    def logf(self, level, format, *arguments, logger=''):
+        if not isinstance(format, str):
+            raise TypeError('log format must be text')
+        self.log(level, format % arguments, logger)
+
     def declare_recording_point(self, name, root, catalogue, description=""):
         validate_name(name)
         if self.is_ready or name in self.recording_points or len(self.recording_points) >= MAX_POINTS:

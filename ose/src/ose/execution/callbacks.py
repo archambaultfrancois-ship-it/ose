@@ -69,6 +69,12 @@ class CallbackContext:
     def recording_enabled(self, name):
         return self.session.recording_enabled(name)
 
+    def log(self, level, message, logger=''):
+        self.session.log(level, message, logger)
+
+    def logf(self, level, format, *arguments, logger=''):
+        self.session.logf(level, format, *arguments, logger=logger)
+
     def declare_measurement(self, name):
         if self.session.is_ready or not self._parameter_writes:
             raise RuntimeError('measurement declarations require on_start')

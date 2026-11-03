@@ -2,6 +2,7 @@
 #define OSE_CALLBACKS_H
 #include <stddef.h>
 #include <stdint.h>
+#include "ose_component.h"
 
 /* config_json is the received INIT document, valid through on_stop.
  * user_data belongs to the user; on_stop can release it. */
@@ -41,6 +42,11 @@ const void *ose_input_value(OseContext *, size_t index);
 int ose_publish_value(OseContext *, size_t index, const void *value);
 /* Report a user error and fail the current initialization/tick. */
 int ose_fail(OseContext *, const char *message);
+/* CH/1 printf-style log deposit. Use "%s", message for preformatted text.
+ * Messages over 8192 bytes are truncated at UTF-8 boundaries with a marker.
+ * Truncation succeeds; formatting/deposit errors fail the current callback. */
+int ose_logf(OseContext *, OseLogLevel level, const char *logger, const char *format, ...)
+    OSE_PRINTF_FORMAT(4, 5);
 double ose_now(const OseContext *);
 uint64_t ose_time_ns(const OseContext *);
 uint64_t ose_tick_index(const OseContext *);

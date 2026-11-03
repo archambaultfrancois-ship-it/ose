@@ -14,11 +14,13 @@ from ose.execution.observation import TickTimings
 from ose.transport.tcp import Client
 from ose.transport.udp import UDP
 from ose.recording.component import RemoteRecording
+from ose.execution.logs import ComponentLogs
 
 
 class Adapter:
     def __init__(self, plan, name):
         self.plan, self.name, self.node = plan, name, plan["components"][name]
+        self.component_logs = ComponentLogs()
         self.codec = SDL2(plan["sdl_root"])
         self.subscriptions = {s["id"]: s for s in plan["subscriptions"] if s["to"].split(".")[0] == name}
         self.buffers, self.catalogues, self.metrics = {}, {}, {}
@@ -118,6 +120,8 @@ class Adapter:
             if hasattr(self, "component_recording"):
                 metrics["recording"] = dict(self.component_recording.counts)
             metrics['measurements'] = self.process.measurements.snapshot()
+            metrics['log_records'] = self.process.logs.drain()
+            metrics['logs_dropped'] = self.process.logs.dropped
             await self.client.request("metrics", json.dumps(metrics).encode())
             await asyncio.sleep(.1)
 
@@ -170,7 +174,7 @@ class Adapter:
                     await client.request("attach", node=self.name, subscription=identity)
             self.parameters = await RemoteBindings(self.node, self.client.request, self.activity).open()
             self.component_recording = RemoteRecording(self.codec, self.client.request)
-            self.process, self.timed_ticks = await start_component(self.node, self.parameters, self.component_recording.endpoint)
+            self.process, self.timed_ticks = await start_component(self.node, self.parameters, self.component_recording.endpoint, self.component_logs)
             await self.client.request("ready")
             # Supervisor activates delivery only after every component is ready.
             while True:
@@ -200,6 +204,13 @@ class Adapter:
             await asyncio.gather(*tasks, return_exceptions=True)
             if hasattr(self, "process") and self.process.returncode is None:
                 await self._stop_component()
+            if hasattr(self, 'client'):
+                try:
+                    while self.component_logs.pending:
+                        await self.client.request('metrics', json.dumps({'log_records': self.component_logs.drain(),
+                            'logs_dropped': self.component_logs.dropped}).encode(), timeout=.5)
+                except (OSError, EOFError, ValueError, asyncio.TimeoutError):
+                    pass
             for client in self.data_clients.values():
                 await client.close()
             if hasattr(self, "client"):

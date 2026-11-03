@@ -108,6 +108,32 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("https://", response.text)
         self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
 
+    async def test_log_filters_fatal_cursors_and_scoped_read_permissions(self):
+        stamp = str(time.time_ns())
+        self.broker.logs.append('source', 'generation-one', [
+            dict(level='INFO', logger='lifecycle', message='started', time_ns=stamp),
+            dict(level='CRITICAL', logger='detection', message='critical', time_ns=stamp),
+            dict(level='FATAL', logger='detection', message='Échec moteur', time_ns=stamp)])
+        self.broker.logs.append('private', 'other-generation', [
+            dict(level='FATAL', logger='detection', message='private message', time_ns=stamp)])
+        response = await self.client.get('/api/v1/logs', params={'components': 'sou*', 'levels': 'FATAL', 'search': 'MOTEUR'})
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertEqual([row['message'] for row in result['items']], ['Échec moteur'])
+        self.assertEqual(result['items'][0]['level'], 'FATAL')
+        later = await self.client.get('/api/v1/logs', params={'after': result['cursor'], 'epoch': result['epoch']})
+        self.assertEqual(later.json()['items'], [])
+        signed_in = self.app.state.auth.sessions[self.client.cookies.get('ose_ws_session')]
+        with patch.object(signed_in, 'permissions', {'logs.read': ['sou*']}):
+            limited = (await self.client.get('/api/v1/logs')).json()['items']
+            self.assertEqual(len(limited), 3)
+            self.assertTrue(all(row['component'] == 'source' for row in limited))
+            self.assertEqual((await self.client.get('/api/v1/logs?components=private')).json()['items'], [])
+        with patch.object(signed_in, 'permissions', {'components.read': ['*']}):
+            self.assertEqual((await self.client.get('/api/v1/logs')).status_code, 403)
+        for query in ('levels=INVALID', 'after=-1', 'limit=201'):
+            self.assertEqual((await self.client.get('/api/v1/logs?' + query)).status_code, 422)
+
     async def test_twenty_readers_do_not_multiply_status_requests(self):
         before = self.app.state.collector.requests
         started = time.monotonic()

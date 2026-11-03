@@ -61,5 +61,6 @@
 - **[Runtime inspection](../README.md#quick-start)**: inspect live local queue, retry, failure and processing counters, or read the final saved status after shutdown.
 - **[Live diagnostics](monitoring.md)**: monitor local/distributed rates, queues and tick durations with colored alerts and JSONL output.
 - **[Application measurements](measurements.md)**: declare dot-separated fl64 names in all five component SDKs, retain only each current value in RAM, and sample local/distributed values with `ose measure`.
+- **[Component logs](logs.md)**: deposit structured logs from all five component SDKs into a bounded in-memory runtime history, follow with `ose logs`, and filter the stream in the web console. Levels include distinct CRITICAL and FATAL entries.
 - **[Cluster status](distributed.md#processes-and-authentication)**: query the distributed coordinator for worker and delivery status.
 - **[Custom component processes](../sdk/protocol.md)**: integrate executables through the documented CH/1 binary lifecycle protocol.

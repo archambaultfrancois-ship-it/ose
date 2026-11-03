@@ -31,7 +31,7 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
         raise ValueError('Ada handler filename must follow GNAT unit naming')
     def typ(desc): return '.'.join(types[desc['root']])
     spec = ['-- Generated typed component API.', 'with Ada.Strings.Unbounded;', 'with Ada.Task_Identification;',
-            'with Interfaces;', 'with SDL_Runtime;', 'with Ose_Recording;', 'with Ose_Measurements;', *(f'with {p};' for p in packages), f'package {api} is',
+            'with Interfaces;', 'with SDL_Runtime;', 'with Ose_Component;', 'with Ose_Recording;', 'with Ose_Measurements;', *(f'with {p};' for p in packages), f'package {api} is',
             '   type Context is limited private;', '   function Name (Ctx : Context) return String;',
             '   function Config_JSON (Ctx : Context) return String;',
             '   function Time_Ns (Ctx : Context) return Interfaces.Unsigned_64;',
@@ -62,6 +62,7 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
                  f'   function Record_{symbol} (Ctx : in out Context; Name : String; Value : {".".join(types[root])}) return Ose_Recording.Emit_Result;']
     spec += ['   function Recording_Enabled (Ctx : Context; Name : String) return Boolean;']
     spec += ['   procedure Declare_Measurement (Ctx : in out Context; Name : String);',
+             '   procedure Log (Ctx : in out Context; Level : Ose_Component.Log_Level; Logger, Message : String);',
              '   procedure Measure (Ctx : in out Context; Name : String; Value : SDL_Runtime.Float64);']
     for alias, desc in node.get('parameter_bindings', {}).items():
         if 'read' in desc['access']:
@@ -117,6 +118,9 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
                  f'      Publish ({literal(port)}, {package}.Encode (Ctx.Output_{port}, Message));', '   end;']
     body += ['   function Recording_Enabled (Ctx : Context; Name : String) return Boolean is',
              '     (Ose_Recording.Is_Enabled (Ctx.Recordings, Name));']
+    body += ['   procedure Log (Ctx : in out Context; Level : Ose_Component.Log_Level; Logger, Message : String) is',
+             '      pragma Unreferenced (Ctx);', '   begin',
+             '      Ose_Component.Log (Level, Logger, Message);', '   end Log;']
     body += ['   procedure Declare_Measurement (Ctx : in out Context; Name : String) is',
              '   begin',
              '      if Ctx.Owner /= Ada.Task_Identification.Current_Task then raise Program_Error with "measurement declaration requires on_start"; end if;',

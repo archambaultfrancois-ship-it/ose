@@ -23,6 +23,16 @@ catalogue-relative message ID, without S2PS/2 (the adapter adds/removes it).
 | `C` RECORDING SAMPLE | Component → engine, during TICK | u16 local-name length, name, SDL2 payload |
 | `M` MEASUREMENT DECLARE | Component → engine, before READY | u16 local-name length, name (UTF-8), no trailing bytes |
 | `V` MEASUREMENT VALUE | Component → engine, during TICK | u16 local-name length, name, exactly one big-endian IEEE-754 fl64 |
+| `L` LOG | Component → engine, during initialization, ticks or shutdown | u8 level, u16 category length, UTF-8 category, remaining UTF-8 message |
+
+LOG levels are 10 DEBUG, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL and 60 FATAL.
+Categories are at most 200 bytes; messages are nonempty and at most 8192 bytes.
+SDKs truncate oversized text at UTF-8 boundaries and append `… [truncated]` within
+that limit. Truncation does not fail the component.
+NUL is forbidden in both. LOG frames are buffered in bounded volatile memory and
+forwarded to the runtime log stream independently of application queues. FATAL
+does not stop the component automatically. See [logs](../docs/logs.md) for SDK,
+CLI, retention, loss reporting, and web-console semantics.
 
 Measurements retain one current finite fl64 per declared name, initially absent.
 Names have the same dot-separated ASCII syntax and 200-byte limit as internal

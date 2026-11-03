@@ -1,5 +1,5 @@
 #include "ose_callbacks.h"
-#include "ose_component.h"
+#include "ose_component_internal.h"
 #include "type_engine.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -156,6 +156,14 @@ static int recording_update(OseContext *ctx, const OseEvent *event) {
 }
 
 double ose_now(const OseContext *ctx) { return (double)ctx->time_ns / 1000000000.0; }
+int ose_logf(OseContext *ctx, OseLogLevel level, const char *logger, const char *format, ...) {
+    va_list arguments;
+    int ok;
+    va_start(arguments, format);
+    ok = ose_internal_vlogf(level, logger, format, arguments);
+    va_end(arguments);
+    return ok ? 1 : ose_fail(ctx, "log deposit failed");
+}
 uint64_t ose_time_ns(const OseContext *ctx) { return ctx->time_ns; }
 uint64_t ose_tick_index(const OseContext *ctx) { return ctx->tick_index; }
 

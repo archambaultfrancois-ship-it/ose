@@ -36,6 +36,7 @@ Explicit model/plan workflow:
 
 From another terminal while the application runs:
   ose top
+  ose logs -f
   ose measure 'analyzer_*.vibration.rms' --watch
   ose record
 
@@ -44,6 +45,8 @@ Use ose parameter ACTION --help for parameter operations.
 Local observation commands use build/endpoint.json by default.
 For distributed execution, start serve and worker instead of run.""")
     commands = parser.add_subparsers(dest="action", required=True, title="commands", metavar="COMMAND")
+    from ose.logs import add_parser as log_parser
+    log_parser(commands)
     for name in ("validate", "build"):
         summary = "validate the model and deployment" if name == "validate" else "generate a plan and compile component executables"
         command = _command(commands, name, summary,
@@ -247,6 +250,12 @@ def execute(args, parser=None):
         elif args.action == 'completion':
             from ose.completion import bash_completion
             print(bash_completion(parser), end='')
+        elif args.action == 'logs':
+            from ose.logs import run
+            try:
+                return asyncio.run(run(args))
+            except KeyboardInterrupt:
+                return 130
         elif args.action == 'measure':
             from ose.measures import run
             try:

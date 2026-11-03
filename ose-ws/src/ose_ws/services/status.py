@@ -66,6 +66,7 @@ class StatusCollector:
             "epoch": snapshot.get("epoch"), "observed_at": self.last_success,
             "age_ms": (time.monotonic() - self.last_mono) * 1000 if self.last_mono else None,
             "capabilities": {"components": snapshot.get("observation", {}).get("version") == 1,
+                             "logs": snapshot.get('logs_version') == 1,
                              "measurements": snapshot.get("measurements_version") == 1,
                              "parameters": "parameters" in snapshot},
             "status_requests": self.requests, "status_failures": self.failures, "rpc_latency_ms": self.latency_ms}

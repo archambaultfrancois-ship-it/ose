@@ -3,6 +3,20 @@ with Ose_Text;
 with Interfaces.C.Strings;
 package body Ose_Component is
    use type Interfaces.C.int;
+   function C_Log (Level : Interfaces.C.int; Logger, Message : Interfaces.C.char_array) return Interfaces.C.int
+     with Import, Convention => C, External_Name => "ose_internal_log";
+   procedure Log (Level : Log_Level; Logger, Message : String) is
+   begin
+      if Logger'Length > 200 or else Message'Length = 0 or else
+         (for some C of Logger => C = Character'Val (0)) or else
+         (for some C of Message => C = Character'Val (0)) then
+         raise Protocol_Error with "invalid log category/message";
+      end if;
+      if C_Log (Interfaces.C.int ((Log_Level'Pos (Level) + 1) * 10),
+                Interfaces.C.To_C (Logger), Interfaces.C.To_C (Message)) = 0 then
+         raise Protocol_Error with "log deposit failed";
+      end if;
+   end Log;
    use type Interfaces.C.size_t;
    use type Interfaces.Unsigned_64;
    function C_Read (E : access Raw_Event) return Interfaces.C.int

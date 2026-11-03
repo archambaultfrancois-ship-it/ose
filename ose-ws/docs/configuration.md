@@ -168,6 +168,11 @@ SQLite uses a serialized worker and full synchronous commits. Disk writes and
 large SDL conversion/validation work run outside the HTTP event loop. The
 state directory must be private to its owner. Never share it between processes.
 
+Log access uses `logs.read` permission patterns matching component names, for
+example `"logs.read": ["sensor_*", "alarm"]`. Administrators can read all logs.
+The runtime retains up to 10,000 entries within 8 MiB in memory; the web view
+keeps up to 1,000 entries within 2 MiB. Logs are not stored in the state directory.
+
 Defaults: 20 browser sessions; 4 active captures, 2 per user; 100 drafts/import
 plans; 10,000 retained operations with at most 1,000 unresolved operations;
 100,000 audit events or 30 days; 60-second

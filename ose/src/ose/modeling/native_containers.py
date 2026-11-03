@@ -206,6 +206,10 @@ def generate_rust(name, node, handler, sdl_root, schemas, destination):
               "    pub fn tick_index(&self) -> u64 { self.tick.tick_index }",
               "    pub fn now(&self) -> f64 { self.time_ns() as f64 / 1_000_000_000.0 }"]
     lines += r'''
+    pub fn logf(&self, level: sdl_ose_component::LogLevel, logger: &str, arguments: std::fmt::Arguments<'_>) -> Result {
+        sdl_ose_component::logf(level, logger, arguments)?;
+        Ok(())
+    }
     pub fn declare_measurement(&mut self, name: &str) -> Result {
         if self.recording_ready || !self.parameter_writes || self.measurements.contains(name) || self.measurements.len() >= 128 {
             return Err("measurement declarations require on_start and unique names (max 128)".into());
