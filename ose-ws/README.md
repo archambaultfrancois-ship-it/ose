@@ -136,6 +136,38 @@ enums, cardinalities, array dimensions and wire encodings. This uses
 without recording permissions. Update and restart OSE for the
 `subscription_schema` RPC; the compiled plan already contains the contracts.
 
+Select **Live** in the link panel to inspect the latest observed publication
+from its source. This read-only view creates no file or history and does not
+consume application input queues. It starts at two updates per second; select
+one or four updates per second as needed. Publication sequences may be skipped,
+and observing a source message does not confirm destination delivery. The view
+shows its observation age and source generation; production timestamps remain
+application data. Rates are display targets and can slow for expensive messages.
+
+Nested values expand by touch or click. Arrays show their length and up to
+16 entries from **Array start index** (applied to each array), with explicit
+truncation. A sample is limited to 128 value/tree nodes, 16 nesting levels,
+1,024 characters per string and a JSON tree below 60 KiB. Exact 64-bit integers
+remain decimal strings; non-finite floats appear as `NaN`/`+Infinity`/`-Infinity`.
+The full message is decoded once at the preview cadence, not once per browser.
+Decoding still costs CPU, particularly for large packed arrays.
+
+Live requires the topic-scoped `flows.read` web permission, for example
+`{"flows.read":["sensor_1.*","analyzer_1.result"]}`. Administrators already
+have access. It supports local and distributed sources, broker/direct routes
+and declared external topics. Distributed worker endpoints must be reachable
+from the console. Restart OSE and the console with a runtime supporting
+`recording_state`; Live shares the existing bounded source tap quotas and local
+external-client enablement with recordings.
+
+**Stop Live**, closing/changing the link or signing out releases the watch.
+Navigating away, freezing the view, hiding the browser page or losing the live
+connection suspends the watch and preserves the last displayed sample with its
+age. Returning resumes observation while Live remains selected. A source epoch,
+generation or contract change stops the old observation; select Live again.
+Expired leases release closed/crashed browsers. See [configuration](docs/configuration.md)
+for preview quotas.
+
 Failed validation marks the affected field in red with an inline message and
 moves focus to it. Nested branches expand and long sequences show the page
 containing the invalid element. **Go to field** returns to that location.

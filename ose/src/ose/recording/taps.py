@@ -13,7 +13,7 @@ from ose.recording import DEFAULT_LABEL, session_label
 from ose.recording.filters import prepare_filter
 
 
-OPERATIONS = {"recording_points", "recording_describe", "recording_open",
+OPERATIONS = {"recording_points", "recording_describe", "recording_state", "recording_open",
               "recording_next", "recording_stop", "recording_close"}
 
 
@@ -58,9 +58,9 @@ class TapHub:
                     for point in points[offset:offset + 100]]
             return {"points": page, "next": offset + len(page) if offset + len(page) < len(points) else None,
                     "max_frame": self.max_frame}, None
-        if op == "recording_describe":
+        if op in ("recording_describe", "recording_state"):
             point = self.points()[header["topic"]]
-            return {k: v for k, v in point.items() if k != "catalogue"}, point["catalogue"].encode()
+            return {k: v for k, v in point.items() if k != "catalogue"}, point["catalogue"].encode() if op == "recording_describe" else None
         if op == "recording_open":
             label = session_label(header.get("label", DEFAULT_LABEL))
             selections = header.get("points")

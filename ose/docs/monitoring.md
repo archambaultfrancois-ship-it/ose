@@ -104,6 +104,18 @@ should match the returned epoch to their displayed graph before showing the
 contract. Schema catalogues are fetched on demand and stay out of periodic
 status responses.
 
+The Web Console's **Live** link inspector samples publications through the same
+bounded read-only taps as recording, keeping one queued message and writing no
+files. `recording_state` returns recording-point metadata without a catalogue;
+the console uses it to detect source/generation changes between observations.
+Local outputs/external topics are observed at the broker, distributed component
+outputs at their producer worker, and distributed external topics at the
+coordinator. These are source observations; they do not prove downstream
+admission or processing. Multiple web watches share one source observer.
+The inspector may skip publications and truncate large values explicitly;
+application delivery queues and policies stay independent. Its tap still adds
+per-publication accounting/frame-fit work and uses the source's recording quotas.
+
 ## Scripted collection
 
 ```sh

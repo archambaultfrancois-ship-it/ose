@@ -19,6 +19,23 @@ class TapTests(unittest.IsolatedAsyncioTestCase):
         self.hub.observe("source.value", body, generation=self.point["generation"], sequence=sequence,
                          catalogue=self.point["catalogue"], root=self.point["root"])
 
+    async def test_state_tracks_idle_source_changes_without_sending_catalogue(self):
+        described, catalogue = await self.hub.request(self.peer,
+            dict(op="recording_describe", topic="source.value"))
+        state, body = await self.hub.request(self.peer,
+            dict(op="recording_state", topic="source.value"))
+        self.assertEqual(state, described)
+        self.assertEqual(catalogue, self.point["catalogue"].encode())
+        self.assertNotIn("catalogue", state)
+        self.assertIsNone(body)
+        self.point.update(generation="replacement", available=False)
+        state, body = await self.hub.request(self.peer,
+            dict(op="recording_state", topic="source.value"))
+        self.assertEqual(state["generation"], "replacement")
+        self.assertFalse(state["available"])
+        self.assertIsNone(body)
+        self.assertFalse(self.hub.sessions)
+
     async def test_fifo_overflow_is_bounded_and_stop_drains(self):
         token = await self.open(capacity=2, byte_budget=1024)
         for n in range(5):

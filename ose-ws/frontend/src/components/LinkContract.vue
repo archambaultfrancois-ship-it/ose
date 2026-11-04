@@ -2,8 +2,9 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { api } from '../api'
 import SchemaView from './SchemaView.vue'
+import FlowLive from './FlowLive.vue'
 
-const props = defineProps<{ subscription: string; epoch?: string | null }>()
+const props = defineProps<{ subscription: string; epoch?: string | null; active?: boolean; connected?: boolean; frozen?: boolean }>()
 const schema = ref<any>(null), error = ref(''), loading = ref(false)
 let request = 0
 async function load() {
@@ -29,7 +30,7 @@ onBeforeUnmount(() => { request++ })
     <p class="muted small">Source port contract</p>
     <p v-if="loading" role="status" class="muted">Loading SDL contract…</p>
     <div v-else-if="error" class="notice warning" role="alert"><p>{{ error }}</p><button class="quiet" @click="load">Retry contract</button></div>
-    <SchemaView v-else-if="schema" :schema="schema" />
+    <template v-else-if="schema"><SchemaView :schema="schema" /><FlowLive :subscription="subscription" :epoch="epoch" :active="active" :connected="connected" :frozen="frozen" /></template>
   </section>
 </template>
 <style scoped>

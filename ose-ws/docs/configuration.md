@@ -25,6 +25,7 @@ environment variable named in `parameters.token_env` (default
     "preconfigured": ["source.temperature"]
   },
   "recording": {"max_active": 4, "per_user": 2, "min_free_disk_mib": 1024},
+  "flows": {"max_sources": 4, "per_session": 2, "lease_s": 60, "max_payload_bytes": 1048576},
   "parameters": {"client": "operator", "token_env": "OSE_PARAMETER_TOKEN"},
   "auth": {"mode": "local_token", "token_file": ".ose-ws/access.token"}
 }
@@ -43,6 +44,23 @@ history, not upstream RPC bandwidth.
 The minimum status interval is 100 ms. Status has one owner and no overlapping
 requests, regardless of browser count. Current report freshness follows the
 same three-second threshold as `ose top`.
+
+Live link previews share one source tap and one decoder per observed epoch/topic.
+Defaults allow four distinct source topics globally and two watches per browser
+session (including tabs sharing its cookie). Each source tap keeps at most one
+message with a 1 MiB byte budget. Watches expire after 60 seconds and the UI
+renews at one third of the lease. Configure `flows.max_sources` from 1–8,
+`per_session` from 1–4, `lease_s` from 5–120 and `max_payload_bytes` from
+1,024–1,048,576 bytes. The overall watch quota is `auth.max_sessions` times
+`flows.per_session`. These bound retained buffers; in-flight frames, codec
+allocations and per-watch projections add memory and do not form a process RSS
+guarantee. One dedicated decode worker coalesces source updates without building
+an unbounded task queue. Source taps also count against OSE's 16-session / 64 MiB
+reserved-budget limits. An exhausted source refuses a new Live watch.
+
+Payload access uses `flows.read` with source topic names/globs. For example,
+grant `"flows.read":["analyzer_*.result"]` separately from `components.read`.
+Reading a contract or component status does not grant access to message values.
 
 ## Distributed OSE
 

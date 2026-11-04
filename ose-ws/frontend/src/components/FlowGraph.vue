@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, useId } from 'vue'
 import { layout, nodeHeight, nodeWidth, type FlowNode, type FlowEdge, type Topology } from '../flow-graph'
 import LinkContract from './LinkContract.vue'
-const props = defineProps<{ topology?: Topology | null; components: any[]; epoch?: string | null; error?: string | null; matching: string[]; selected?: string | null }>()
+const props = defineProps<{ topology?: Topology | null; components: any[]; epoch?: string | null; error?: string | null; matching: string[]; selected?: string | null; active?: boolean; connected?: boolean; frozen?: boolean }>()
 const emit = defineEmits<{ select: [name: string] }>()
 const graph = computed(() => layout(props.topology))
 const reports = computed(() => new Map(props.components.map(row => [row.name, row])))
@@ -69,7 +69,7 @@ function edgeTitle(edge: FlowEdge) {
           <div><dt>Transport</dt><dd>{{ selectedLink.policy?.transport || 'tcp' }}</dd></div>
           <template v-for="[key, label] in policyFields" :key="key"><div v-if="selectedLink.policy?.[key] != null"><dt>{{ label }}</dt><dd>{{ selectedLink.policy[key] }}</dd></div></template>
         </dl>
-        <LinkContract :subscription="selectedLink.id" :epoch="epoch" />
+        <LinkContract :subscription="selectedLink.id" :epoch="epoch" :active="active" :connected="connected" :frozen="frozen" />
       </section>
       <p class="muted small flow-note">Select a component for diagnostics. Tap or click a link or its label for ports, SDL type and delivery policy. Dashed links use direct routing. Filters highlight matching components.</p>
     </template>

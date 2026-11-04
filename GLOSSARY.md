@@ -138,8 +138,8 @@ References: [architecture](ose/docs/architecture.md),
 | **Deduplication** | Detection of repeated message IDs within a bounded in-memory window. Retries retain their original ID; this mechanism provides no unlimited exactly-once guarantee. |
 | **Fan-out** | Delivering one publication independently to multiple subscriptions. |
 | **Volatile state** | RAM-only state lost on restart, including OSE delivery queues, retained latest values and deduplication history. Console metadata and recording files have separate storage rules. |
-| **Epoch / generation** | An epoch identifies a broker/coordinator run; a generation identifies one component incarnation. Replacements or restarts change the relevant identity. |
-| **Lease / fencing** | A lease is a periodically renewed validity period, such as a worker registration or console measurement watch. Distributed fencing rejects traffic belonging to retired generations. |
+| **Epoch / generation** | An epoch identifies a broker/coordinator run; a generation identifies one component incarnation or external publisher session. Replacements or restarts change the relevant identity. |
+| **Lease / fencing** | A lease is a periodically renewed validity period, such as a worker registration or console measurement/Live watch. Distributed fencing rejects traffic belonging to retired generations. |
 
 References: [delivery policies](ose/docs/delivery.md),
 [distributed lifecycle](ose/docs/distributed.md),
@@ -173,6 +173,16 @@ References: [simulation](ose/docs/simulation.md),
 [monitoring](ose/docs/monitoring.md), [measurements](ose/docs/measurements.md),
 [logs](ose/docs/logs.md), [console collection](ose-ws/docs/configuration.md).
 
+## Application flow and Live values
+
+| Term | Meaning |
+| --- | --- |
+| **Application flow / topology** | The console graph of components, external topics and declared subscriptions, derived from OSE's compiled plan. Arrows represent declared connections. |
+| **Link / source contract** | A link represents one subscription. Its panel shows the connected ports, delivery policy and source SDL schema, fetched on demand. |
+| **Live values** | A read-only preview of the latest observed source publication, with bounded values and no file or history. It may skip publications and does not confirm destination delivery. |
+
+References: [Web Console](ose-ws/README.md), [monitoring](ose/docs/monitoring.md).
+
 ## Parameters and editing
 
 | Term | Meaning |
@@ -182,7 +192,7 @@ References: [simulation](ose/docs/simulation.md),
 | **Parameter client** | A declared technical identity with permissions to read or replace selected parameter blocks. The console uses its configured OSE identity independently of browser-user identities. |
 | **Draft / remote value** | In the parameter editor, a draft is the browser's editable value; the remote value is the latest value read from OSE. An external change can update the remote value while preserving the draft. |
 | **Validation preview** | The normalized result of validating and round-tripping a draft through the SDL codec, including encoded bytes and hashes needed to apply it. It exposes floating-point rounding and wire quantization. |
-| **Schema digest / preview hash** | Console fingerprints binding a validation/apply request to its schema and previewed payload/constraints. They differ from SDL's 32-bit catalogue ID and do not test whether the remote parameter value has changed. |
+| **Schema digest / preview hash** | A schema digest fingerprints a console contract, including the contract attached to a Live sample. Parameter validation/apply also uses a preview hash binding the previewed payload and constraints. These differ from SDL's 32-bit catalogue ID and do not test whether the remote parameter value has changed. |
 | **Last-write-wins** | The last complete block write processed by OSE becomes current. Parameter editing has no automatic merge, lock or compare-and-swap against an old value. |
 | **CAS — Compare-and-swap** | A conditional write that succeeds only if an expected old value or revision still matches. OSE parameter writes do not provide this mechanism; a capture draft's local revision is a separate console feature. |
 | **Import / export** | Transfer of parameter values as JSON. Path-keyed exports map each block path to its complete value. Multi-block imports validate first but apply sequentially without an atomic transaction across blocks. |
@@ -198,7 +208,7 @@ References: [shared parameters](ose/docs/parameters.md),
 | --- | --- |
 | **Recording point** | A discoverable source of typed messages: an output topic or a component-declared internal diagnostic point. |
 | **Internal point** | A component-owned diagnostic source, such as `analyzer_1.record.dsp.input`, declared before READY and activated for recording. Its samples do not enter application subscriptions. |
-| **Tap** | A bounded observation path exposing selected publications or internal samples to a recorder without consuming application input queues. |
+| **Tap** | A bounded observation path exposing selected publications or internal samples to a recorder or Live source observer without consuming application input queues. Live and recordings share the source's tap quotas. |
 | **Recorder / recording session** | An external recording client and its source-side session state, selection and filters. Multiple recorders can operate independently. |
 | **Capture** | A console-managed recording object with a concrete selection, settings, lifecycle and output files. A browser closing does not stop an active capture. |
 | **Label** | Informational text attached to a recording session or capture. It need not be unique and is separate from its ID, topic names and filesystem paths. |
@@ -223,9 +233,9 @@ References: [OSE recording](ose/docs/recording.md),
 
 | Term | Meaning |
 | --- | --- |
-| **HTTP / WebSocket** | HTTP serves console resources and commands. The WebSocket connection carries live notifications and measurement points; it does not carry mutation commands. “WS” as a project shorthand means the Web Console. |
+| **HTTP / WebSocket** | HTTP serves console resources and commands. The WebSocket connection carries live notifications, measurement points and Live previews; it does not carry mutation commands. “WS” as a project shorthand means the Web Console. |
 | **Snapshot / invalidation / resynchronization** | A web snapshot is current resource state. An invalidation asks the browser to fetch it again. A resynchronization request directs the browser to reload available history after a live-stream gap. An OSE tick snapshot is a separate concept. |
-| **Watch** | A renewable console selection that causes measurement observations to be retained while active. Several browser watches can share collection. |
+| **Watch** | A renewable console selection owned by a browser session. Measurement watches retain observations for bounded history; Live watches expose only the latest source preview. Several watches can share collection. |
 | **Session / token** | Context-specific authentication or connection state. A browser session cookie, local console login token, OSE parameter token and recording session token have distinct roles. |
 | **Actor / permission / scope** | The authenticated web user, the operation they may perform, and the resources on which it is allowed. Web authorization and OSE client permissions both apply. |
 | **TLS / mTLS / CA** | TLS encrypts and authenticates connections; mutual TLS authenticates both peers using certificates from a trusted certificate authority. Browser HTTPS and OSE connection credentials are configured separately. |

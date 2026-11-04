@@ -131,6 +131,7 @@ class Coordinator:
 
     def disconnected(self, peer):
         self.parameters.disconnect(peer)
+        self.recording.disconnected(peer)
         self.release_external(peer)
         for name, session in list(self.sessions.items()):
             if session["peer"] is peer:
@@ -169,6 +170,10 @@ class Coordinator:
                 points[topic] = dict(desc, topic=topic, kind="internal", component=name, name=local,
                     available=self.activated and name in nodes, generation=session["token"],
                     endpoint={"host": session["host"], "port": session["port"], "identity": name})
+        for topic, desc in self.plan.get("external_topics", {}).items():
+            points[topic] = dict(topic=topic, root=desc["root"], catalogue=desc["catalogue"], kind="external",
+                generation=self.external_generations.get(topic),
+                available=self.activated and topic in self.external_owners, endpoint=None)
         return points
 
     def authorize(self, sub, source_token, target_token):
@@ -185,6 +190,7 @@ class Coordinator:
     def release_external(self, peer):
         session = self.external_peers.pop(peer, None)
         if session:
+            self.recording.invalidate(session["topics"])
             for topic in session["topics"]:
                 if self.external_owners.get(topic) is peer:
                     del self.external_owners[topic]
@@ -237,6 +243,8 @@ class Coordinator:
         self.codec.validate_only(desc["catalogue"], desc["root"], body)
         session["sequence"] += 1
         sequence, token = session["sequence"], session["token"]
+        self.recording.observe(topic, body, generation=token, sequence=sequence,
+                               catalogue=desc["catalogue"], root=desc["root"])
         record = dict(id=f"{token}:{sequence}", epoch=self.epoch, sequence=sequence,
                       source_token=token, source=topic, body=body, topic=topic)
         result = await self.publish_record(record)
@@ -283,7 +291,11 @@ class Coordinator:
             return await self.parameters.request(peer, header, body, node=node, certificate=caller)
         if peer in self.parameters.external:
             raise ValueError("parameter-only client session")
-        if op in ("recording_points", "recording_describe"):
+        if op in RECORDING_OPERATIONS:
+            if op == "recording_open":
+                selected = header.get("points")
+                if not isinstance(selected, dict) or set(selected) - self.plan.get("external_topics", {}).keys():
+                    raise ValueError("coordinator taps require declared external topics; use producer endpoints for component outputs")
             return await self.recording.request(peer, header)
         if op == "status":
             await self.demand.refresh(s['peer'] for s in self.sessions.values() if s['ready'])
@@ -451,6 +463,7 @@ class Coordinator:
 
     async def close(self):
         await self.demand.close()
+        self.recording.close()
         if hasattr(self, "monitor"):
             self.monitor.cancel()
             await asyncio.gather(self.monitor, return_exceptions=True)

@@ -32,6 +32,7 @@ Observation and log `sequence` fields are decimal order strings.
 | Application | `GET /application`: connection, epoch, versions, capabilities, freshness and service errors. |
 | Components | `GET /components`, `GET /components/{id}`: shared diagnostics, never a fresh RPC per browser. The collection includes declared flow `topology`. |
 | Link contract | `GET /flow/schema?subscription=...&epoch=...`: source SDL contract for a declared subscription; requires `components.read`. |
+| Link Live | `POST /flow-watches`, `GET/DELETE /flow-watches/{id}`: leased read-only latest-publication previews; requires source-topic `flows.read`. |
 | Logs | `GET /logs`: bounded in-memory component history with component, level, category and text filters; follow with `after`/`epoch`. Requires component-scoped `logs.read`. FATAL is distinct from CRITICAL. |
 | Measures | `GET /measurements`, `POST /measurement-watches`, `DELETE /measurement-watches/{id}`. |
 | History | `GET /series?ids=...&start=...&end=...&max_points=...`, `GET /series/export?ids=...`. |
@@ -66,6 +67,35 @@ external topics and direct routes use the same mechanism. This requires
 enablement. An unknown subscription returns 404, an obsolete epoch returns 409
 and a disconnected source returns 503. Contracts are not included in periodic
 status messages. A compatible OSE runtime is required.
+
+`POST /flow-watches` accepts `subscription`, `epoch`, optional `interval_ms`
+(250–1,000; default 500) and `array_offset` (0–1,000,000; default 0). It returns
+`id` and `lease_s`; supplying the existing `id` renews that session-owned watch
+and updates its cadence/array offset. Creation/renewal/deletion require CSRF.
+No durable operation or idempotency key is needed for these ephemeral reads.
+`GET /flow-watches/{id}` returns the latest snapshot for recovery or HTTP clients;
+`DELETE` releases it, and deleting an already closed watch is idempotent.
+
+Snapshot fields include `watch_id`, `topic`, `epoch`, `status` (`waiting`, `live`,
+`unavailable`), `error`, `age_ms`, decimal `version`/`sampled_out` and `decode_ms`.
+`sample` is null before a decoded publication or while projecting a new array
+offset. Otherwise it contains `epoch`, `generation`, `schema_digest`, decimal
+`source_sequence`, console `observed_at` and a bounded `value` tree. Nodes have
+`name`, `kind` (`message`, `array`, `complex`, `value`, `absent`, `truncated`),
+`type`, optional `children`/`value`, and explicit array `length`/`offset` and
+`truncated` markers. All nodes belong to one publication. `sampled_out` counts
+intentional tap replacements, not business delivery losses. An unavailable
+snapshot can retain its last sample; clients must show its state and age.
+
+Subscribe on `/live` using `stream:"flow"`, `selection:[watch_id]` and a cadence.
+`flow.sample` events carry snapshots when their version/state changes, with no
+history backlog. Update displayed age locally between events. Browser watches
+share a source tap and one decode per observation; endpoint addresses remain
+backend-controlled. Watch authorization is rechecked during delivery and lease
+maintenance. Logout, rights/session expiry and the final watch's deletion close
+the source; WebSocket disconnect releases its subscribed flow watch. Source
+changes/failures stop the observer and require a fresh watch. Native source
+`recording_state` checks detect idle source changes without retransmitting schemas.
 
 Inventory lists use `items`, `next`, optional `cursor` and `limit` (1–200). Inventory
 changes invalidate a cursor with HTTP 409. Measurement watches accept

@@ -19,6 +19,7 @@ from ose_ws.config import loopback
 from ose_ws.schema.adapter import SchemaAdapter
 from ose_ws.services.connection import ApplicationConnection
 from ose_ws.services.logs import LogReader
+from ose_ws.services.flows import FlowManager
 from ose.execution.logs import LEVELS
 from ose_ws.services.measurements import MeasurementStore
 from ose_ws.services.operations import Operations
@@ -53,6 +54,7 @@ def create_app(config):
     store = StateStore(config)
     measurements = MeasurementStore(config)
     collector = StatusCollector(config, connection, measurements)
+    flows = FlowManager(config, connection, collector, auth)
     parameters = ParameterManager(config, connection, collector)
     recordings = RecordingManager(config, connection, store)
     operations = Operations(store)
@@ -64,12 +66,14 @@ def create_app(config):
             await store.open()
             await recordings.open()
             await collector.start()
+            await flows.start()
             await parameters.start()
             app.state.ready = True
             yield
         finally:
             app.state.ready = False
             await operations.close(config["limits"]["shutdown_s"])
+            await flows.close()
             await recordings.close()
             await parameters.close()
             await collector.close()
@@ -85,6 +89,7 @@ def create_app(config):
                           ("recordings", recordings), ("operations", operations)):
         setattr(app.state, name, service)
     app.state.logs = logs
+    app.state.flows = flows
 
     def session(request, *, mutation=False):
         return auth.get(request, mutation=mutation)
@@ -160,6 +165,7 @@ def create_app(config):
     @app.post("/api/v1/auth/logout")
     async def logout(request: Request):
         signed_in = session(request, mutation=True)
+        await flows.release_session(signed_in.id)
         auth.sessions.pop(signed_in.id, None)
         response = Response(status_code=204)
         response.delete_cookie(auth.cookie)
@@ -209,6 +215,20 @@ def create_app(config):
                 "The application changed; refresh its status.", 409, "APPLICATION_CHANGED")
         adapter = await asyncio.to_thread(SchemaAdapter, catalogue.decode(), desc["root"])
         return public(await asyncio.to_thread(adapter.description))
+
+    @app.post("/api/v1/flow-watches")
+    async def flow_watch(request: Request):
+        signed_in = session(request, mutation=True)
+        return await flows.watch(signed_in, await body(request, 4096))
+
+    @app.get("/api/v1/flow-watches/{identity}")
+    async def flow_snapshot(request: Request, identity: str):
+        return public(flows.snapshot(session(request), identity))
+
+    @app.delete("/api/v1/flow-watches/{identity}")
+    async def flow_stop(request: Request, identity: str):
+        await flows.remove(session(request, mutation=True), identity)
+        return Response(status_code=204)
 
     @app.get('/api/v1/logs')
     async def log_records(request: Request, components: str = '*', levels: str = '', search: str = '',
@@ -549,7 +569,10 @@ def create_app(config):
             await asyncio.wait_for(socket.send_text(message), 2)
 
         def authorize(stream, selection):
-            if stream == "components":
+            if stream == "flow":
+                require(isinstance(selection, list) and len(selection) == 1 and isinstance(selection[0], str), "Select one Live watch.")
+                flows.get(signed_in, selection[0])
+            elif stream == "components":
                 signed_in.check("components.read")
             elif stream == "measurements":
                 measurement_ids(signed_in, selection)
@@ -601,6 +624,19 @@ def create_app(config):
                 for identity, sub in list(subscriptions.items()):
                     if now - sub["sent"] < sub["interval"]:
                         continue
+                    if sub["stream"] == "flow":
+                        sub["sent"] = now
+                        watch_id = sub["selection"][0]
+                        try:
+                            snapshot = flows.snapshot(signed_in, watch_id)
+                            change = (snapshot["version"], snapshot["status"])
+                            if sub["changes"].get(watch_id) != change:
+                                sub["changes"][watch_id] = change
+                                await emit("flow.sample", identity, snapshot)
+                        except APIError as error:
+                            await emit("flow.sample", identity, {"watch_id": watch_id, "status": "unavailable", "error": error.message, "sample": None})
+                            subscriptions.pop(identity, None)
+                        continue
                     authorize(sub["stream"], sub["selection"])
                     sub["sent"] = now
                     stream = sub["stream"]
@@ -637,13 +673,19 @@ def create_app(config):
             try:
                 await socket.send_text(dumps({"type": "error", "error": {"code": error.code, "message": error.message}}))
                 await socket.close(code=4401 if error.status == 401 else 4403)
-            except RuntimeError:
+            except (RuntimeError, WebSocketDisconnect):
                 pass
         finally:
             app.state.live_count -= 1
+            for sub in subscriptions.values():
+                if sub["stream"] == "flow":
+                    try:
+                        await flows.remove(signed_in, sub["selection"][0])
+                    except APIError:
+                        pass
             try:
                 await socket.close(code=1000)
-            except RuntimeError:
+            except (RuntimeError, WebSocketDisconnect):
                 pass
 
     static = Path(__file__).parent / "static"
