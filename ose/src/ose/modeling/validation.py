@@ -6,7 +6,7 @@ from ose.modeling.model import fields
 
 def validate_graph(model, deployment):
     fields(model, ("version", "schemas", "components", "subscriptions", "external_topics", "shared_parameters"), ("version", "schemas", "components", "subscriptions"))
-    fields(deployment, ("version", "components", "subscriptions", "max_frame", "max_datagram", "broker", "execution", "parameter_clients"), ("version", "components"))
+    fields(deployment, ("version", "components", "subscriptions", "max_frame", "max_datagram", "broker", "execution", "parameter_clients", "process_names"), ("version", "components"))
     if deployment.get("execution", "local") not in ("local", "distributed"):
         raise ValueError("execution must be local or distributed")
     distributed = deployment.get("execution") == "distributed"
@@ -45,6 +45,8 @@ def validate_graph(model, deployment):
         raise ValueError("external topic uses a component's reserved recording namespace")
     if set(deployment["components"]) != set(components):
         raise ValueError("deployment must cover exactly the model components")
+    from ose.execution.identity import validate as validate_process_names
+    validate_process_names(deployment.get("process_names", {}), components)
     from ose.parameters.model import validate_parameters
     validate_parameters(model, deployment)
     for name, node in components.items():

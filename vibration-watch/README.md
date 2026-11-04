@@ -63,6 +63,21 @@ app-build
 interpreter to OSE and records it in the generated component commands, so rebuild
 after changing Python.
 
+### Linux process names
+
+Local and cluster deployments use the instance prefix `vw`. After rebuilding,
+`top` shows names such as `vw-broker`, `vw-a-sensor1`, `vw-c-sensor1`,
+`vw-c-analyzer1`, and `vw-web`. The `a` process runs OSE's adapter; the `c`
+process runs the business callbacks. Both are named automatically before
+business initialization, including Python 3.9 components and a Python 3.12
+console. No handler changes are needed.
+
+For a second independent instance, export `OSE_PROCESS_PREFIX=vw2` before
+sourcing `setenv.sh` in each terminal. In `top`, use the short-name display (`c`
+toggles it), then `o` and `COMMAND=vw-` to filter an instance. `H` shows threads.
+The compiled plan stores aliases, and status snapshots provide names and PIDs.
+See [OSE process identification](../ose/docs/process-names.md) for the full convention.
+
 ### Web console for a local run
 
 The framework includes the English-language OSE Web Console. Install its

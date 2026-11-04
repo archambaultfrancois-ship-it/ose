@@ -11,6 +11,7 @@ from .errors import (ClientError, UnknownTopic, SchemaError, QoSError,
 from .qos import Fifo
 from .subscription import Subscription
 from .types import PublishResult
+from ose.execution.identity import initialize_thread, thread_name
 
 class Publisher:
     def __init__(self, client, topic, codec):
@@ -43,7 +44,11 @@ class Publisher:
 class Client:
     def __init__(self):
         self.loop = asyncio.new_event_loop()
-        self.thread = threading.Thread(target=self.loop.run_forever, name="sdl-client", daemon=True)
+        label = thread_name("io")
+        def network():
+            initialize_thread(label)
+            self.loop.run_forever()
+        self.thread = threading.Thread(target=network, name=label, daemon=True)
         self.thread.start()
         self.subscriptions, self.publishers, self.catalogues = {}, {}, OrderedDict()
         self.stopped, self.closed, self.failure = threading.Event(), False, None

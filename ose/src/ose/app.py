@@ -174,6 +174,9 @@ def run(args):
         args.dir = str(Path(args.dir).resolve())
     with context.activate():
         action = args.app_action
+        if action in ('run', 'distributed', 'simulate'):
+            from ose.execution.identity import identify
+            identify('launch')
         if action == 'env':
             print(f'Application: {context.root}\nFramework: {context.sdl.parent}\nSDL: {context.sdl}\nPython: {context.python}')
             return 0

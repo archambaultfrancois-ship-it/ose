@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 #define MAX_SIZE (1024U * 1024U)
 #define MAX_LOG_MESSAGE 8192U
 static const char log_truncation[] = "\xe2\x80\xa6 [truncated]";
@@ -47,6 +50,15 @@ int ose_read(OseEvent *event) {
     if (!data) return 0;
     if (!read_all(data,n)) { free(data); return 0; }
     event->op=(char)data[0]; memmove(data,data+1,n-1); event->data=data; event->size=n-1;
+#ifdef __linux__
+    /* INIT precedes all callbacks, including Ada containers using this SDK. */
+    if (event->op == 'I') {
+        const char *name = getenv("OSE_PROCESS_NAME");
+        if (name && *name && strlen(name) <= 15 &&
+            strspn(name, "abcdefghijklmnopqrstuvwxyz0123456789-") == strlen(name))
+            (void)prctl(PR_SET_NAME, name, 0UL, 0UL, 0UL);
+    }
+#endif
     return 1;
 }
 void ose_release(OseEvent *event) {

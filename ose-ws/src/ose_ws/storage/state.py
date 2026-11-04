@@ -15,7 +15,10 @@ class StateStore:
     def __init__(self, config):
         self.config = config
         self.root = Path(config["state_dir"])
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ose-ws-state")
+        from ose.execution.identity import initialize_thread, thread_name
+        label = thread_name("db")
+        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=label,
+                                           initializer=initialize_thread, initargs=(label,))
         self.failed = False
         self.lock = None
         self.db = None

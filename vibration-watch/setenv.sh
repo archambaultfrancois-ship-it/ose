@@ -20,6 +20,7 @@ _app_source_environment() {
         return 1
     fi
     export OSE_APP_ROOT="$application_root"
+    export OSE_PROCESS_PREFIX="${OSE_PROCESS_PREFIX:-vw}"
     source "$framework_root/setenv.sh"
 }
 

@@ -35,10 +35,21 @@ def initialize(path):
 
 
 def serve(config):
+    from ose.execution.identity import identify, initialize_thread, thread_name
+    from concurrent.futures import ThreadPoolExecutor
+    import asyncio
+    identify("web")
     import uvicorn
     from ose_ws.server import create_app
 
     class ConsoleServer(uvicorn.Server):
+        async def serve(self, sockets=None):
+            # asyncio.to_thread workers also need native names on Python 3.10–3.12.
+            label = thread_name("io")
+            asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(
+                thread_name_prefix=label, initializer=lambda: initialize_thread(thread_name("io"))))
+            await super().serve(sockets)
+
         @contextmanager
         def capture_signals(self):
             if threading.current_thread() is not threading.main_thread():

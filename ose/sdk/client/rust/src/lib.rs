@@ -17,6 +17,48 @@ pub mod parameters;
 #[cfg(unix)]
 mod parameters_tls;
 use json::{object, Json};
+
+fn spawn_named<F, T>(role: &str, work: F) -> thread::JoinHandle<T>
+where F: FnOnce() -> T + Send + 'static, T: Send + 'static {
+    static SERIAL: AtomicUsize = AtomicUsize::new(1);
+    let prefix = std::env::var("OSE_PROCESS_PREFIX").ok()
+        .filter(|p| !p.is_empty() && p.len() <= 5 &&
+            p.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()))
+        .unwrap_or_else(|| "ose".into());
+    let owner = std::fs::read_to_string("/proc/self/comm").unwrap_or_default();
+    let owner = owner.trim();
+    let fallback = format!("{}-client", prefix);
+    let owner = if owner.starts_with(&format!("{}-", prefix)) &&
+        owner.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') {
+        owner
+    } else { &fallback };
+    let suffix = format!("-{}{}", role, SERIAL.fetch_add(1, Ordering::Relaxed));
+    let budget = 15usize.saturating_sub(suffix.len());
+    let owner = if owner.len() <= budget { owner.to_owned() } else {
+        use std::hash::{Hash, Hasher};
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        owner.hash(&mut hash);
+        if budget > 5 {
+            format!("{}-{:04x}", &owner[..budget - 5], hash.finish() & 0xffff)
+        } else { owner[..budget].to_owned() }
+    };
+    let label = format!("{}{}", owner, suffix);
+    thread::Builder::new().name(label).spawn(work).expect("spawn OSE client thread")
+}
+
+#[cfg(all(test, target_os = "linux"))]
+#[test]
+fn native_thread_names_are_distinct_and_bounded() {
+    let first = spawn_named("io", || {
+        let native = std::fs::read_to_string("/proc/thread-self/comm").unwrap();
+        assert_eq!(native.trim(), thread::current().name().unwrap());
+        native
+    }).join().unwrap();
+    let second = spawn_named("io", || std::fs::read_to_string("/proc/thread-self/comm").unwrap())
+        .join().unwrap();
+    assert_ne!(first, second);
+    assert!(first.trim().is_ascii() && first.trim().len() <= 15);
+}
 #[derive(Clone, Debug)]
 pub struct Error {
     pub code: String,
@@ -342,7 +384,7 @@ impl Client {
             wake: Condvar::new(),
         });
         let weak = Arc::downgrade(&inner);
-        thread::spawn(move || loop {
+        spawn_named("ctl", move || loop {
             match receive_with(&mut reader, || {
                 weak.upgrade()
                     .map(|c| c.limit.load(Ordering::SeqCst))
@@ -394,7 +436,7 @@ impl Client {
             SocketAddr::new(address.ip(), number(&reply, "udp_port")? as u16);
         let weak = Arc::downgrade(&client.inner);
         let udp = client.inner.udp.try_clone()?;
-        thread::spawn(move || {
+        spawn_named("udp", move || {
             let mut p = vec![0; 65508];
             loop {
                 let c = match weak.upgrade() {
@@ -535,12 +577,12 @@ impl Client {
             .unwrap()
             .insert(id, sub.clone());
         let s = sub.clone();
-        thread::spawn(move || {
+        spawn_named("adm", move || {
             let result = admission(&s, rx, decoder);
             s.finished(result)
         });
         let s = sub.clone();
-        thread::spawn(move || {
+        spawn_named("cb", move || {
             let result = dispatch(&s, callback);
             s.finished(result)
         });
@@ -571,7 +613,7 @@ impl Client {
                 let s = sub.clone();
                 let limit = self.inner.limit.load(Ordering::SeqCst);
                 s.workers.fetch_add(1, Ordering::SeqCst);
-                thread::spawn(move || {
+                spawn_named("rx", move || {
                     let r = (|| {
                         while !s.stopped.load(Ordering::SeqCst) {
                             let p = receive(&mut stream, limit)?;

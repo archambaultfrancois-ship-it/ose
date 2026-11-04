@@ -199,6 +199,8 @@ async def run(options):
         raise ValueError('watch count must be positive')
     connect = connection_factory(options)
     if options.parameter_action == 'sync':
+        from ose.execution.identity import identify
+        identify('sync')
         if not math.isfinite(options.debounce) or options.debounce < 0:
             raise ValueError('--debounce must be finite and nonnegative')
         from ose.parameters.sync import DirectorySync

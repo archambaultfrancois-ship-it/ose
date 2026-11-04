@@ -429,6 +429,7 @@ class Coordinator:
         raise ValueError("unknown distributed operation")
 
     def snapshot(self):
+        from ose.execution.identity import describe
         observation = {**self.observation, "components": {name: {
             **desc, "connected": name in self.sessions,
             "ready": self.sessions.get(name, {}).get("ready", False),
@@ -438,7 +439,7 @@ class Coordinator:
             "report_age_ms": (time.monotonic() - self.sessions[name]["metric_time"]) * 1000
                 if self.sessions.get(name, {}).get("metric_time") is not None else None}
             for name, desc in self.observation["components"].items()}}
-        return {"epoch": self.epoch, "logs_version": 1, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
+        return {"epoch": self.epoch, "process": describe("coord", self.plan), "logs_version": 1, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
                 "enabled": self.activated, "metrics": dict(self.metrics),
                 "external_publishers": len(self.external_peers),
                 "components": {name: {"ready": session["ready"], "host": session["host"],
@@ -641,8 +642,10 @@ class Worker:
                 raise RuntimeError("coordinator authorization expired")
 
     async def _send_report(self, full):
+        from ose.execution.identity import describe
         process = getattr(self, 'process', None)
         metrics = ({**self.metrics, 'running': bool(self.started_at),
+            'process': describe('w', self.plan, self.name, process),
             **self.timings.snapshot(self.scheduler),
             'inputs': {key: value.snapshot() for key, value in self.buffers.items()},
             'direct': {key: value.snapshot() for key, value in self.engines.items()},
@@ -836,9 +839,12 @@ class Worker:
 
 
 async def serve(plan_path, host, port, server_context=None, lease_seconds=6, kubernetes_lease=None, namespace="default"):
+    from ose.execution.identity import identify
+    plan = json.loads(Path(plan_path).read_text())
+    identify("coord", plan)
     from ose.execution.leadership import KubernetesLease
     leader = KubernetesLease(kubernetes_lease, namespace) if kubernetes_lease else None
-    coordinator = Coordinator(json.loads(Path(plan_path).read_text()), server_context, lease_seconds,
+    coordinator = Coordinator(plan, server_context, lease_seconds,
                               leader.check if leader else lambda: None)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -876,6 +882,8 @@ async def serve(plan_path, host, port, server_context=None, lease_seconds=6, kub
 
 async def work(plan_path, name, host, port, **kwargs):
     plan = json.loads(Path(plan_path).read_text())
+    from ose.execution.identity import identify
+    identify("w", plan, name)
     check_plan(plan)
     if name not in plan["components"]:
         raise ValueError("unknown component")

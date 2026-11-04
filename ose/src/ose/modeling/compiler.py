@@ -22,6 +22,10 @@ def compile_plan(model_path, deployment_path, sdl_root, destination):
     model_path, deployment_path = Path(model_path).resolve(), Path(deployment_path).resolve()
     model, deployment = load(model_path), load(deployment_path)
     validate_graph(model, deployment)
+    from ose.execution.identity import aliases_for
+    process_names = {"prefix": deployment.get("process_names", {}).get("prefix", "ose")}
+    process_names["components"] = aliases_for(model["components"],
+        deployment.get("process_names", {}).get("components"), 15 - len(process_names["prefix"]) - 3)
     destination = Path(destination).resolve()
     destination.mkdir(parents=True, exist_ok=True)
     codec, schema_cache, generated_paths = SDL2(sdl_root), {}, {}
@@ -77,6 +81,8 @@ def compile_plan(model_path, deployment_path, sdl_root, destination):
 
     for name, original in model["components"].items():
         node = json.loads(json.dumps(original))
+        node["process_identity"] = {"prefix": process_names["prefix"], "component": name,
+                                    "alias": process_names["components"][name]}
         for direction in ("inputs", "outputs", "recording_types"):
             for port in node.get(direction, {}).values():
                 port["catalogue"] = catalogue(port.get("schema", model["schemas"]))
@@ -163,7 +169,7 @@ def compile_plan(model_path, deployment_path, sdl_root, destination):
             raise ValueError(f"invalid {key}")
     from ose.parameters.service import ParameterService
     ParameterService({"shared_parameters": shared_parameters, "max_frame": deployment.get("max_frame", 1024 * 1024)}, codec)
-    return {"version": 1, "execution": deployment.get("execution", "local"), "sdl_root": str(codec.root), "components": components, "subscriptions": subscriptions,
+    return {"version": 1, "process_names": process_names, "execution": deployment.get("execution", "local"), "sdl_root": str(codec.root), "components": components, "subscriptions": subscriptions,
             "shared_parameters": shared_parameters, "parameter_clients": deployment.get("parameter_clients", {}),
             "external_topics": external_topics, "broker": deployment.get("broker", {}), "build_dir": str(destination), "max_frame": deployment.get("max_frame", 1024 * 1024),
             "max_datagram": deployment.get("max_datagram", 1200)}

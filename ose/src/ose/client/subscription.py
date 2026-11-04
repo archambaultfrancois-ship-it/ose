@@ -5,6 +5,7 @@ from ose.delivery.buffers import Buffer
 from ose.delivery.stores import MemoryStore
 from .errors import CallbackFailed, SchemaError
 from .types import MessageInfo
+from ose.execution.identity import initialize_thread, thread_name
 
 class Subscription:
     def __init__(self, client, codec, callback, policy):
@@ -12,7 +13,9 @@ class Subscription:
         self.identity, self.data = None, None
         self.buffer = Buffer(policy, MemoryStore(policy.capacity))
         self.stage = asyncio.Queue(maxsize=policy.capacity)
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sdl-callback")
+        label = thread_name("cb")
+        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=label,
+                                           initializer=initialize_thread, initargs=(label,))
         self.tasks = []
         self.closed = False
 

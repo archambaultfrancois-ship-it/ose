@@ -188,6 +188,8 @@ async def run(path, plan_path, duration=None, *, mappings, speed=1, start_ns=Non
         seconds_ns(duration, positive=True)
     plan_path, path = Path(plan_path).resolve(), Path(path).resolve()
     plan = json.loads(plan_path.read_text())
+    from ose.execution.identity import identify
+    identify("replay", plan)
     if path in (plan_path, (Path(plan["build_dir"]) / "last-status.json").resolve()):
         raise ValueError("recording cannot use the compiled plan or last-status.json path")
     topics = plan.get("external_topics", {})

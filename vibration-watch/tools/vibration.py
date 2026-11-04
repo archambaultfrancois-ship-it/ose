@@ -37,7 +37,8 @@ def framework(args):
 
 def environment(args):
     root = framework(args)
-    return dict(os.environ, SDL_ROOT=str(root / "sdl"), PYTHONPATH=str(root / "ose/src"))
+    return dict(os.environ, SDL_ROOT=str(root / "sdl"), PYTHONPATH=str(root / "ose/src"),
+                OSE_PROCESS_PREFIX=os.environ.get("OSE_PROCESS_PREFIX", "vw"))
 
 
 def cli(args, *arguments, **kwargs):
@@ -452,6 +453,10 @@ def main():
                 "Select a compatible interpreter with 'export OSE_PYTHON=/path/to/python3.12' "
                 "for app-build/app-run, or 'make build PYTHON=/path/to/python3.12'.")
         finite(args.duration, 1e-6, 1e9, "duration")
+        if args.task in ('run', 'distributed-local', 'simulate', 'replay'):
+            sys.path.insert(0, str(framework(args) / 'ose/src'))
+            from ose.execution.identity import identify
+            identify('launch', {'process_names': {'prefix': 'vw'}})
         finite(args.workers, 1, 256, "workers", True)
         if args.loops < 0:
             raise ValueError("loops must be nonnegative")

@@ -9,6 +9,20 @@ import sdl.runtime.SdlCodec;
 
 /** CH/1 component runtime. Standard output belongs exclusively to this protocol. */
 public final class Component {
+    private static void nameProcess() {
+        // The JVM's main Java thread need not be the Linux thread-group leader.
+        // Name both, so top's process and thread views identify the component.
+        try {
+            String name = System.getenv("OSE_PROCESS_NAME");
+            if (name == null || !name.matches("[a-z0-9-]{1,15}") ||
+                !System.getProperty("os.name", "").equals("Linux")) return;
+            for (String path : new String[]{"/proc/self/comm", "/proc/thread-self/comm"}) {
+                try (FileOutputStream output = new FileOutputStream(path)) {
+                    output.write(name.getBytes(StandardCharsets.US_ASCII));
+                } catch (IOException ignored) { /* Naming must not stop execution. */ }
+            }
+        } catch (SecurityException ignored) { /* Optional on restricted runtimes. */ }
+    }
     public static final int MAX_FRAME = 1024 * 1024;
     public enum LogLevel {
         DEBUG(10), INFO(20), WARNING(30), ERROR(40), CRITICAL(50), FATAL(60);
@@ -261,6 +275,7 @@ public final class Component {
         ctx.inputStream = stream;
         // Validate JSON before exposing INIT to user code.
         if (!(Json.parse(ctx.configJson) instanceof Map)) throw new IOException("INIT must be a JSON object");
+        nameProcess();
         boolean started = false; Throwable failure = null;
         try {
             for (int i = 0; i < ctx.parameters.length; ++i)

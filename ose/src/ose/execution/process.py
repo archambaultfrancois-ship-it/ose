@@ -12,6 +12,8 @@ from ose.execution.logs import ComponentLogs
 
 async def start_component(node, parameters=None, recording=None, logs=None):
     env = dict(os.environ, **node.get("env", {}))
+    from ose.execution.identity import component_environment
+    env.update(component_environment(node))
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2]) + os.pathsep + env.get("PYTHONPATH", "")
     # Terminal Ctrl+C belongs to the supervisor. Components stop through IPC so
     # callbacks can finish and on_stop runs instead of a concurrent SIGINT.

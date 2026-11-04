@@ -558,13 +558,14 @@ class Broker(Sessions):
                 pass
 
     def snapshot(self):
+        from ose.execution.identity import describe
         observation = {**self.observation, "components": {name: {
             **desc, "connected": name in self.peers, "ready": name in self.ready,
             "generation": self.generations.get(name),
             "presence_age_ms": (time.monotonic() - self.presence_times[name]) * 1000 if name in self.presence_times else None,
             "report_age_ms": (time.monotonic() - self.metric_times[name]) * 1000 if name in self.metric_times else None}
             for name, desc in self.observation["components"].items()}}
-        return {"epoch": self.epoch, "logs_version": 1, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
+        return {"epoch": self.epoch, "process": describe("broker", self.plan), "logs_version": 1, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
                 "enabled": self.enabled, "ready": sorted(self.ready), "subscriptions": {key: engine.snapshot() for key, engine in self.engines.items()},
                 "components": dict(self.metrics), "udp_errors": self.udp.errors, "errors": self.errors,
                 "topics": {topic: {"root": port["root"], "publications": self.topic_counts[topic],

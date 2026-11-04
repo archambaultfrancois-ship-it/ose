@@ -208,6 +208,8 @@ class Console:
 
 
 async def run(args):
+    from ose.execution.identity import identify
+    identify("record")
     from ose.codec.sdl2 import SDL2
     from ose.codec.runtime import Runtime
     sdl_root = args.sdl_root

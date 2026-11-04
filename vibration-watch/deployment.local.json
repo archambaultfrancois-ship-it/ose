@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "process_names": {"prefix": "vw"},
   "components": {
     "sensor_1": {
       "container": {

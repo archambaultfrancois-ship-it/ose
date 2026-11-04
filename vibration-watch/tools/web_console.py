@@ -48,6 +48,7 @@ def launch(args, framework):
         if value is not None:
             arguments.extend(["--" + key, str(value)])
     with context.activate():
+        os.environ.setdefault("OSE_PROCESS_PREFIX", "vw")
         if args.command != "init":
             settings = read(config)
             # Use the configured application's current plan, then its deployment

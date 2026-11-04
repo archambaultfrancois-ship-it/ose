@@ -118,8 +118,10 @@ class Adapter:
             await asyncio.sleep(0)
 
     def _snapshot(self):
+        from ose.execution.identity import describe
         elapsed = max(time.monotonic() - self.started_at, .001)
         metrics = {"inputs": {p: b.snapshot() for p, b in self.buffers.items()},
+            "process": describe("a", self.plan, self.name, self.process),
             "ticks_hz": self.metrics.get("ticks", 0) / elapsed,
             "publications_hz": self.metrics.get("publications", 0) / elapsed,
             "running": bool(self.activated_at_ns), **self.metrics, **self.timings.snapshot(self.scheduler)}
@@ -176,6 +178,8 @@ class Adapter:
             self.reports.mark()
 
     async def run(self, host, port):
+        from ose.execution.identity import identify
+        identify("a", self.plan, self.name)
         tasks = []
         try:
             self.udp = await UDP.bind(self._udp_data, self.plan["max_datagram"])

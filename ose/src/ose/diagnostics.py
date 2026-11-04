@@ -109,6 +109,7 @@ class Observer:
             else:
                 state, severity = "IDLE", "idle"
             rows.append({"name": name, "state": state, "severity": severity,
+                         "process": metrics.get("process"),
                          "rates": {key: delta[key] / elapsed if elapsed and available else None
                                    for key in ("in", "out", "ticks")},
                          "rate_span_seconds": elapsed,
@@ -118,6 +119,7 @@ class Observer:
                          "queues": queues, "alerts": alerts,
                          "counters": {key: value for key, value in counters.items() if ":" not in key}})
         return {"timestamp": datetime.now(timezone.utc).isoformat(), "epoch": self.epoch,
+                "process": snapshot.get("process"),
                 "enabled": snapshot.get("enabled", False), "window_seconds": self.window,
                 "error": error, "components": rows,
                 "broker_errors": {"udp_errors": snapshot.get("udp_errors", 0),

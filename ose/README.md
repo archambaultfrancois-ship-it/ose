@@ -4,6 +4,9 @@ Executable component graphs with SDL2 contracts and per-subscription quality of
 service. See the [feature overview](docs/features.md) for the available user-facing services.
 The shared [technical glossary](../GLOSSARY.md) defines SDL, OSE and Web Console terminology.
 
+Linux processes and SDK threads have short, stable names for `top` and `ps`.
+See [process identification](docs/process-names.md) for deployment aliases and instance prefixes.
+
 For a browser interface, install the separate [OSE Web Console](../ose-ws/README.md)
 package. It observes running applications and edits parameters through existing
 OSE RPCs, without adding web framework dependencies to this engine.

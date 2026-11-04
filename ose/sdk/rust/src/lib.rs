@@ -89,6 +89,15 @@ pub fn receive() -> io::Result<Event> {
     if size == 0 || size > MAX_SIZE { return Err(invalid("invalid IPC size")); }
     let mut body = vec![0; size];
     reader.read_exact(&mut body)?;
+    #[cfg(target_os = "linux")]
+    if body[0] == b'I' {
+        if let Ok(name) = std::env::var("OSE_PROCESS_NAME") {
+            if !name.is_empty() && name.len() <= 15 &&
+                name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') {
+                let _ = std::fs::write("/proc/thread-self/comm", name);
+            }
+        }
+    }
     Ok(Event { op: body[0], data: body[1..].to_vec() })
 }
 pub fn send(op: u8, data: &[u8]) -> io::Result<()> {

@@ -305,6 +305,8 @@ async def run(plan_path, duration, **options):
     if options.get("trace") is not None and Path(options["trace"]).resolve() == plan_path:
         raise ValueError("trace cannot overwrite the compiled plan")
     engine = Simulation(json.loads(plan_path.read_text()), duration, **options)
+    from ose.execution.identity import identify
+    identify("sim", engine.plan)
     loop, interrupted = asyncio.get_running_loop(), False
     task = asyncio.create_task(engine.execute())
     def stop():

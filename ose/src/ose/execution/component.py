@@ -32,6 +32,8 @@ class ComponentSession:
         if op != "I":
             raise ValueError("expected INIT")
         self.config = json.loads(payload)
+        from ose.execution.identity import initialize_component
+        initialize_component()
         self.parameter_values = {}
         bindings = self.config.get("parameter_bindings", {})
         expected = {name for name, binding in bindings.items() if 'read' in binding['access']}

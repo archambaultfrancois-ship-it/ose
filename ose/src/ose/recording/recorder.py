@@ -132,7 +132,10 @@ class Capture:
         self.file_topics = Counter()
         self.file_bytes = self.pending_bytes = 0
         # Disk writes are serialized off the IO loop; filters run at the source.
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ose-recording")
+        from ose.execution.identity import initialize_thread, thread_name
+        label = thread_name("disk")
+        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=label,
+                                           initializer=initialize_thread, initargs=(label,))
 
     async def disk(self, function, *args):
         return await asyncio.get_running_loop().run_in_executor(self.executor, function, *args)

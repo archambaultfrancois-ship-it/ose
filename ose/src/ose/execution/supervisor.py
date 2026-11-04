@@ -11,6 +11,8 @@ from ose.execution.broker import Broker
 async def run(plan_path, duration=None, port=0):
     plan_path = Path(plan_path).resolve()
     plan = json.loads(plan_path.read_text())
+    from ose.execution.identity import identify
+    identify("broker", plan)
     broker = Broker(plan)
     children = []
     waiting = []
