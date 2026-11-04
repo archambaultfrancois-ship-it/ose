@@ -14,6 +14,7 @@ from ose.execution.broker import Broker
 from ose.execution.distributed import Coordinator, Worker
 from ose.execution.process import start_component, stop_component, tick_events
 from ose.measures import sample
+from ose.transport.tcp import Client
 from tests.measurement_components import build_component, check_component
 
 SDL_ROOT = os.environ.get('SDL_ROOT')
@@ -48,14 +49,39 @@ class MeasurementTests(unittest.IsolatedAsyncioTestCase):
                 plan = copy.deepcopy(self.plan)
                 plan['execution'] = 'distributed' if distributed else 'local'
                 server = Coordinator(plan) if distributed else Broker(plan)
+                server.demand.lease = .15
                 await server.start()
                 component = Worker(plan, 'source', '127.0.0.1', server.port) if distributed else Adapter(plan, 'source')
+                component.reports.heartbeat = .08
                 task = asyncio.create_task(component.run() if distributed else component.run('127.0.0.1', server.port))
                 try:
                     if not distributed:
                         await self.until(lambda: 'source' in server.ready, task)
                         server.enabled = True
-                    await self.until(lambda: sample(server.snapshot())['measurements'].get('source', {}).get('moteur.temperature') is not None, task)
+                    await self.until(lambda: hasattr(component, 'process') and
+                        component.process.measurements.snapshot().get('moteur.temperature') is not None, task)
+                    await self.until(lambda: bool(server.sessions['source']['metrics']) if distributed
+                                     else bool(server.metrics.get('source')), task)
+                    # Presence and changing live measurements do not rebuild snapshots without readers.
+                    snapshot = component.process.measurements.snapshot
+                    snapshots = []
+                    def counted_snapshot():
+                        snapshots.append(True)
+                        return snapshot()
+                    component.process.measurements.snapshot = counted_snapshot
+                    await asyncio.sleep(.2)
+                    self.assertEqual(snapshots, [])
+                    client = await Client.connect('127.0.0.1', server.port)
+                    try:
+                        status, _ = await client.request('status', timeout=1)
+                    finally:
+                        await client.close()
+                    self.assertTrue(snapshots)
+                    self.assertIsInstance(sample(status)['measurements']['source']['moteur.temperature'], float)
+                    await asyncio.sleep(.25)
+                    count = len(snapshots)
+                    await asyncio.sleep(.15)
+                    self.assertEqual(len(snapshots), count)  # Lease expires after the reader exits.
                     command = [sys.executable, '-m', 'ose.cli', 'measure', 'source.moteur.*', '--host', '127.0.0.1',
                                '--port', str(server.port), '--count', '2', '--interval', '.1', '--format', 'jsonl']
                     if distributed: command.append('--insecure')
@@ -96,6 +122,7 @@ class MeasurementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(process.returncode, 0, stderr.decode())
         final = json.loads((path.parent / 'last-status.json').read_text())
         self.assertNotIn('measurements', final['components']['source'])
+        self.assertGreater(final['components']['source']['ticks'], 1)
 
     async def test_engine_rejects_invalid_declarations_and_values(self):
         code = '''from ose.execution.component import ComponentSession

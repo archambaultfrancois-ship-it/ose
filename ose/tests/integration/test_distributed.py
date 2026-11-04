@@ -118,7 +118,7 @@ class DistributedTests(unittest.IsolatedAsyncioTestCase):
         from types import SimpleNamespace
         from ose.top import Observer, run
         await self.start_graph()
-        await self.until(lambda: all(self.coordinator.sessions[name]["metrics"].get("completed_ticks", 0) > 2
+        await self.until(lambda: all(self.workers[name].metrics.get("completed_ticks", 0) > 2
                                      for name in self.plan["components"]))
         output = io.StringIO()
         args = SimpleNamespace(endpoint=None, host="127.0.0.1", port=self.coordinator.port,

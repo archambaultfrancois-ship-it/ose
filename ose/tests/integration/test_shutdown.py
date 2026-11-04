@@ -111,8 +111,8 @@ def on_stop(ctx):
         from ose.execution.broker import Broker
         broker = Broker(self.plan)
         port = await broker.start()
-        tasks = [asyncio.create_task(Adapter(self.plan, name).run("127.0.0.1", port))
-                 for name in self.plan["components"]]
+        adapters = {name: Adapter(self.plan, name) for name in self.plan['components']}
+        tasks = [asyncio.create_task(adapter.run("127.0.0.1", port)) for adapter in adapters.values()]
         try:
             async def ready():
                 while len(broker.ready) != 2:
@@ -123,11 +123,11 @@ def on_stop(ctx):
             await asyncio.wait_for(ready(), 10)
             broker.enabled = True
             async def reported():
-                while not all(broker.metrics.get(name, {}).get("ticks", 0) > 2 for name in self.plan["components"]):
+                while not all(adapter.metrics.get('ticks', 0) > 2 for adapter in adapters.values()):
                     await asyncio.sleep(.01)
             await asyncio.wait_for(reported(), 10)
             process = await asyncio.create_subprocess_exec(os.sys.executable, "-m", "ose.cli", "top",
-                "--host", "127.0.0.1", "--port", str(port), "--format", "jsonl", "--count", "3", "--interval", ".1",
+                "--host", "127.0.0.1", "--port", str(port), "--format", "jsonl", "--count", "3", "--interval", ".3",
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             stdout, stderr = await asyncio.wait_for(process.communicate(), 8)
             self.assertEqual(process.returncode, 0, stderr.decode())

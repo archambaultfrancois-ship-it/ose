@@ -24,7 +24,7 @@ from ose.delivery.stores import MemoryStore
 from ose.execution.leadership import lease_clock
 from ose.execution.process import start_component, stop_component, tick_events
 from ose.execution.scheduler import Scheduler, reserve_snapshot
-from ose.execution.observation import TickTimings, describe, ReportSchedule
+from ose.execution.observation import TickTimings, describe, ReportSchedule, ObservationDemand
 from ose.transport.protocol import encode
 from ose.transport.secure import RPCServer, connect, finish_cleanup, identity, loopback
 from ose.recording.taps import TapHub, OPERATIONS as RECORDING_OPERATIONS
@@ -90,6 +90,7 @@ class Coordinator:
         self.logs = LogStore(self.epoch)
         self.sessions, self.metrics = {}, Counter()
         self.observation = describe(plan)
+        self.demand = ObservationDemand()
         self.external_peers, self.external_owners, self.external_generations = {}, {}, {}
         self.external_limits = {**EXTERNAL_LIMITS, **plan.get("broker", {}).get("external", {})}
         self.subscriptions = {s["id"]: s for s in plan["subscriptions"]}
@@ -119,6 +120,7 @@ class Coordinator:
         session = self.sessions.pop(name, None)
         if not session:
             return
+        self.demand.forget(session['peer'])
         self.metrics["retired"] += 1
         # No input replay or sender state survives a component generation change.
         for key, delivery in self.engines.items():
@@ -284,6 +286,7 @@ class Coordinator:
         if op in ("recording_points", "recording_describe"):
             return await self.recording.request(peer, header)
         if op == "status":
+            await self.demand.refresh(s['peer'] for s in self.sessions.values() if s['ready'])
             return self.snapshot(), None
         if op == 'logs':
             return self.logs.query(**header.get('filters', {})), None
@@ -314,9 +317,10 @@ class Coordinator:
             token = uuid.uuid4().hex
             self.sessions[name] = dict(token=token, host=host, port=port, peer=peer,
                                        ready=False, seen=lease_clock(), metrics={},
-                                       observation_generation=uuid.uuid4().hex, metric_time=None)
+                                       observation_generation=uuid.uuid4().hex, metric_time=None, presence_time=None)
             self.metrics["registrations"] += 1
-            return {"token": token, **self.directory()}, None
+            reporting = {'reporting': self.demand.register(peer)} if header.get('observe_metrics') is True else {}
+            return {"token": token, **self.directory(), **reporting}, None
         session = self.current(name, header["token"])
         if session["peer"] is not peer:
             raise ValueError("generation belongs to another control connection")
@@ -347,20 +351,26 @@ class Coordinator:
             session["ready"] = True
             if set(self.sessions) == set(self.plan["components"]) and all(s["ready"] for s in self.sessions.values()):
                 self.activated = True
-            return self.directory(), None
+            reporting = {'reporting': self.demand.state()} if peer in self.demand.members else {}
+            return {**self.directory(), **reporting}, None
         if op == "metrics":
             value = json.loads(body)
             if not isinstance(value, dict):
                 raise ValueError("metrics must be an object")
-            if set(value) <= {'log_records', 'logs_dropped'}:
-                value = {**session['metrics'], **value}
+            full = header.get('details', True) is not False and not set(value) <= {'log_records', 'logs_dropped'}
             if 'measurements' in value:
                 from ose.execution.measurements import validate_snapshot
                 value['measurements'] = validate_snapshot(value['measurements'])
             self.logs.append(name, session['observation_generation'], value.pop('log_records', []))
+            if not full:
+                value = {**session['metrics'], **value}
             session["metrics"] = value
-            session["metric_time"] = time.monotonic()
-            return {}, None
+            session['presence_time'] = time.monotonic()
+            if full:
+                session["metric_time"] = session['presence_time']
+                self.demand.received(peer, header.get('report_version'))
+            reporting = {'reporting': self.demand.state()} if peer in self.demand.members else {}
+            return reporting, None
         if op == "authorize":
             sub = self.subscriptions[header["subscription"]]
             if sub["to"].split(".")[0] != name:
@@ -423,6 +433,8 @@ class Coordinator:
             **desc, "connected": name in self.sessions,
             "ready": self.sessions.get(name, {}).get("ready", False),
             "generation": self.sessions.get(name, {}).get("observation_generation"),
+            "presence_age_ms": (time.monotonic() - self.sessions[name]['presence_time']) * 1000
+                if self.sessions.get(name, {}).get('presence_time') is not None else None,
             "report_age_ms": (time.monotonic() - self.sessions[name]["metric_time"]) * 1000
                 if self.sessions.get(name, {}).get("metric_time") is not None else None}
             for name, desc in self.observation["components"].items()}}
@@ -434,6 +446,7 @@ class Coordinator:
                 "subscriptions": {key: delivery.snapshot() for key, delivery in self.engines.items()}}
 
     async def close(self):
+        await self.demand.close()
         if hasattr(self, "monitor"):
             self.monitor.cancel()
             await asyncio.gather(self.monitor, return_exceptions=True)
@@ -524,8 +537,10 @@ class Worker:
         try:
             port = await self.rpc.start(self.listen_host, self.listen_port)
             self.client = await connect(self.host, self.port, self.plan["max_frame"], self.context, "coordinator")
+            self.client.on_event = self.reports.event
             result, _ = await self.client.request("register", node=self.name, host=self.advertise_host,
-                port=port, plan_id=fingerprint(self.plan))
+                port=port, plan_id=fingerprint(self.plan), observe_metrics=True)
+            self.reports.configure(result.get('reporting'))
             self.token, self.epoch = result["token"], result["epoch"]
             self.lease_seconds = result["lease_seconds"]
             self.last_contact = lease_clock()
@@ -549,6 +564,7 @@ class Worker:
             if not self.timed_ticks:
                 raise ValueError("distributed components require timestamped ticks; regenerate containers")
             self.directory, _ = await self.control("ready")
+            self.reports.configure(self.directory.get('reporting'))
             self.started.set()
             tasks += [asyncio.create_task(self._work()), asyncio.create_task(self._metrics()),
                       asyncio.create_task(self.process.wait()),
@@ -583,6 +599,8 @@ class Worker:
             await stop_component(self.process)
         if hasattr(self, 'token'):
             try:
+                if hasattr(self, 'process'):
+                    await asyncio.wait_for(self._send_report(True), .5)
                 while self.component_logs.pending:
                     await asyncio.wait_for(self.control('metrics', json.dumps({
                         'log_records': self.component_logs.drain(), 'logs_dropped': self.component_logs.dropped}).encode()), .5)
@@ -622,23 +640,26 @@ class Worker:
             if lease_clock() - self.last_contact >= self.lease_seconds:
                 raise RuntimeError("coordinator authorization expired")
 
+    async def _send_report(self, full):
+        process = getattr(self, 'process', None)
+        metrics = ({**self.metrics, 'running': bool(self.started_at),
+            **self.timings.snapshot(self.scheduler),
+            'inputs': {key: value.snapshot() for key, value in self.buffers.items()},
+            'direct': {key: value.snapshot() for key, value in self.engines.items()},
+            'measurements': process.measurements.snapshot() if process is not None else {}} if full else
+            ({'running': bool(self.started_at)} if self.reports.managed else {}))
+        metrics['log_records'] = self.component_logs.drain()
+        metrics['logs_dropped'] = self.component_logs.dropped
+        result, _ = await self.control('metrics', json.dumps(metrics).encode(),
+            details=full, report_version=self.reports.version)
+        self.reports.configure(result.get('reporting'))
+
     async def _metrics(self):
         while not self.closing:
-            process = getattr(self, 'process', None)
             full = await self.reports.next(self.component_logs)
             if full is None:
                 return
-            metrics = {}
-            if full:
-                metrics = {**self.metrics, "running": bool(self.started_at),
-                           **self.timings.snapshot(self.scheduler),
-                           "inputs": {key: value.snapshot() for key, value in self.buffers.items()},
-                           "direct": {key: value.snapshot() for key, value in self.engines.items()}}
-                metrics['measurements'] = process.measurements.snapshot() if process is not None else {}
-            if process is not None:
-                metrics['log_records'] = process.logs.drain()
-                metrics['logs_dropped'] = process.logs.dropped
-            await self.control("metrics", json.dumps(metrics).encode())
+            await self._send_report(full)
             if self.closing:
                 return
 

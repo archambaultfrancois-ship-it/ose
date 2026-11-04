@@ -1,5 +1,6 @@
 """A waiting control request must leave its connection usable for other RPCs."""
 import asyncio
+import json
 from pathlib import Path
 import unittest
 
@@ -82,3 +83,49 @@ class ControlConnectionTests(unittest.IsolatedAsyncioTestCase):
                 await self.client.request('recording_component_state', watch=True, after=version)
         result, _ = await self.client.request('state', timeout=1)
         self.assertTrue(result['enabled'])
+
+    async def test_demand_refresh_on_same_connection_leaves_metrics_and_control_usable(self):
+        # Replace the legacy connection with a runtime opting into demand reporting.
+        await self.client.close()
+        async def disconnected():
+            while self.server.peers:
+                await asyncio.sleep(0)
+        await asyncio.wait_for(disconnected(), 1)
+        self.client = await Client.connect('127.0.0.1', self.server.port)
+        self.addAsyncCleanup(self.client.close)
+        hello, _ = await self.client.request('hello', node='source', udp_port=12345, observe_metrics=True)
+        self.assertEqual(hello['reporting']['seconds'], 0)
+        await self.client.request('ready')
+        await self.client.request('metrics', json.dumps({'ticks': 1}).encode(), details=True, report_version=0)
+        age = self.server.metric_times['source']
+        events = asyncio.Queue()
+        self.client.on_event = lambda header, body: events.put_nowait(header)
+        waiting = asyncio.create_task(self.client.request('status', timeout=1))
+        self.addAsyncCleanup(self.cancel, waiting)
+        event = await asyncio.wait_for(events.get(), .5)
+        self.assertEqual(event['event'], 'reporting')
+        state, _ = await self.client.request('state', timeout=.2)
+        self.assertTrue(state['enabled'])
+        await self.client.request('metrics', json.dumps({'running': True}).encode(), details=False)
+        self.assertFalse(waiting.done())
+        self.assertEqual(self.server.metric_times['source'], age)
+        self.assertEqual(self.server.metrics['source']['ticks'], 1)
+        await self.client.request('metrics', json.dumps({'ticks': 2}).encode(), details=True,
+                                  report_version=event['reporting']['version'])
+        status, _ = await waiting
+        self.assertEqual(status['components']['source']['ticks'], 2)
+        self.assertLess(status['observation']['components']['source']['report_age_ms'], 100)
+
+    async def test_unresponsive_reporter_has_bounded_status_wait_and_truthful_age(self):
+        peer = self.server.peers['source'][0]
+        self.server.demand.register(peer)
+        self.server.demand.timeout = .02
+        await self.client.request('metrics', json.dumps({'ticks': 3}).encode())
+        original = self.server.metric_times['source']
+        await asyncio.sleep(.03)
+        await self.client.request('metrics', json.dumps({'log_records': [], 'logs_dropped': 0}).encode())
+        self.assertEqual(self.server.metric_times['source'], original)
+        status, _ = await self.client.request('status', timeout=.3)
+        observation = status['observation']['components']['source']
+        self.assertGreater(observation['report_age_ms'], observation['presence_age_ms'])
+        self.assertEqual(status['components']['source']['ticks'], 3)

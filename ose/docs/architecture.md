@@ -111,8 +111,12 @@ There is no automatic restart.
 
 Control requests remain independent of data admission. Local recording activation
 uses versioned change watches; adapter parameter readers use bounded ten-second
-event waits. Changed metrics coalesce over 500 ms, with one-second idle presence
-reports. Logs wake their sender independently. These paths retain the same
+event waits. Status reads enable detailed metrics for three seconds, renewed by
+further reads; the first read after idle waits at most 750 ms for a fresh report
+without blocking other control traffic. Observed changes coalesce over 500 ms.
+Without readers, one-second presence reports avoid building detailed snapshots.
+Full report age and presence age remain separate. Logs wake their sender
+independently. These paths retain the same
 process isolation, transport profiles, queue bounds and component protocols.
 
 ## Public boundary

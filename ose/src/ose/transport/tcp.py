@@ -42,6 +42,7 @@ class Client:
     def __init__(self, tcp, on_data=None, request_timeout=15):
         self.tcp, self.on_data = tcp, on_data
         self.request_timeout = request_timeout
+        self.on_event = None
         self.pending, self.sequence = {}, 0
         self.task = asyncio.create_task(self._read())
 
@@ -82,6 +83,8 @@ class Client:
                         future.set_result((header, body))
                 elif header["op"] == "data" and self.on_data:
                     await self.on_data(header, body)
+                elif header["op"] == "event" and self.on_event:
+                    self.on_event(header, body)
         except (asyncio.IncompleteReadError, ConnectionError, ValueError) as error:
             for future in self.pending.values():
                 if not future.done():

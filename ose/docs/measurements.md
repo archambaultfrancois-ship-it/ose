@@ -78,10 +78,13 @@ Rust returns an error. No activation or declaration type argument is needed.
 
 These calls use ordinary CH/1 IPC flow control; they do not contact a dashboard
 or wait for a CLI reader. An emission means the update was sent to the adapter,
-not that a particular reader has observed it. Local status reports normally
-coalesce changes over 500 ms, as do distributed worker reports. Idle runtimes
-send a full status heartbeat every second. Measurements retain their latest
-values while waiting for the next report.
+not that a particular reader has observed it. While a status reader is active,
+local and distributed reports coalesce changes over 500 ms, with a full heartbeat
+every second. Without readers, only lightweight presence reports are sent;
+measurements retain their latest values locally. A status read enables detailed
+reports for three seconds and renews that interval on subsequent reads. The first
+read after a quiet period waits up to 750 ms for a fresh snapshot from ready
+runtimes; timed-out reporters retain their cached values and actual report age.
 Multiple emissions can therefore be coalesced into one observed latest value.
 Old component binaries remain valid without measurements. Rebuild generated
 containers and update the application runtime before using the new APIs.

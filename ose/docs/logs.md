@@ -131,6 +131,8 @@ are dropped when full. The cumulative `logs_dropped` count appears in component
 metrics. A batch contains at most 32 entries within roughly 64 KiB of raw text.
 Batches wake the report sender immediately and can travel in log-only reports,
 independently of the 500 ms metric coalescing interval and application deliveries.
+This immediate delivery also applies without status readers; querying logs does
+not enable detailed metric reporting.
 Queued bursts drain in bounded batches with normal network backpressure.
 Initialization and clean-shutdown deposits are flushed best effort as well.
 

@@ -117,24 +117,31 @@ class Adapter:
             # Cached catalogue/in-memory admissions may otherwise run without any suspension.
             await asyncio.sleep(0)
 
+    def _snapshot(self):
+        elapsed = max(time.monotonic() - self.started_at, .001)
+        metrics = {"inputs": {p: b.snapshot() for p, b in self.buffers.items()},
+            "ticks_hz": self.metrics.get("ticks", 0) / elapsed,
+            "publications_hz": self.metrics.get("publications", 0) / elapsed,
+            "running": bool(self.activated_at_ns), **self.metrics, **self.timings.snapshot(self.scheduler)}
+        if hasattr(self, "component_recording"):
+            metrics["recording"] = dict(self.component_recording.counts)
+        metrics['measurements'] = self.process.measurements.snapshot()
+        return metrics
+
+    async def _send_report(self, full, timeout=None):
+        metrics = self._snapshot() if full else ({'running': bool(self.activated_at_ns)} if self.reports.managed else {})
+        metrics['log_records'] = self.process.logs.drain()
+        metrics['logs_dropped'] = self.process.logs.dropped
+        result, _ = await self.client.request("metrics", json.dumps(metrics).encode(),
+            details=full, report_version=self.reports.version, timeout=timeout)
+        self.reports.configure(result.get('reporting'))
+
     async def _report(self):
         while True:
             full = await self.reports.next(self.process.logs)
             if full is None:
                 return
-            metrics = {}
-            if full:
-                elapsed = max(time.monotonic() - self.started_at, .001)
-                metrics = {"inputs": {p: b.snapshot() for p, b in self.buffers.items()},
-                    "ticks_hz": self.metrics.get("ticks", 0) / elapsed,
-                    "publications_hz": self.metrics.get("publications", 0) / elapsed,
-                    "running": bool(self.activated_at_ns), **self.metrics, **self.timings.snapshot(self.scheduler)}
-                if hasattr(self, "component_recording"):
-                    metrics["recording"] = dict(self.component_recording.counts)
-                metrics['measurements'] = self.process.measurements.snapshot()
-            metrics['log_records'] = self.process.logs.drain()
-            metrics['logs_dropped'] = self.process.logs.dropped
-            await self.client.request("metrics", json.dumps(metrics).encode())
+            await self._send_report(full)
 
     async def _work(self):
         while True:
@@ -173,7 +180,9 @@ class Adapter:
         try:
             self.udp = await UDP.bind(self._udp_data, self.plan["max_datagram"])
             self.client = await Client.connect(host, port, limit=self.plan["max_frame"], request_timeout=self.request_timeout)
-            result, _ = await self.client.request("hello", node=self.name, udp_port=self.udp.address[1], data_channels=True)
+            self.client.on_event = self.reports.event
+            result, _ = await self.client.request("hello", node=self.name, udp_port=self.udp.address[1], data_channels=True, observe_metrics=True)
+            self.reports.configure(result.get('reporting'))
             self.broker_udp = (host, result["udp_port"])
             self.broker_epoch = result["epoch"]
             for identity, sub in self.subscriptions.items():
@@ -189,7 +198,8 @@ class Adapter:
             self.component_recording = RemoteRecording(self.codec, self.client.request)
             self.process, self.timed_ticks = await start_component(self.node, self.parameters, self.component_recording.endpoint, self.component_logs)
             self.process.measurements.on_change = self.reports.mark
-            await self.client.request("ready")
+            result, _ = await self.client.request("ready")
+            self.reports.configure(result.get('reporting'))
             # Supervisor activates delivery only after every component is ready.
             while True:
                 status, _ = await self.client.request("state")
@@ -216,13 +226,17 @@ class Adapter:
                 self.component_recording.close()
             if hasattr(self, "parameters"):
                 await self.parameters.close()
+            reader = getattr(getattr(self, 'client', None), 'task', None)
             for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+                if task is not reader:
+                    task.cancel()
+            await asyncio.gather(*(task for task in tasks if task is not reader), return_exceptions=True)
             if hasattr(self, "process") and self.process.returncode is None:
                 await self._stop_component()
             if hasattr(self, 'client'):
                 try:
+                    if hasattr(self, 'process'):
+                        await self._send_report(True, timeout=.5)
                     while self.component_logs.pending:
                         await self.client.request('metrics', json.dumps({'log_records': self.component_logs.drain(),
                             'logs_dropped': self.component_logs.dropped}).encode(), timeout=.5)

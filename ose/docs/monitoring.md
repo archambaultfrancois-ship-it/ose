@@ -44,11 +44,19 @@ force them. JSONL never contains ANSI sequences.
 
 ## Reading the report
 
-Local adapters and distributed workers mark metrics dirty on processing, queue
-or measurement changes and coalesce full reports over 500 ms. Idle components
-send a one-second heartbeat, below the three-second stale threshold. Log batches
-can arrive sooner without forcing a full metric snapshot. CLI refresh frequency
-does not change the application's reporting cadence.
+Local adapters and distributed workers send an initial diagnostic snapshot. Each
+status RPC then enables detailed reports for three seconds, renewed by further
+status reads (including `top`, `measure`, `inspect` and the web console). The first
+read after a quiet period requests a fresh snapshot and waits at most 750 ms for
+ready runtimes. This wait leaves ACKs and other control RPCs usable. An unavailable
+reporter leaves its cached values and their actual `report_age_ms` visible.
+
+While observed, processing, queue and measurement changes coalesce over 500 ms;
+idle runtimes report details every second. Without readers, runtimes retain the
+latest values locally and send only a small presence report every second, avoiding
+queue, timing and measurement snapshots. `presence_age_ms` tracks these lightweight
+reports separately. Logs wake their sender immediately in either mode. Older
+runtimes without demand negotiation retain their original reporting cadence.
 
 The table shows recent input admissions/s, publications/s and completed ticks/s,
 the fullest FIFO's depth/capacity, recent delivery losses, and tick p95 in ms.

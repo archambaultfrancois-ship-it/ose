@@ -14,7 +14,7 @@ from ose.transport.udp import UDP
 from ose.transport.protocol import encode
 from ose.parameters.service import ParameterEndpoint, OPERATIONS as PARAMETER_OPERATIONS
 from ose.recording.taps import TapHub, OPERATIONS as RECORDING_OPERATIONS
-from ose.execution.observation import describe
+from ose.execution.observation import describe, ObservationDemand
 from ose.recording.component import validate_name, MAX_POINTS
 from ose.execution.logs import LogStore
 
@@ -28,7 +28,9 @@ class Broker(Sessions):
         self.logs = LogStore(self.epoch)
         self.retained, self.peers, self.ready, self.metrics = {}, {}, set(), Counter()
         self.observation = describe(plan)
+        self.demand = ObservationDemand()
         self.metric_times, self.generations = {}, {}
+        self.presence_times = {}
         self.data_peers, self.dedicated_data = {}, set()
         self._enabled = False
         self.closing = False
@@ -143,6 +145,7 @@ class Broker(Sessions):
         publications = set()
         parameter_polls = set()
         recording_watch = set()
+        status_reads = set()
         try:
             while not self.closing:
                 header, body = await peer.receive()
@@ -191,6 +194,18 @@ class Broker(Sessions):
                         publication = asyncio.create_task(self._publish_reply(peer, node, header, body, session))
                         publications.add(publication)
                         publication.add_done_callback(publications.discard)
+                    continue
+                if op == 'status':
+                    if len(status_reads) >= 32:
+                        await self._reply(peer, header.get('request'), error='too many pending status reads')
+                    else:
+                        status = asyncio.create_task(self._status_reply(peer, header))
+                        status_reads.add(status)
+                        def completed_status(status):
+                            status_reads.discard(status)
+                            if not status.cancelled():
+                                status.exception()
+                        status.add_done_callback(completed_status)
                     continue
                 if op == 'recording_component_state' and header.get('watch'):
                     if node is None or recording_watch:
@@ -271,10 +286,13 @@ class Broker(Sessions):
                         self.generations[node] = uuid.uuid4().hex
                         self.metrics.pop(node, None)
                         self.metric_times.pop(node, None)
+                        self.presence_times.pop(node, None)
                         if header.get("data_channels", False):
                             self.dedicated_data.add(node)
                         self._notify_node(node)
                         result = {"udp_port": self.udp.address[1], "epoch": self.epoch}
+                        if header.get('observe_metrics') is True:
+                            result['reporting'] = self.demand.register(peer)
                         for identity, sub in self.subscriptions.items():
                             if sub["to"].split(".")[0] == node and sub["policy"]["buffer"] == "latest" and sub["from"] in self.retained:
                                 retained = self.retained[sub["from"]]
@@ -295,10 +313,10 @@ class Broker(Sessions):
                             raise ValueError("hello required")
                         self.ready.add(node)
                         self.readiness.set()
+                        if peer in self.demand.members:
+                            result['reporting'] = self.demand.state()
                     elif op in ("recording_declare", "recording_component_state", "recording_emit"):
                         result = self.component_recording(node, op, header, body)
-                    elif op == "status":
-                        result = self.snapshot()
                     elif op == "state":
                         result = {"enabled": self.enabled}
                     elif op == "catalogue":
@@ -309,14 +327,20 @@ class Broker(Sessions):
                         metrics = json.loads(body) if body else header["metrics"]
                         if not isinstance(metrics, dict):
                             raise ValueError("metrics must be an object")
-                        if set(metrics) <= {'log_records', 'logs_dropped'}:
-                            metrics = {**self.metrics.get(node, {}), **metrics}
+                        full = header.get('details', True) is not False and not set(metrics) <= {'log_records', 'logs_dropped'}
                         if 'measurements' in metrics:
                             from ose.execution.measurements import validate_snapshot
                             metrics['measurements'] = validate_snapshot(metrics['measurements'])
                         self.logs.append(node, self.generations[node], metrics.pop('log_records', []))
+                        if not full:
+                            metrics = {**self.metrics.get(node, {}), **metrics}
                         self.metrics[node] = metrics
-                        self.metric_times[node] = time.monotonic()
+                        self.presence_times[node] = time.monotonic()
+                        if full:
+                            self.metric_times[node] = self.presence_times[node]
+                            self.demand.received(peer, header.get('report_version'))
+                        if peer in self.demand.members:
+                            result['reporting'] = self.demand.state()
                     else:
                         raise ValueError("unknown operation")
                     await self._reply(peer, header["request"], result, binary=response_body if op == "catalogue" else None)
@@ -330,6 +354,10 @@ class Broker(Sessions):
         except (asyncio.IncompleteReadError, ConnectionError, ValueError):
             pass
         finally:
+            self.demand.forget(peer)
+            for status in status_reads:
+                status.cancel()
+            await asyncio.gather(*status_reads, return_exceptions=True)
             for watch in recording_watch:
                 watch.cancel()
             await asyncio.gather(*recording_watch, return_exceptions=True)
@@ -360,6 +388,10 @@ class Broker(Sessions):
                     self.engines[data_subscription].store.notify()
             self.connections.discard(task)
             await peer.close()
+
+    async def _status_reply(self, peer, header):
+        await self.demand.refresh(self.peers[name][0] for name in self.ready if name in self.peers)
+        await self._reply(peer, header['request'], self.snapshot())
 
     async def _recording_reply(self, peer, node, header):
         try:
@@ -529,6 +561,7 @@ class Broker(Sessions):
         observation = {**self.observation, "components": {name: {
             **desc, "connected": name in self.peers, "ready": name in self.ready,
             "generation": self.generations.get(name),
+            "presence_age_ms": (time.monotonic() - self.presence_times[name]) * 1000 if name in self.presence_times else None,
             "report_age_ms": (time.monotonic() - self.metric_times[name]) * 1000 if name in self.metric_times else None}
             for name, desc in self.observation["components"].items()}}
         return {"epoch": self.epoch, "logs_version": 1, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
@@ -541,6 +574,7 @@ class Broker(Sessions):
 
     async def close(self):
         self.closing = True
+        await self.demand.close()
         self.parameters.close()
         self.recording.close()
         self.enabled = False

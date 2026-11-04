@@ -3,7 +3,7 @@ import asyncio
 import unittest
 
 from ose.execution.logs import ComponentLogs, log_body
-from ose.execution.observation import ReportSchedule
+from ose.execution.observation import ReportSchedule, ObservationDemand
 from ose.recording.component import RemoteRecording
 from ose.recording.taps import TapHub
 
@@ -58,6 +58,82 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
         self.now = 10
         self.assertIs(await self.schedule.next(self.logs), True)
         self.assertFalse(self.schedule.dirty)
+
+    async def test_quiet_presence_logs_and_immediate_demand_then_expiration(self):
+        self.schedule.configure(dict(version=0, seconds=0))
+        self.assertIs(await self.schedule.next(self.logs), True)  # Initial diagnostic.
+        self.now = 20
+        self.schedule.mark()
+        self.assertIs(await self.schedule.next(self.logs), False)
+        self.assertTrue(self.schedule.dirty)
+        waiting = asyncio.create_task(self.schedule.next(self.logs))
+        await asyncio.sleep(0)
+        self.logs.emit(log_body('ERROR', 'quiet log'))
+        self.assertIs(await asyncio.wait_for(waiting, 1), False)
+        self.assertEqual(self.logs.drain()[0]['message'], 'quiet log')
+        waiting = asyncio.create_task(self.schedule.next(self.logs))
+        await asyncio.sleep(0)
+        self.schedule.event({'event': 'reporting', 'reporting': dict(version=1, seconds=5)}, b'')
+        self.assertIs(await asyncio.wait_for(waiting, 1), True)
+        # Renewals do not bypass coalescing; obsolete replies cannot end a new lease.
+        self.schedule.configure(dict(version=1, seconds=5))
+        self.assertFalse(self.schedule.dirty)
+        self.schedule.configure(dict(version=0, seconds=0))
+        self.assertEqual(self.schedule.version, 1)
+        self.schedule.mark()
+        self.now = 40
+        self.assertIs(await self.schedule.next(self.logs), False)
+        self.schedule.configure(dict(version=2, seconds=5))
+        self.assertIs(await self.schedule.next(self.logs), True)
+
+    async def test_reporting_validation_and_legacy_negotiation(self):
+        self.schedule.configure(None)
+        self.assertFalse(self.schedule.managed)
+        for state in (False, [], {}, dict(version=True, seconds=0),
+                      dict(version=0, seconds=float('nan')), dict(version=0, seconds=-1)):
+            with self.subTest(state=state), self.assertRaises(ValueError):
+                self.schedule.configure(state)
+
+
+class DemandTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.hub = ObservationDemand(lease=.05, timeout=.03)
+        self.addAsyncCleanup(self.hub.close)
+        self.sent = asyncio.Queue()
+        class Peer:
+            async def send(peer, header):
+                await self.sent.put((peer, header))
+        self.peer = Peer()
+        self.hub.register(self.peer)
+
+    async def test_concurrent_readers_share_refresh_and_require_current_epoch(self):
+        pending = [asyncio.create_task(self.hub.refresh([self.peer])) for _ in range(10)]
+        peer, header = await self.sent.get()
+        version = header['reporting']['version']
+        self.hub.received(peer, version - 1)
+        await asyncio.sleep(0)
+        self.assertTrue(all(not task.done() for task in pending))
+        self.hub.received(peer, version)
+        await asyncio.gather(*pending)
+        self.assertTrue(self.sent.empty())
+        await self.hub.refresh([self.peer])
+        self.assertTrue(self.sent.empty())
+        await asyncio.sleep(.06)
+        waiting = asyncio.create_task(self.hub.refresh([self.peer]))
+        _, header = await self.sent.get()
+        self.assertGreater(header['reporting']['version'], version)
+        self.hub.forget(self.peer)
+        await asyncio.wait_for(waiting, .02)
+
+    async def test_timeout_and_close_do_not_strand_readers(self):
+        await asyncio.wait_for(self.hub.refresh([self.peer]), .2)
+        self.assertEqual(self.hub.members[self.peer], -1)
+        await asyncio.sleep(.06)
+        waiting = asyncio.create_task(self.hub.refresh([self.peer]))
+        await asyncio.sleep(0)
+        await self.hub.close()
+        await asyncio.wait_for(waiting, .1)
+        self.assertFalse(self.hub.notifications)
 
 
 class ActivationTests(unittest.IsolatedAsyncioTestCase):
