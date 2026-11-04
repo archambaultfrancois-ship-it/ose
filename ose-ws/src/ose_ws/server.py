@@ -193,6 +193,23 @@ def create_app(config):
         session(request).check("components.read")
         return public(collector.diagnostics())
 
+    @app.get("/api/v1/flow/schema")
+    async def flow_schema(request: Request, subscription: str, epoch: str):
+        session(request).check("components.read")
+        require(collector.error is None, "The OSE application is unavailable.", 503, "SOURCE_UNAVAILABLE")
+        require(epoch == collector.snapshot.get("epoch"), "The application changed; refresh its status.", 409, "APPLICATION_CHANGED")
+        subscriptions = collector.snapshot.get("observation", {}).get("subscriptions", {})
+        require(subscription in subscriptions, "Subscription not found.", 404, "NOT_FOUND")
+        client = await connection.connect()
+        try:
+            desc, catalogue = await client.request("subscription_schema", subscription=subscription, timeout=3)
+        finally:
+            await client.close()
+        require(desc.get("epoch") == epoch == collector.snapshot.get("epoch"),
+                "The application changed; refresh its status.", 409, "APPLICATION_CHANGED")
+        adapter = await asyncio.to_thread(SchemaAdapter, catalogue.decode(), desc["root"])
+        return public(await asyncio.to_thread(adapter.description))
+
     @app.get('/api/v1/logs')
     async def log_records(request: Request, components: str = '*', levels: str = '', search: str = '',
                           logger: str = '*', after: str = None, epoch: str = None, limit: int = 200):

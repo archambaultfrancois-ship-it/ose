@@ -88,6 +88,22 @@ duration measures the entire tick currently in progress, including delivery wait
 Exceeding a configured period is a diagnostic hint; OSE arms the next period
 after tick completion, so it is not a missed-deadline counter.
 
+## Flow metadata and SDL contracts
+
+The `status` response includes observation metadata derived from the compiled
+plan: component triggers, input/output roots, external topics and declared
+subscription endpoints and delivery policies. This lets the Web Console draw
+the application flow without a local model checkout.
+
+The read-only `subscription_schema` RPC accepts a `subscription` ID and returns
+the source port's `root`, `from`, `to` and application `epoch` in the response
+header, with its SDL catalogue as the binary body. The broker and distributed
+coordinator serve this from the compiled plan, including direct routes and
+external topics, without contacting a worker or opening a recording. Clients
+should match the returned epoch to their displayed graph before showing the
+contract. Schema catalogues are fetched on demand and stay out of periodic
+status responses.
+
 ## Scripted collection
 
 ```sh

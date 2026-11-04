@@ -67,7 +67,14 @@ an exclusive lock refuses another console using the same state directory.
 
 - **Components:** shared `status` sampling, the same diagnostics as `ose top`,
   sliding-window rates, freshness, FIFO occupancy, alerts and queue details.
-  Freezing the view does not stop server collection.
+  A directed application flow graph shows components, external topics and
+  declared subscriptions, with live component states and admission/publication
+  rates. Select a component for diagnostics; tap or click a link or its label
+  to open a closeable panel with ports, the source SDL contract and delivery policy. Mouse
+  hover also shows a tooltip. Zoom, fit and optional link labels help explore larger
+  applications. Search/state filters highlight matches while preserving the
+  full topology. Freezing the view holds the graph, table and selected details
+  together and does not stop server collection.
 - **Logs:** the second page, after Components; an in-memory component log stream
   with component/category/text filters, minimum severity through FATAL, pause,
   resume and JSONL export. Scoped `logs.read` rights control access. See
@@ -114,6 +121,20 @@ External changes preserve a browser draft and update its separate remote value.
 The active section is kept in the URL fragment (for example, `#parameters`), so
 reloading or returning to a browser tab restores that section. Drafts stay in
 browser memory when navigating; reload/closing can discard them.
+
+The flow graph uses observation metadata sent by the running broker or
+coordinator through the existing shared `status` RPC. OSE derives it from the
+compiled application plan; the console needs no local `model.json` or
+`plan.json`. Arrows represent declared subscriptions rather than individual
+message deliveries. With an older runtime, port types and external-topic
+identification may be incomplete; update and restart the OSE runtime for the
+full metadata. During a disconnection, the graph keeps its last known topology
+with an explicit offline notice and unavailable component states.
+Link contracts load on selection through OSE and show fields, nested types,
+enums, cardinalities, array dimensions and wire encodings. This uses
+`components.read` rights and works for local, direct and external subscriptions,
+without recording permissions. Update and restart OSE for the
+`subscription_schema` RPC; the compiled plan already contains the contracts.
 
 Failed validation marks the affected field in red with an inline message and
 moves focus to it. Nested branches expand and long sequences show the page

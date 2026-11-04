@@ -14,7 +14,7 @@ from ose.transport.udp import UDP
 from ose.transport.protocol import encode
 from ose.parameters.service import ParameterEndpoint, OPERATIONS as PARAMETER_OPERATIONS
 from ose.recording.taps import TapHub, OPERATIONS as RECORDING_OPERATIONS
-from ose.execution.observation import describe, ObservationDemand
+from ose.execution.observation import describe, ObservationDemand, subscription_schema
 from ose.recording.component import validate_name, MAX_POINTS
 from ose.execution.logs import LogStore
 
@@ -225,6 +225,10 @@ class Broker(Sessions):
                     if op == 'logs':
                         result = self.logs.query(**header.get('filters', {}))
                         await self._reply(peer, header['request'], result)
+                        continue
+                    if op == 'subscription_schema':
+                        result, response_body = subscription_schema(self.plan, self.subscriptions[header['subscription']])
+                        await self._reply(peer, header['request'], {**result, 'epoch': self.epoch}, binary=response_body)
                         continue
                     attach_subscription = None
                     if op == "client_hello":

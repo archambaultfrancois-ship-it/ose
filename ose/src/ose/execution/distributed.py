@@ -24,7 +24,7 @@ from ose.delivery.stores import MemoryStore
 from ose.execution.leadership import lease_clock
 from ose.execution.process import start_component, stop_component, tick_events
 from ose.execution.scheduler import Scheduler, reserve_snapshot
-from ose.execution.observation import TickTimings, describe, ReportSchedule, ObservationDemand
+from ose.execution.observation import TickTimings, describe, ReportSchedule, ObservationDemand, subscription_schema
 from ose.transport.protocol import encode
 from ose.transport.secure import RPCServer, connect, finish_cleanup, identity, loopback
 from ose.recording.taps import TapHub, OPERATIONS as RECORDING_OPERATIONS
@@ -290,6 +290,9 @@ class Coordinator:
             return self.snapshot(), None
         if op == 'logs':
             return self.logs.query(**header.get('filters', {})), None
+        if op == 'subscription_schema':
+            result, catalogue = subscription_schema(self.plan, self.subscriptions[header['subscription']])
+            return {**result, 'epoch': self.epoch}, catalogue
         if op in ("external_open", "external_publish", "external_close"):
             return await self.external_request(peer, header, body, caller)
         if peer in self.external_peers:

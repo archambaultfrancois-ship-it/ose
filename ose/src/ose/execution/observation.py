@@ -175,12 +175,25 @@ def describe(plan):
     return {
         "version": 1,
         "components": {name: {"trigger": node.get("trigger", {}), "inputs": {
-            port: {key: desc[key] for key in ("required", "timeout") if key in desc}
-            for port, desc in node["inputs"].items()}}
+            port: {key: desc[key] for key in ("root", "required", "timeout") if key in desc}
+            for port, desc in node["inputs"].items()}, "outputs": {
+            port: {"root": desc["root"]} for port, desc in node.get("outputs", {}).items()}}
             for name, node in plan["components"].items()},
-        "subscriptions": {sub["id"]: {key: sub[key] for key in ("from", "to", "policy", "routing") if key in sub}
+        "external_topics": {topic: {"root": desc["root"]}
+                            for topic, desc in plan.get("external_topics", {}).items()},
+        "subscriptions": {sub["id"]: {key: sub[key] for key in ("from", "from_topic", "to", "policy", "routing") if key in sub}
                           for sub in plan["subscriptions"]},
     }
+
+
+def subscription_schema(plan, sub):
+    """Describe the source contract of a declared subscription on demand."""
+    if "from_topic" in sub:
+        desc = plan["external_topics"][sub["from_topic"]]
+    else:
+        component, port = sub["from"].split(".")
+        desc = plan["components"][component]["outputs"][port]
+    return {"from": sub["from"], "to": sub["to"], "root": desc["root"]}, desc["catalogue"].encode()
 
 
 class TickTimings:

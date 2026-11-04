@@ -72,8 +72,16 @@ class StatusCollector:
             "status_requests": self.requests, "status_failures": self.failures, "rpc_latency_ms": self.latency_ms}
 
     def diagnostics(self):
+        observation = self.snapshot.get("observation", {})
+        topology = None
+        if observation.get("version") == 1:
+            topology = {"version": 1, "components": {
+                name: {key: desc[key] for key in ("trigger", "inputs", "outputs") if key in desc}
+                for name, desc in observation.get("components", {}).items()},
+                "subscriptions": observation.get("subscriptions", {}),
+                "external_topics": observation.get("external_topics", {})}
         return self.report | {"error": self.error or self.report.get("error"), "observed_at": self.last_success,
-                              "age_ms": self.application()["age_ms"]}
+                              "age_ms": self.application()["age_ms"], "topology": topology}
 
     async def close(self):
         if self.task:

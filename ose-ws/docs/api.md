@@ -30,7 +30,8 @@ Observation and log `sequence` fields are decimal order strings.
 | Resource | Operations |
 | --- | --- |
 | Application | `GET /application`: connection, epoch, versions, capabilities, freshness and service errors. |
-| Components | `GET /components`, `GET /components/{id}`: shared diagnostics, never a fresh RPC per browser. |
+| Components | `GET /components`, `GET /components/{id}`: shared diagnostics, never a fresh RPC per browser. The collection includes declared flow `topology`. |
+| Link contract | `GET /flow/schema?subscription=...&epoch=...`: source SDL contract for a declared subscription; requires `components.read`. |
 | Logs | `GET /logs`: bounded in-memory component history with component, level, category and text filters; follow with `after`/`epoch`. Requires component-scoped `logs.read`. FATAL is distinct from CRITICAL. |
 | Measures | `GET /measurements`, `POST /measurement-watches`, `DELETE /measurement-watches/{id}`. |
 | History | `GET /series?ids=...&start=...&end=...&max_points=...`, `GET /series/export?ids=...`. |
@@ -41,6 +42,30 @@ Observation and log `sequence` fields are decimal order strings.
 | Parameter files | `POST /parameter-imports/preview`, `POST /parameter-imports/{id}/apply`, `POST /parameter-exports`. |
 | Operations | `GET /operations` (uncertain), `GET /operations/{id}`, administrative `POST /operations/{id}/close-unknown`. |
 | Audit | `GET /audit`. |
+
+`GET /components` includes `topology`, or `null` until compatible observation
+metadata is available. Version 1 contains `components` keyed by component name
+(trigger, input and output descriptors), `external_topics` keyed by topic name,
+and `subscriptions` keyed by subscription ID (`from`, `to`, resolved `policy`,
+optional `from_topic` and `routing`). Port descriptors include SDL `root` types
+when supplied by the runtime. This metadata comes from the running application's
+compiled plan through the shared status collector, without commands, environment
+variables, schema catalogues or parameter values. Topology is retained on
+connection loss; use the enclosing `error`, `observed_at` and `age_ms` to assess
+freshness. Component health and rates remain in the enclosing `components`
+array. Older version 1 runtimes can omit outputs, roots and external topic
+metadata. Graph refreshes use the shared collector.
+
+Link contracts are fetched on demand with `GET /flow/schema`, using a subscription
+ID and the epoch from `GET /components`. The response uses the same schema
+description as parameter and recording contracts (`root`, `schema_digest`,
+`catalogue`, `types`, `presentation_version`, `presentation`). The server reads
+the compiled source port contract through the OSE `subscription_schema` RPC;
+external topics and direct routes use the same mechanism. This requires
+`components.read`, independently of recording permissions and external-client
+enablement. An unknown subscription returns 404, an obsolete epoch returns 409
+and a disconnected source returns 503. Contracts are not included in periodic
+status messages. A compatible OSE runtime is required.
 
 Inventory lists use `items`, `next`, optional `cursor` and `limit` (1–200). Inventory
 changes invalidate a cursor with HTTP 409. Measurement watches accept

@@ -14,6 +14,7 @@ import uuid
 import httpx
 from ose.execution.broker import Broker
 from ose.execution.distributed import Coordinator
+from ose.delivery.policies import SubscriptionPolicy
 from ose.parameters.values import Values
 from ose.codec.runtime import Runtime
 from ose_ws.auth import Session
@@ -141,6 +142,55 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(r.status_code == 200 for r in responses))
         self.assertLessEqual(self.app.state.collector.requests - before, int((time.monotonic() - started) / .1) + 3)
         self.assertEqual(responses[0].json()["components"][0]["state"], "IDLE")
+        topology = responses[0].json()["topology"]
+        self.assertEqual(list(topology["components"]), ["source"])
+        self.assertEqual(topology["components"]["source"]["outputs"], {"settings": {"root": "Settings"}})
+        self.assertNotIn("catalogue", topology["components"]["source"]["outputs"]["settings"])
+
+    async def test_link_contracts_for_local_direct_and_external_subscriptions(self):
+        external_catalogue = "SDL2|Child{1:uint16:code;}|Packet{1:Child:child;2*:fl32:samples;3:Mode:mode;}|#Mode{OFF=0;ON=1;}"
+        sink = {"inputs": {"settings": {"root": "Settings", "catalogue": CATALOGUE},
+                           "offset": {"root": "Packet", "catalogue": external_catalogue}},
+                "outputs": {}, "trigger": {"mode": "on_change"}}
+        policy = SubscriptionPolicy.resolve().to_dict()
+        collector = self.app.state.collector
+        for distributed in (False, True):
+            plan = dict(self.broker.plan, execution="distributed" if distributed else "local",
+                components={"source": self.broker.plan["components"]["source"], "sink": sink},
+                subscriptions=[
+                    {"id": "source/settings #1", "from": "source.settings", "to": "sink.settings", "policy": policy,
+                     "routing": "direct" if distributed else "broker"},
+                    {"id": "external", "from": "source.external", "from_topic": "source.external", "to": "sink.offset", "policy": policy}],
+                external_topics={"source.external": {"root": "Packet", "catalogue": external_catalogue}},
+                broker={"external": {"enabled": False}})
+            runtime = Coordinator(plan) if distributed else Broker(plan)
+            await runtime.start()
+            self.addAsyncCleanup(runtime.close)
+            await collector.close()
+            collector.client = None
+            self.app.state.connection.config.update(port=runtime.port, distributed=distributed, insecure=True)
+            await collector.start()
+            await self.until(lambda: collector.snapshot.get("epoch") == runtime.epoch)
+            params = {"subscription": "source/settings #1", "epoch": runtime.epoch}
+            signed_in = self.app.state.auth.sessions[self.client.cookies.get(self.app.state.auth.cookie)]
+            with patch.object(signed_in, 'permissions', {'components.read': ['*']}):
+                response = await self.client.get("/api/v1/flow/schema", params=params)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["root"], "Settings")
+                self.assertEqual(response.json()["catalogue"], CATALOGUE)
+                self.assertEqual(response.json()["types"]["Settings"]["fields"][0]["name"], "enabled")
+                response = await self.client.get("/api/v1/flow/schema", params=dict(params, subscription="external"))
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["root"], "Packet")
+                self.assertEqual(response.json()["types"]["Child"]["fields"][0]["type"], "uint16")
+                self.assertEqual(response.json()["types"]["Mode"]["kind"], "enum")
+                self.assertEqual((await self.client.get("/api/v1/flow/schema", params=dict(params, subscription="unknown"))).status_code, 404)
+                self.assertEqual((await self.client.get("/api/v1/flow/schema", params=dict(params, epoch="obsolete"))).status_code, 409)
+            with patch.object(signed_in, 'permissions', {'recordings.create': ['*']}):
+                self.assertEqual((await self.client.get("/api/v1/flow/schema", params=params)).status_code, 403)
+            # A reconnect to a new runtime cannot return a contract for the old graph.
+            with patch.object(collector, "error", "Disconnected"):
+                self.assertEqual((await self.client.get("/api/v1/flow/schema", params=params)).status_code, 503)
 
     async def test_exact_parameter_roundtrip_complete_replacement_and_retry(self):
         block = await self.block()
@@ -480,6 +530,8 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         status = (await self.client.get("/api/v1/application")).json()
         self.assertEqual(status["mode"], "distributed")
         self.assertTrue(status["connected"])
+        topology = (await self.client.get("/api/v1/components")).json()["topology"]
+        self.assertEqual(topology["components"]["source"]["outputs"], {"settings": {"root": "Settings"}})
         block = await self.block()
         value = await self.client.get(f"/api/v1/parameters/{block}")
         self.assertEqual(value.status_code, 200, value.text)
