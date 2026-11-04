@@ -10,6 +10,58 @@ class RemoteError(ValueError):
         super().__init__(message)
 
 
+class _FrameReader(asyncio.StreamReader):
+    """Extract frames from StreamReader's buffer without copying whole packets.
+
+    Keep access to asyncio's buffer/wait/flow-control internals in this subclass.
+    StreamReaderProtocol and StreamWriter retain their standard lifecycle and
+    write backpressure, including TLS.
+    """
+    def _incomplete(self, expected, offset=0):
+        partial = bytes(self._buffer[offset:])
+        self._buffer.clear()
+        self._maybe_resume_transport()
+        raise asyncio.IncompleteReadError(partial, expected)
+
+    async def read_frame(self, limit):
+        if self._exception is not None:
+            raise self._exception
+        while len(self._buffer) < 4:
+            if self._eof:
+                self._incomplete(4)
+            await self._wait_for_data('read_frame')
+        size = struct.unpack_from('>I', self._buffer)[0]
+        if not 7 <= size <= limit:
+            del self._buffer[:4]
+            self._maybe_resume_transport()
+            raise ValueError('invalid TCP frame length')
+        end = 4 + size
+        while len(self._buffer) < end:
+            if self._eof:
+                self._incomplete(size, 4)
+            await self._wait_for_data('read_frame')
+        try:
+            return decode(self._buffer, limit, start=4, end=end)
+        finally:
+            del self._buffer[:end]
+            self._maybe_resume_transport()
+
+
+async def open_connection(host, port, **options):
+    loop = asyncio.get_running_loop()
+    reader = _FrameReader()
+    protocol = asyncio.StreamReaderProtocol(reader)
+    transport, _ = await loop.create_connection(lambda: protocol, host, port, **options)
+    return reader, asyncio.StreamWriter(transport, protocol, reader, loop)
+
+
+async def start_server(callback, host, port, **options):
+    loop = asyncio.get_running_loop()
+    def factory():
+        return asyncio.StreamReaderProtocol(_FrameReader(), callback)
+    return await loop.create_server(factory, host, port, **options)
+
+
 class TCP:
     def __init__(self, reader, writer, limit=1024 * 1024):
         self.reader, self.writer, self.limit = reader, writer, limit
@@ -22,6 +74,8 @@ class TCP:
             await self.writer.drain()
 
     async def receive(self):
+        if isinstance(self.reader, _FrameReader):
+            return await self.reader.read_frame(self.limit)
         size = struct.unpack(">I", await self.reader.readexactly(4))[0]
         if not 7 <= size <= self.limit:
             raise ValueError("invalid TCP frame length")
@@ -48,7 +102,7 @@ class Client:
 
     @classmethod
     async def connect(cls, host, port, on_data=None, limit=1024 * 1024, request_timeout=15):
-        reader, writer = await asyncio.open_connection(host, port)
+        reader, writer = await open_connection(host, port)
         return cls(TCP(reader, writer, limit), on_data, request_timeout)
 
     async def request(self, op, payload=b"", *, timeout=None, **arguments):

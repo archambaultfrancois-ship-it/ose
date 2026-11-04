@@ -15,13 +15,27 @@ def encode(header, payload=b"", limit=1024 * 1024):
     return packet
 
 
-def decode(packet, limit=1024 * 1024):
-    if len(packet) > limit or len(packet) < 7 or packet[:3] != MAGIC:
+def decode(packet, limit=1024 * 1024, *, start=0, end=None):
+    """Decode one bounded packet, optionally inside a mutable receive buffer."""
+    end = len(packet) if end is None else end
+    size = end - start
+    if not 0 <= start <= end <= len(packet) or size > limit or size < 7 or packet[start:start + 3] != MAGIC:
         raise ValueError("invalid CENV/1 packet")
-    length = struct.unpack(">I", packet[3:7])[0]
-    if length > 65536 or length > len(packet) - 7:
+    length = struct.unpack_from(">I", packet, start + 3)[0]
+    if length > 65536 or length > size - 7:
         raise ValueError("invalid metadata length")
-    header = json.loads(packet[7:7 + length])
+    body_start = start + 7 + length
+    header = json.loads(packet[start + 7:body_start])
     if not isinstance(header, dict) or not isinstance(header.get("op"), str):
         raise ValueError("invalid metadata")
-    return header, packet[7 + length:]
+    if body_start == end:
+        return header, b""
+    if isinstance(packet, bytes):
+        return header, packet[body_start:end]
+    if end - body_start <= 256:
+        # Tiny copies cost less than constructing and releasing two buffer views.
+        return header, bytes(packet[body_start:end])
+    # Returned payloads must outlive compaction and reuse of the receive buffer.
+    with memoryview(packet) as view:
+        with view[body_start:end] as payload:
+            return header, bytes(payload)

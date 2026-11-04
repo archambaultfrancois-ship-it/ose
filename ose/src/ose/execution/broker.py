@@ -9,7 +9,7 @@ from ose.execution.sessions import Sessions, ClientError
 from ose.delivery.engine import DeliveryEngine
 from ose.delivery.policies import SubscriptionPolicy
 from ose.delivery.stores import MemoryStore
-from ose.transport.tcp import TCP
+from ose.transport.tcp import TCP, start_server
 from ose.transport.udp import UDP
 from ose.transport.protocol import encode
 from ose.parameters.service import ParameterEndpoint, OPERATIONS as PARAMETER_OPERATIONS
@@ -130,7 +130,7 @@ class Broker(Sessions):
         self.readiness = asyncio.Event()
         host = self.plan.get("broker", {}).get("host", "127.0.0.1")
         self.udp = await UDP.bind(self._udp, self.plan["max_datagram"], host=host)
-        self.server = await asyncio.start_server(self._connection, host, port)
+        self.server = await start_server(self._connection, host, port)
         self.port = self.server.sockets[0].getsockname()[1]
         self.send_tasks = [asyncio.create_task(self._send_loop(identity, engine))
                            for identity, engine in self.engines.items()]

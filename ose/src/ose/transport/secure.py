@@ -3,7 +3,7 @@ import asyncio
 import ipaddress
 import json
 import ssl
-from ose.transport.tcp import Client, TCP
+from ose.transport.tcp import Client, TCP, open_connection, start_server
 
 
 def loopback(host):
@@ -45,7 +45,7 @@ def identity(writer):
 
 
 async def connect(host, port, limit, context=None, expected=None, timeout=10):
-    reader, writer = await asyncio.wait_for(asyncio.open_connection(
+    reader, writer = await asyncio.wait_for(open_connection(
         host, port, ssl=context, server_hostname=None if context is None else host), timeout)
     try:
         if context is not None and identity(writer) != expected:
@@ -79,7 +79,7 @@ class RPCServer:
         self.connections = set()
 
     async def start(self, host, port):
-        self.server = await asyncio.start_server(self._connection, host, port, ssl=self.context)
+        self.server = await start_server(self._connection, host, port, ssl=self.context)
         return self.server.sockets[0].getsockname()[1]
 
     async def _connection(self, reader, writer):

@@ -40,6 +40,19 @@ stdin/stdout. Broker exchanges use CENV/1, with an S2PS/2 envelope containing
 the catalogue identity and SDL2 message bytes. The adapter adds or removes that
 envelope at the network boundary.
 
+TCP reception extracts complete CENV/1 frames directly from the stream receive
+buffer, including consecutive frames received together. The frame length is
+checked before waiting for its body. Metadata is decoded within that frame's
+bounds and the returned payload is immutable bytes, independent of later buffer
+compaction. Large payloads require one payload copy during extraction; the
+complete packet is not copied first. Small payloads use short byte copies to
+avoid buffer-view overhead.
+
+The framed reader isolates access to asyncio StreamReader's buffer and wait
+methods. Standard StreamReaderProtocol/StreamWriter retain read flow control,
+write backpressure, connection cleanup and TLS. A caller supplying an ordinary
+StreamReader to TCP retains the readexactly path.
+
 ## Startup
 
 1. The supervisor starts the broker and one adapter per component.
