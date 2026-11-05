@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 from ose.modeling.managed_containers import tool, validate_names
 from ose.modeling.native_client_build import writable_manifest
+from ose.modeling.ada_containers import generate as generate_ada, scaffold as scaffold_ada
 
 
 class ManagedNamesTests(unittest.TestCase):
@@ -20,6 +21,29 @@ class ManagedNamesTests(unittest.TestCase):
 
 
 class ManagedBuildTests(unittest.TestCase):
+    def test_ada_rejects_noncanonical_handler_filenames_before_generation(self):
+        for filename, identity, expected in [('Handler.adb', 'Handler', 'handler.adb'),
+                                             ('App-Handler.adb', 'App.Handler', 'app-handler.adb'),
+                                             ('other.adb', 'Handler', 'handler.adb')]:
+            with self.subTest(filename=filename), patch('ose.modeling.ada_containers.merge_schemas') as merge:
+                with self.assertRaisesRegex(ValueError, 'lowercase GNAT unit naming: ' + expected):
+                    generate_ada('probe', {}, Path(filename), Path('sdl'), [], Path('build'), identity)
+                merge.assert_not_called()
+
+    def test_ada_scaffolds_lowercase_files_for_mixed_case_unit_names(self):
+        sdl = Path(__file__).resolve().parents[3] / 'sdl'
+        for identity, filename in [('Handler', 'handler.adb'), ('App.Handler', 'app-handler.adb')]:
+            with self.subTest(identity=identity), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                handler = root / filename
+                node = {'inputs': {}, 'outputs': {}}
+                generated = generate_ada('probe', node, handler, sdl, [], root / 'build', identity)
+                scaffold_ada(dict(node, command=generated['command']), {'handler': str(handler), 'unit': identity})
+                self.assertTrue(handler.is_file())
+                self.assertIn(f'package {identity} is', handler.with_suffix('.ads').read_text())
+                self.assertIn(f'with {identity};', (root / 'build/main.adb').read_text())
+                self.assertFalse((root / (identity.replace('.', '-') + '.ads')).exists())
+
     def test_java_home_selects_all_jdk_tools_with_spaces(self):
         with patch.dict(os.environ, {'JAVA_HOME': '/opt/jdk 17'}, clear=True):
             for variable, executable in (('JAVA', 'java'), ('JAVAC', 'javac'), ('JAR', 'jar')):

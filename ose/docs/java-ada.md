@@ -33,8 +33,9 @@ clients additionally require Cargo to build the shared network engine.
 ```
 
 Handler paths are relative to the deployment. Java filenames match their class
-name; Ada filenames follow GNAT conventions. Ada child units use `parent-child`
-filenames. `validate` checks the model and generates sources without invoking a
+name; Ada filenames follow lowercase GNAT conventions (`handler.adb` for unit
+`Handler`). Ada child units use lowercase `parent-child` filenames. `validate`
+checks the model and generates sources without invoking a
 Java or Ada compiler. `build` creates missing handlers and compiles executable
 containers. Existing handlers are never overwritten. An incomplete Ada
 specification/body pair is rejected.

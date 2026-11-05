@@ -23,12 +23,13 @@ def literal(text):
 
 def generate(name, node, handler, sdl_root, schemas, destination, identity):
     destination = Path(destination); sdl_root = Path(sdl_root)
+    expected = identity.lower().replace('.', '-') + '.adb'
+    if handler.name != expected:
+        raise ValueError(f'Ada handler filename must follow lowercase GNAT unit naming: {expected}')
     types = merge_schemas(name, 'ada', schemas, destination / 'types')
     api = 'Ose_' + name; stem = api.lower(); packages = sorted({p for p, _ in types.values()})
     if any(p.lower() in (api.lower(), identity.lower(), 'ose_component', 'ose_recording', 'ose_measurements') for p in packages):
         raise ValueError('Ada schema package conflicts with component API')
-    if handler.name.lower() != identity.lower().replace('.', '-') + '.adb':
-        raise ValueError('Ada handler filename must follow GNAT unit naming')
     def typ(desc): return '.'.join(types[desc['root']])
     spec = ['-- Generated typed component API.', 'with Ada.Strings.Unbounded;', 'with Ada.Task_Identification;',
             'with Interfaces;', 'with SDL_Runtime;', 'with Ose_Component;', 'with Ose_Recording;', 'with Ose_Measurements;', *(f'with {p};' for p in packages), f'package {api} is',

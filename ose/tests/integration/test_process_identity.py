@@ -53,7 +53,8 @@ assert Path("/proc/self/comm").read_text().strip() == "vw-web"
                 (root / 'schema.sdl').write_text('message Value {1: uint32 number;}')
                 model = {'version': 1, 'schemas': 'schema.sdl', 'subscriptions': [], 'components': {
                     'sensor_1': {'inputs': {}, 'outputs': {}, 'trigger': {'mode': 'periodic', 'period_ms': 100}}}}
-                container = {'language': language, 'handler': 'Handler' + suffixes[language]}
+                stem = 'handler' if language == 'ada' else 'Handler'
+                container = {'language': language, 'handler': stem + suffixes[language]}
                 if language in ('java', 'ada'):
                     container['class' if language == 'java' else 'unit'] = 'Handler'
                 deployment = {'version': 1, 'process_names': {'prefix': 'vw'},
