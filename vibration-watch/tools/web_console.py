@@ -28,6 +28,10 @@ def setup(framework):
 
 
 def launch(args, framework):
+    caller = Path.cwd()
+    directory = (caller / (args.working_directory or '.')).resolve()
+    if not directory.is_dir():
+        raise ValueError(f"Working directory does not exist: {directory}")
     # Use the selected checkout, including its SDL and prepared recording services.
     sys.path[:0] = [str(framework / "ose-ws/src"), str(framework / "ose/src")]
     from ose.app import Application
@@ -44,6 +48,8 @@ def launch(args, framework):
 
     context = Application(SimpleNamespace(root=str(ROOT), app_sdl_root=str(framework / "sdl")))
     arguments = [args.command, "--config", str(config)]
+    if args.working_directory is not None:
+        arguments.extend(["--working-directory", str(directory)])
     for key, value in (("endpoint", endpoint), ("host", args.host), ("port", args.port)):
         if value is not None:
             arguments.extend(["--" + key, str(value)])
@@ -57,6 +63,7 @@ def launch(args, framework):
                                                        app_sdl_root=str(framework / "sdl")))
             credentials.parameter_token(SimpleNamespace(client=settings["parameters"]["client"],
                                                         token_env=settings["parameters"]["token_env"]))
+        os.chdir(caller)
         return cli.main(arguments)
 
 
@@ -64,6 +71,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, prog="ose-ws")
     parser.add_argument("command", nargs="?", choices=("setup", "init", "check", "serve"), default="serve")
     parser.add_argument("--config", help="console configuration (default: the application's ose-ws.json)")
+    parser.add_argument("--working-directory", help="base for relative state and capture paths (default: launch directory)")
     parser.add_argument("--endpoint", help="override OSE endpoint file, relative to the calling directory")
     parser.add_argument("--host", help="HTTP bind address; network access requires proxy authentication")
     parser.add_argument("--port", type=int, help="HTTP port (default: 8080)")

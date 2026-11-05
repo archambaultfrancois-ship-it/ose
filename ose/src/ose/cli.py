@@ -109,6 +109,7 @@ For distributed execution, start serve and worker instead of run.""")
          "ose run --mode simulated --duration 60 --workers 4 --trace trace.jsonl"])
     command.add_argument("--plan", default="build/plan.json", help="compiled deployment plan (default: build/plan.json)")
     command.add_argument("--duration", type=float, help="positive execution duration in seconds; required in simulated mode")
+    command.add_argument("--working-directory", help="component working directory (default: plan settings; app run: launch directory)")
     command.add_argument("--port", type=int, help="local broker TCP port; real-time only (default: automatically assigned)")
     command.add_argument("--mode", choices=("realtime", "simulated"), default="realtime", help="execution clock (default: realtime)")
     command.add_argument("--workers", type=int, help="simulation worker count (default: 1; simulated mode only)")
@@ -224,6 +225,7 @@ For distributed execution, start serve and worker instead of run.""")
         ["ose adapter --plan build/plan.json --node analyzer --port 7001"])
     command.add_argument("--plan", required=True, help="compiled deployment plan JSON file")
     command.add_argument("--node", required=True, help="component name in the plan")
+    command.add_argument("--working-directory", help="override the component working directory")
     command.add_argument("--port", type=int, required=True, help="TCP port of the already running local broker")
     from ose.parameters import cli as parameter_cli
     parameter_cli.parser(commands)
@@ -305,6 +307,12 @@ def execute(args, parser=None):
                         await client.close()
                 asyncio.run(status())
         elif args.action == "run":
+            execution_options = {}
+            if args.working_directory is not None:
+                directory = Path(args.working_directory).resolve()
+                if not directory.is_dir():
+                    raise ValueError(f"working directory does not exist: {directory}")
+                execution_options["working_directory"] = str(directory)
             if args.duration is not None and (not math.isfinite(args.duration) or args.duration <= 0):
                 raise ValueError("duration must be finite and positive")
             if args.mode == "simulated":
@@ -316,7 +324,8 @@ def execute(args, parser=None):
                     raise ValueError("--port is unavailable in simulated mode")
                 summary = asyncio.run(run(args.plan, args.duration,
                     workers=1 if args.workers is None else args.workers, scenario=args.scenario, trace=args.trace,
-                    max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT if args.max_tick_output_bytes is None else args.max_tick_output_bytes))
+                    max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT if args.max_tick_output_bytes is None else args.max_tick_output_bytes,
+                    **execution_options))
                 print(json.dumps(summary), flush=True)
             else:
                 from ose.execution.supervisor import run
@@ -324,7 +333,7 @@ def execute(args, parser=None):
                     raise ValueError("use serve and worker for a distributed plan")
                 if any(value is not None for value in (args.workers, args.scenario, args.trace, args.max_tick_output_bytes)):
                     raise ValueError("--workers, --scenario, --trace and --max-tick-output-bytes require simulated mode")
-                asyncio.run(run(args.plan, args.duration, args.port or 0))
+                asyncio.run(run(args.plan, args.duration, args.port or 0, **execution_options))
         elif args.action == "replay":
             if args.mode == "simulated":
                 from ose.recording.replay import run
@@ -409,7 +418,7 @@ def execute(args, parser=None):
             from ose.execution.adapter import Adapter
             plan = json.loads(Path(args.plan).read_text())
             async def execute():
-                adapter = Adapter(plan, args.node)
+                adapter = Adapter(plan, args.node, working_directory=args.working_directory)
                 task = asyncio.create_task(adapter.run("127.0.0.1", args.port))
                 loop = asyncio.get_running_loop()
                 for sig in (signal.SIGINT, signal.SIGTERM):

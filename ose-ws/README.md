@@ -56,8 +56,19 @@ Open **http://127.0.0.1:8080** and enter the access token from
 It creates the configuration and token exclusively, with owner-only permissions.
 `check` validates local settings and secrets without contacting OSE.
 
+Runtime state and captures use `.ose-ws/` in the directory where you launch the
+console, including when `--config` points to another directory. Use
+`--working-directory PATH` to choose another runtime directory, relative to the
+launch directory. A relative `state_dir` (or `OSE_WS_STATE_DIR`) is resolved from
+that runtime directory; an absolute state path keeps its configured location.
+Configuration inputs, including the login token and TLS files, stay relative to
+the configuration file; the endpoint stays relative to `application.root`.
+To reopen existing state after launching elsewhere, select its original runtime
+directory or set an absolute `state_dir`.
+
 ```sh
 ose-ws --config ./ose-ws.json --endpoint ./other-build/endpoint.json --port 8081
+ose-ws --config /path/to/application/ose-ws.json --working-directory ./session
 ```
 
 An unavailable OSE application does not prevent the web server from starting.

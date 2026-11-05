@@ -44,7 +44,10 @@ ose app record
 The application environment selects Vibration Watch as `OSE_APP_ROOT` and sources
 `../setenv.sh`, including when `FRAMEWORK_ROOT` was previously set to
 another checkout. `app-run` builds and runs until Ctrl+C;
-`app-run DURATION=60` limits the run. `ose app record` prepares missing recording/filter
+`app-run DURATION=60` limits the run. Component callbacks read and write relative
+files in the directory where you launch `app-run`; `--working-directory PATH`
+selects another directory relative to it. Builds and runtime status files stay
+in the application directory. `ose app record` prepares missing recording/filter
 dependencies and opens the external console. `ose app env` shows the selected paths; `ose app --help` lists workflows.
 Interactive Bash terminals also enable `ose` completion for commands,
 subcommands, options and option choices. Source `./setenv.sh`, then press Tab.
@@ -128,6 +131,14 @@ current `build/plan.json`, falling back to the local deployment before a build.
 An explicit `OSE_PARAMETER_TOKEN` takes precedence. Sourcing the environment
 does not read or export credentials. The web login token and OSE parameter
 client token are separate credentials.
+
+State and captures are written under `.ose-ws/` in the current directory where
+you launch `ose-ws`, even after sourcing the environment from elsewhere. Use
+`ose-ws --working-directory PATH` to select another existing runtime directory.
+The configuration, login token, application endpoint and parameter credentials
+remain attached to the application. Relative `state_dir` and `OSE_WS_STATE_DIR`
+paths follow the runtime directory; absolute state paths retain their location.
+Launch from the same directory to reopen its database and captures.
 
 `ose-ws setup` installs into the application's `.venv`; only the console uses
 that interpreter. `app-run` retains `OSE_PYTHON`. Set `OSE_WS_PYTHON` to select a

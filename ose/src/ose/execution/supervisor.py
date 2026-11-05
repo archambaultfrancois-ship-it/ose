@@ -8,7 +8,7 @@ import sys
 from ose.execution.broker import Broker
 
 
-async def run(plan_path, duration=None, port=0):
+async def run(plan_path, duration=None, port=0, *, working_directory=None):
     plan_path = Path(plan_path).resolve()
     plan = json.loads(plan_path.read_text())
     from ose.execution.identity import identify
@@ -27,11 +27,12 @@ async def run(plan_path, duration=None, port=0):
         env = dict(os.environ)
         source_root = str(Path(__file__).resolve().parents[2])
         env["PYTHONPATH"] = source_root + os.pathsep + env.get("PYTHONPATH", "")
+        options = ["--working-directory", str(Path(working_directory).resolve())] if working_directory is not None else []
         for name in plan["components"]:
             # Keep terminal interrupts at this supervisor, including while an
             # adapter is importing modules before installing its own handlers.
             child = await asyncio.create_subprocess_exec(sys.executable, "-m", "ose.cli", "adapter",
-                "--plan", str(plan_path), "--node", name, "--port", str(broker.port), env=env,
+                "--plan", str(plan_path), "--node", name, "--port", str(broker.port), *options, env=env,
                 start_new_session=True)
             children.append(child)
             waiting.append(asyncio.create_task(child.wait()))

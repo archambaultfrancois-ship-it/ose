@@ -59,7 +59,7 @@ class WebConsoleTests(unittest.TestCase):
         self.assertNotEqual(original_token.decode().strip(), self.token)
         self.assertEqual(login_token.stat().st_mode & 0o777, 0o600)
         self.assertEqual(self.arguments, ["serve", "--config", str(config)])
-        self.assertEqual(self.cwd, self.root)
+        self.assertEqual(self.cwd, Path.cwd())
         self.assertNotIn("OSE_PARAMETER_TOKEN", os.environ)
         (self.root / "build").mkdir()
         for token in ("first-plan-token", "replacement-plan-token"):
@@ -77,6 +77,23 @@ class WebConsoleTests(unittest.TestCase):
         self.assertEqual(self.token, "manual-test-token")
         self.assertEqual(self.arguments[-4:], ["--endpoint", str(endpoint), "--port", "8081"])
         self.assertEqual(os.environ["OSE_PARAMETER_TOKEN"], "manual-test-token")
+
+    def test_runtime_directory_is_resolved_from_caller_and_configuration_stays_in_application(self):
+        caller = Path.cwd()
+        output = self.root / 'output files'
+        output.mkdir()
+        relative = os.path.relpath(output, caller)
+        self.assertEqual(self.invoke(['--working-directory', relative]), 0)
+        self.assertEqual(self.cwd, caller)
+        self.assertEqual(self.arguments, ['serve', '--config', str(self.root / 'ose-ws.json'),
+                                         '--working-directory', str(output)])
+        self.assertEqual(Path.cwd(), caller)
+
+    def test_invalid_runtime_directory_does_not_initialize_configuration(self):
+        with patch('sys.stderr', new_callable=io.StringIO):
+            self.assertEqual(self.invoke(['--working-directory', str(self.root / 'missing')]), 2)
+        self.assertFalse((self.root / 'ose-ws.json').exists())
+        self.assertFalse((self.root / '.ose-ws').exists())
 
     def test_check_and_explicit_config_do_not_initialize_missing_files(self):
         for arguments in (["check"], ["--config", str(self.root / "custom.json")]):

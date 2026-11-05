@@ -52,12 +52,13 @@ class PendingTick:
 
 class Simulation:
     def __init__(self, plan, duration, *, workers=1, scenario=None, events=None, trace=None,
-                 max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT):
+                 max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT, working_directory=None):
         if type(workers) is not int or workers <= 0:
             raise ValueError("workers must be a positive integer")
         if type(max_tick_output_bytes) is not int or max_tick_output_bytes <= 0:
             raise ValueError("max_tick_output_bytes must be a positive integer")
         self.plan, self.workers, self.limit = plan, workers, max_tick_output_bytes
+        self.working_directory = working_directory
         self.horizon, self.clock = seconds_ns(duration, positive=True), VirtualClock()
         self.order, self.ancestors = topology(plan)
         self.codec = SDL2(plan["sdl_root"])
@@ -105,7 +106,8 @@ class Simulation:
 
     async def _start(self, name):
         process, capable = await start_component(self.plan["components"][name], self.parameter_bindings[name],
-                                                 ComponentRecording(self.codec))
+            ComponentRecording(self.codec),
+            **({"working_directory": self.working_directory} if self.working_directory is not None else {}))
         self.processes[name] = process
         if not capable:
             raise ValueError(f"{name}: simulated execution requires timestamped ticks; rebuild the container or update its SDK")

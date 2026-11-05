@@ -47,7 +47,7 @@ def add_parser(commands):
     command = actions.add_parser('make', help='invoke the application Makefile')
     command.add_argument('arguments', nargs=argparse.REMAINDER, help='make arguments; use -- before flags')
     command = _inherit(actions, 'run', core['run'], 'build and run locally; Ctrl+C stops by default')
-    command.description = 'Build with the application Makefile, then execute its plan. Unlimited by default.'
+    command.description = 'Build with the application Makefile, then execute its plan from the launch directory. Unlimited by default.'
     command.add_argument('variables', nargs='*', metavar='NAME=VALUE', help='build Makefile assignments; DURATION=SECONDS is also accepted')
     parameter = _inherit(actions, 'parameter', core['parameter'], 'read, export, write, watch or synchronize application parameters')
     parameter.description = 'Use the application endpoint and selected client; get exports path-keyed blocks.'
@@ -169,6 +169,11 @@ class Application:
 def run(args):
     from ose.cli import execute
     context = Application(args)
+    if args.app_action == 'run':
+        directory = (context.caller / (args.working_directory or '.')).resolve()
+        if not directory.is_dir():
+            raise ValueError(f'working directory does not exist: {directory}')
+        args.working_directory = str(directory)
     if args.app_action == 'parameter' and args.parameter_action == 'sync':
         # Sync storage follows the caller; plan/endpoint and other files follow the application.
         args.dir = str(Path(args.dir).resolve())
@@ -228,6 +233,12 @@ def run(args):
             variables = [value for value in variables if not value.startswith('DURATION=')]
             context.make(['build'], variables)
             args.action, args.duration = 'run', duration
+            args.plan = str(context.plan)
+            if args.scenario is not None:
+                args.scenario = str((context.root / args.scenario).resolve())
+            # Build/configuration paths belong to the application; runtime
+            # outputs and component relative paths belong to the caller.
+            os.chdir(context.caller)
             return execute(args)
         if duration is not None:
             variables.append(f'DURATION={duration:g}')

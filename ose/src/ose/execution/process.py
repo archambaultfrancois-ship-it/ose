@@ -10,14 +10,14 @@ from ose.execution.measurements import Measurements
 from ose.execution.logs import ComponentLogs
 
 
-async def start_component(node, parameters=None, recording=None, logs=None):
+async def start_component(node, parameters=None, recording=None, logs=None, *, working_directory=None):
     env = dict(os.environ, **node.get("env", {}))
     from ose.execution.identity import component_environment
     env.update(component_environment(node))
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2]) + os.pathsep + env.get("PYTHONPATH", "")
     # Terminal Ctrl+C belongs to the supervisor. Components stop through IPC so
     # callbacks can finish and on_stop runs instead of a concurrent SIGINT.
-    process = await asyncio.create_subprocess_exec(*node["command"], cwd=node["cwd"], env=env,
+    process = await asyncio.create_subprocess_exec(*node["command"], cwd=working_directory if working_directory is not None else node["cwd"], env=env,
         start_new_session=True,
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
     if recording is None:

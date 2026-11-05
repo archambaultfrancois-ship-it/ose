@@ -56,8 +56,11 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(self.broker.close)
         path = self.root / "console.json"
         initialize(path)
+        runtime = self.root / "runtime files"
+        runtime.mkdir()
         self.config = read(path, {"application": {"endpoint": None, "host": "127.0.0.1", "port": self.broker.port},
-                                  "collection": {"interval_ms": 100}, "recording": {"min_free_disk_mib": 0}})
+                                  "collection": {"interval_ms": 100}, "recording": {"min_free_disk_mib": 0}},
+                           working_directory=runtime)
         self.app = create_app(self.config)
         self.lifespan = self.app.router.lifespan_context(self.app)
         await self.lifespan.__aenter__()
@@ -97,6 +100,10 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         return response.json()["items"][0]["id"]
 
     async def test_authentication_csrf_origin_and_no_cdn(self):
+        self.assertTrue((self.root / "runtime files/.ose-ws/state.sqlite3").is_file())
+        self.assertTrue((self.root / "runtime files/.ose-ws/captures").is_dir())
+        self.assertFalse((self.root / ".ose-ws/state.sqlite3").exists())
+        self.assertTrue((self.root / ".ose-ws/access.token").is_file())
         anonymous = await httpx.AsyncClient(transport=httpx.ASGITransport(self.app), base_url="http://127.0.0.1").get("/api/v1/components")
         self.assertEqual(anonymous.status_code, 401)
         response = await self.client.post("/api/v1/measurement-watches", json={"measurement_ids": []}, headers={"X-CSRF-Token": "wrong"})

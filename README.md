@@ -166,6 +166,13 @@ Application selection is `--root`, then `OSE_APP_ROOT`, then the current directo
 Build, validate, simulate and distributed use the application's Makefile targets.
 `ose app run` builds first, then executes `build/plan.json` until Ctrl+C by default;
 `app-run DURATION=60` remains accepted. The distributed demo defaults to 300 seconds.
+Components run in the directory where you launch `ose app run` (or `app-run`), so
+relative file reads and writes in callbacks use that directory. Use
+`--working-directory PATH` to select another component directory, relative to the
+launch directory. Builds, plans, scenario inputs, endpoint files and shutdown
+status stay in the application directory; relative `--trace` output follows the
+launch directory. Low-level `ose run` uses each component's plan `cwd` unless
+`--working-directory` overrides it.
 `ose app env` shows paths and the Python interpreter without credentials.
 
 Application parameter commands resolve the default plan and endpoint from the

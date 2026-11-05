@@ -111,9 +111,13 @@ ose-ws --config ./ose-ws.json --endpoint ./build/endpoint.json --port 8080
 `init` creates configuration and a random local token exclusively. Secrets are
 owner-only files or environment values, never URLs, public configuration or logs.
 `check` validates local settings without contacting or mutating OSE. Configuration
-precedence is CLI, documented environment, file, defaults. Config paths are
+precedence is CLI, documented environment, file, defaults. Config input paths are
 relative to the config directory; the application endpoint is relative to
-application.root. CLI paths are relative to the caller.
+application.root. Runtime state and captures resolve relative state paths from
+the launch directory, or the existing directory selected by
+`--working-directory`. Absolute state paths keep their configured location.
+CLI paths are relative to the caller. The login token remains beside the
+configuration by default, independently of the runtime directory.
 
 Distributed mode requires explicit host/port or endpoint, CA, client certificate
 and key. Browser TLS and OSE mTLS are distinct. Incompatible options are rejected.

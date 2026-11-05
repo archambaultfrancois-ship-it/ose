@@ -1,15 +1,23 @@
 # Configuration reference
 
 All configuration is JSON. Unknown keys are rejected. Paths in a configuration
-file are relative to that file; `application.endpoint` is relative to the
-resolved `application.root`. Direct CLI endpoint paths are relative to the
-calling directory. Precedence: CLI, the documented environment variables,
+file are relative to that file, except `state_dir`, which is relative to the
+launch directory. `--working-directory PATH` selects another existing directory
+as the base for relative state paths and captures; PATH itself is relative to
+the launch directory. An absolute `state_dir` keeps its configured location.
+`application.endpoint` is relative to the resolved `application.root`. Direct
+CLI endpoint paths are relative to the calling directory, independently of
+`--working-directory`. Precedence: CLI, the documented environment variables,
 configuration file, defaults.
 
 The only console configuration environment overrides are `OSE_WS_HOST`,
 `OSE_WS_PORT`, and `OSE_WS_STATE_DIR`. The OSE parameter token is read from the
 environment variable named in `parameters.token_env` (default
 `OSE_PARAMETER_TOKEN`). It is never returned to the browser.
+Relative `OSE_WS_STATE_DIR` values also use the runtime directory. Changing that
+directory selects a different database and capture inventory; select the prior
+directory to reopen its state. The access token remains relative to the
+configuration file, including during `init`.
 
 ```json
 {
@@ -176,11 +184,14 @@ load changed metadata; a presentation digest participates in validation previews
 
 ```text
 .ose-ws/
-  access.token
   server.lock
   state.sqlite3
   captures/<recording_id>/capture[_NNN].pcapng
 ```
+
+This runtime tree is under the launch directory by default. With the default
+authentication settings, `access.token` is in `.ose-ws/` beside the configuration
+file; it shares the runtime tree only when both base directories are the same.
 
 SQLite uses a serialized worker and full synchronous commits. Disk writes and
 large SDL conversion/validation work run outside the HTTP event loop. The

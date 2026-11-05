@@ -43,7 +43,7 @@ def merge(base, values):
             base[key] = value
 
 
-def read(path, overrides=None):
+def read(path, overrides=None, *, working_directory=None):
     path = Path(path).resolve()
     values = loads(path.read_bytes())
     if not isinstance(values, dict):
@@ -70,7 +70,10 @@ def read(path, overrides=None):
     for key in ("tls_ca", "tls_cert", "tls_key"):
         if app[key]:
             app[key] = str((base / app[key]).resolve())
-    config["state_dir"] = str((base / config["state_dir"]).resolve())
+    runtime = base if working_directory is None else Path(working_directory).resolve()
+    if not runtime.is_dir():
+        raise ValueError(f"Working directory does not exist: {runtime}")
+    config["state_dir"] = str((runtime / config["state_dir"]).resolve())
     config["auth"]["token_file"] = str((base / config["auth"]["token_file"]).resolve())
     if config["parameters"]["presentation"]:
         config["parameters"]["presentation"] = str((base / config["parameters"]["presentation"]).resolve())

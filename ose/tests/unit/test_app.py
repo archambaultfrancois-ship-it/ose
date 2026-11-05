@@ -118,8 +118,36 @@ class ApplicationTests(unittest.TestCase):
         for options, duration in [([], None), (['--duration', '2'], 2), (['DURATION=3'], 3)]:
             with self.subTest(options=options), patch('ose.execution.supervisor.run', new=AsyncMock()) as launch:
                 self.assertEqual(self.command('run', *options, 'SCENARIO=normal'), 0)
-                launch.assert_awaited_once_with('build/plan.json', duration, 0)
+                launch.assert_awaited_once_with(str(self.root / 'build/plan.json'), duration, 0,
+                                                working_directory=str(Path.cwd()))
                 self.assertEqual((self.root / 'build/scenario').read_text(), 'normal')
+
+    def test_run_uses_caller_for_execution_and_trace_but_application_for_build_and_scenario(self):
+        caller = Path.cwd()
+        self.configuration({'execution': 'local'})
+        observed = {}
+        def build(*args, **kwargs):
+            observed['build_cwd'] = Path.cwd()
+        async def simulate(plan, duration, **options):
+            observed.update(run_cwd=Path.cwd(), plan=plan, **options)
+            return {}
+        with patch('ose.app.Application.make', side_effect=build), \
+                patch('ose.execution.simulation.run', new=AsyncMock(side_effect=simulate)), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.command('run', '--mode', 'simulated', '--duration', '1',
+                                         '--scenario', 'inputs/scenario.json', '--trace', 'result.jsonl'), 0)
+        self.assertEqual(observed['build_cwd'], self.root)
+        self.assertEqual(observed['run_cwd'], caller)
+        self.assertEqual(observed['working_directory'], str(caller))
+        self.assertEqual(observed['plan'], str(self.root / 'build/plan.json'))
+        self.assertEqual(observed['scenario'], str(self.root / 'inputs/scenario.json'))
+        self.assertEqual(observed['trace'], 'result.jsonl')
+        self.assertEqual(Path.cwd(), caller)
+
+    def test_invalid_working_directory_fails_before_build(self):
+        with patch('ose.app.Application.make') as build, contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.command('run', '--working-directory', str(self.root / 'missing')), 1)
+        build.assert_not_called()
 
     @unittest.skipUnless(shutil.which('make'), 'requires make')
     def test_build_failure_prevents_running_and_invalid_duration_does_not_build(self):

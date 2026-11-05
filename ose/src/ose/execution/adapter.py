@@ -18,8 +18,9 @@ from ose.execution.logs import ComponentLogs
 
 
 class Adapter:
-    def __init__(self, plan, name):
+    def __init__(self, plan, name, *, working_directory=None):
         self.plan, self.name, self.node = plan, name, plan["components"][name]
+        self.working_directory = working_directory
         self.reports = ReportSchedule()
         self.component_logs = ComponentLogs(on_change=self.reports.wake)
         self.codec = SDL2(plan["sdl_root"])
@@ -201,7 +202,8 @@ class Adapter:
                     await client.request("attach", node=self.name, subscription=identity)
             self.parameters = await RemoteBindings(self.node, self.client.request, self.activity).open()
             self.component_recording = RemoteRecording(self.codec, self.client.request)
-            self.process, self.timed_ticks = await start_component(self.node, self.parameters, self.component_recording.endpoint, self.component_logs)
+            self.process, self.timed_ticks = await start_component(self.node, self.parameters, self.component_recording.endpoint, self.component_logs,
+                **({"working_directory": self.working_directory} if self.working_directory is not None else {}))
             self.process.measurements.on_change = self.reports.mark
             result, _ = await self.client.request("ready")
             self.reports.configure(result.get('reporting'))

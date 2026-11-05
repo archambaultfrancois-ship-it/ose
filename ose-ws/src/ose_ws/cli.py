@@ -78,11 +78,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="ose-ws", description=__doc__)
     parser.add_argument("command", nargs="?", choices=("init", "check", "serve"), default="serve")
     parser.add_argument("--config", default="ose-ws.json")
+    parser.add_argument("--working-directory", help="base for relative state and capture paths (default: launch directory)")
     parser.add_argument("--endpoint", help="OSE endpoint file, relative to the calling directory")
     parser.add_argument("--host", help="HTTP bind address; network access requires configured proxy authentication")
     parser.add_argument("--port", type=int, help="HTTP port (default: 8080)")
     args = parser.parse_args(argv)
     try:
+        directory = Path(args.working_directory or '.').resolve()
+        if not directory.is_dir():
+            raise ValueError(f"Working directory does not exist: {directory}")
         if args.command == "init":
             initialize(args.config)
             return 0
@@ -91,7 +95,7 @@ def main(argv=None):
             overrides["application"] = {"endpoint": str(Path(args.endpoint).resolve())}
         if args.host or args.port:
             overrides["listen"] = {key: value for key, value in (("host", args.host), ("port", args.port)) if value is not None}
-        config = read(args.config, overrides)
+        config = read(args.config, overrides, working_directory=directory)
         if args.command == "check":
             from ose_ws.auth import Auth
             from ose_ws.services.connection import ApplicationConnection

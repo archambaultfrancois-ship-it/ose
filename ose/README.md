@@ -36,10 +36,16 @@ ose app env
 ```
 
 `--root`, `OSE_APP_ROOT` and the current directory select the application in that
-order. Run builds through its Makefile first and is unlimited by default; record
-prepares only missing services; parameter commands resolve client credentials on
-each invocation. Get exports `{path: block}`. JSON/capture paths are relative to
-the application, except sync storage, which follows the terminal directory.
+order. Run builds through its Makefile first and is unlimited by default.
+Components use the launch directory for relative file reads and writes; use
+`--working-directory PATH` to override it, with relative paths resolved from the
+launch directory. Plans, scenario inputs, endpoint files and shutdown status
+remain in the application directory; relative `--trace` output follows the launch
+directory. Low-level `ose run` keeps each component's plan `cwd` unless overridden.
+Record prepares only missing services; parameter commands resolve client
+credentials on each invocation. Get exports `{path: block}`. Parameter JSON and
+capture paths are relative to the application, except sync storage, which follows
+the terminal directory.
 The shell keeps only `app-cd`, `app-build` and `app-run`, plus the `ose` checkout
 entry point. All workflow behavior also works from the installed package.
 
