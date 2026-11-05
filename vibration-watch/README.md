@@ -1,5 +1,7 @@
 # Vibration Watch
 
+<a href="../README.md"><img align="right" src="../docs/branding/ose-logo.svg" alt="OSE project home" width="64" height="64"></a>
+
 An SDL/OSE application in the [OSE repository](../README.md): two synthetic C sensors,
 two Rust analyzers, Python alarm policy and a Python terminal observer. Each signal block contains
 16,384 float samples by default (64 KiB); results and alarm observations are small messages.

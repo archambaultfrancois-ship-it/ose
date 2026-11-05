@@ -1,5 +1,7 @@
 # OSE — Orchestration, Simulation, Exécution
 
+<a href="../README.md"><img align="right" src="../docs/branding/ose-logo.svg" alt="OSE project home" width="64" height="64"></a>
+
 Executable component graphs with SDL2 contracts and per-subscription quality of
 service. See the [feature overview](docs/features.md) for the available user-facing services.
 The shared [technical glossary](../GLOSSARY.md) defines SDL, OSE and Web Console terminology.

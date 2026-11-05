@@ -1,5 +1,7 @@
 # OSE Web Console
 
+<a href="../README.md"><img align="right" src="../docs/branding/ose-logo.svg" alt="OSE project home" width="64" height="64"></a>
+
 `ose-ws` observes and configures an **already running** OSE application. It is a
 separate Python package with a bundled Vue 3 / TypeScript frontend. It connects
 through the existing OSE RPCs; it does not launch, build, stop or redeploy OSE.

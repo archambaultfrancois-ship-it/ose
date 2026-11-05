@@ -1,5 +1,9 @@
 # OSE — Orchestration, Simulation, Exécution
 
+<p align="center">
+  <img src="docs/branding/ose-banner.svg" alt="OSE — Orchestration, Simulation, Exécution" width="960">
+</p>
+
 The `ose` repository contains four projects that evolve together:
 
 - **[SDL](sdl/README.md)** (Schema Design Language) generates message codecs
@@ -20,6 +24,8 @@ examples, documentation, dependencies, and build outputs.
 
 See the shared [technical glossary](GLOSSARY.md) for terminology used across
 SDL, OSE and the Web Console.
+The shared [project logo and visual assets](docs/branding/README.md) reuse the
+OSE Web Console's mark.
 
 Clone the repository and enter its root:
 

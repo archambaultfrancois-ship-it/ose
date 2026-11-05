@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title description">
+  <title id="title">OSE — Orchestration, Simulation, Exécution</title>
+  <desc id="description">The turquoise OSE Web Console mark, reused as the OSE project identity.</desc>
+
+  <rect width="1280" height="640" fill="#101e2d" />
+  <g transform="translate(80 136) scale(3.5)"><rect x=".75" y=".75" width="62.5" height="62.5" rx="16" fill="#1b3743" stroke="#41616a" stroke-width="1.5" />
+<g transform="translate(8 8)" fill="none" stroke="#7dd6cb" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<rect x="6" y="5" width="36" height="38" rx="4" stroke-opacity=".65" />
+  <path d="M6 14h36M12 9.5h2m4 0h2" stroke-opacity=".65" />
+  <rect x="18" y="22" width="17" height="15" rx="2" fill="#7dd6cb" fill-opacity=".08" />
+  <path d="M35 29h7" />
+  <rect x="13" y="25" width="8" height="4" rx=".5" fill="#1b3743" />
+  <rect x="13" y="32" width="8" height="4" rx=".5" fill="#1b3743" />
+</g></g>
+  <g font-family="DejaVu Sans, Arial, sans-serif">
+    <text x="352" y="260" fill="#f3f5f7" font-size="116" font-weight="700" letter-spacing="8">OSE</text>
+    <text x="356" y="322" fill="#dae4ed" font-size="32">Orchestration, Simulation, Exécution</text>
+    <text x="80" y="464" fill="#dae4ed" font-size="30">Typed messages. Executable graphs. Live diagnostics.</text>
+    <text x="80" y="544" fill="#7dd6cb" font-size="22" letter-spacing="3">SDL · OSE · WEB CONSOLE</text>
+  </g>
+</svg>

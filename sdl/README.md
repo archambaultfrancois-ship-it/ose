@@ -1,5 +1,7 @@
 # SDL — Schema Design Language
 
+<a href="../README.md"><img align="right" src="../docs/branding/ose-logo.svg" alt="OSE project home" width="64" height="64"></a>
+
 This is the SDL project inside the [OSE repository](../README.md).
 Run the commands below from this directory (`cd sdl` from the repository root).
 The sibling [OSE project](../ose/README.md) uses these public codecs.
