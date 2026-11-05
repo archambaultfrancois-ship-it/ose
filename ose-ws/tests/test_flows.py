@@ -5,6 +5,7 @@ import json
 import socket
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import test_api
@@ -15,7 +16,7 @@ from ose.execution.distributed import Coordinator, Worker, fingerprint
 from ose.transport.secure import connect
 from ose_ws.auth import Session
 from ose_ws.schema.adapter import SchemaAdapter
-from ose_ws.services.flows import preview
+from ose_ws.services.flows import FlowSource, preview
 
 
 class ProjectionTests(unittest.TestCase):
@@ -46,6 +47,46 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual([child["value"] for child in fields[1]["children"]], ["+Infinity", "-Infinity"])
         self.assertTrue(fields[2]["truncated"])
         json.dumps(fields, allow_nan=False)
+
+
+class FlowLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_close_stops_source_when_an_rpc_absorbs_cancellation(self):
+        entered = asyncio.Event()
+
+        class Client:
+            calls = 0
+            closed = False
+
+            async def request(self, op, **arguments):
+                self.calls += 1
+                entered.set()
+                try:
+                    await asyncio.Future()
+                except asyncio.CancelledError:
+                    if self.calls != 1:
+                        raise
+                    # Python 3.10 wait_for can return an already completed RPC
+                    # instead of propagating a simultaneous task cancellation.
+                    return {'available': True, 'generation': 'generation'}, None
+
+            async def close(self):
+                self.closed = True
+
+        manager = SimpleNamespace(collector=SimpleNamespace(error=None, snapshot={'epoch': 'epoch'}))
+        source = FlowSource(manager, ('epoch', 'source.value'), 'source.value', None)
+        client = source.client = Client()
+        source.generation = 'generation'
+        source.task = asyncio.create_task(source.run())
+        await entered.wait()
+        closing = asyncio.create_task(source.close())
+        try:
+            done, _ = await asyncio.wait({closing}, timeout=1)
+            self.assertIn(closing, done, 'Live shutdown must survive an absorbed cancellation')
+            self.assertTrue(client.closed)
+            self.assertEqual(client.calls, 1)
+        finally:
+            source.task.cancel()
+            await asyncio.gather(source.task, closing, return_exceptions=True)
 
 
 class FlowAPITests(unittest.IsolatedAsyncioTestCase):

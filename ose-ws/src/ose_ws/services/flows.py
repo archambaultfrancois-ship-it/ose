@@ -103,6 +103,7 @@ class FlowSource:
         self.version = 0
         self.decode_ms = None
         self.sampled_out = 0
+        self.closed = False
 
     async def open(self, subscription):
         manager = self.manager
@@ -148,13 +149,17 @@ class FlowSource:
 
     async def run(self):
         try:
-            while True:
+            while not self.closed:
                 started = time.monotonic()
                 self.check()
                 current, _ = await self.client.request("recording_state", topic=self.topic, timeout=3)
+                if self.closed:
+                    return
                 require(current.get("available") and current.get("generation") == self.generation,
                         "The source is unavailable or changed; restart Live.", 503, "SOURCE_CHANGED")
                 result, envelope = await self.client.request("recording_next", session=self.token, timeout=3)
+                if self.closed:
+                    return
                 require(not result.get("stopped"), result.get("capture_error") or "The source observation stopped.", 503)
                 require(not result.get("counts", {}).get("oversize"), "Source messages exceed the preview frame limit.", 413)
                 require(result.get("record") or result.get("counts", {}).get("dropped", 0) == self.sampled_out,
@@ -174,6 +179,8 @@ class FlowSource:
                 if self.envelope is not None and offsets - self.previews.keys():
                     decoding = time.monotonic()
                     projections = await self.manager.work(preview, self.adapter, self.envelope, offsets)
+                    if self.closed:
+                        return
                     self.check()
                     self.decode_ms = (time.monotonic() - decoding) * 1000
                     self.previews = projections
@@ -194,6 +201,8 @@ class FlowSource:
             self.client = None
 
     async def close(self):
+        # An RPC completion can absorb task cancellation on Python 3.10.
+        self.closed = True
         if self.task:
             self.task.cancel()
             await asyncio.gather(self.task, return_exceptions=True)
