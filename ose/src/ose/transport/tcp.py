@@ -114,7 +114,20 @@ class Client:
             async def exchange():
                 await self.tcp.send({"op": op, "request": identity, **arguments}, payload)
                 return await future
-            header, body = await asyncio.wait_for(exchange(), self.request_timeout if timeout is None else timeout)
+            transaction = asyncio.create_task(exchange())
+            try:
+                # On Python 3.9/3.10, wait_for can swallow cancellation when
+                # the RPC completes in the same event-loop turn. Waiting on
+                # the task explicitly keeps shutdown cancellation authoritative.
+                done, _ = await asyncio.wait(
+                    {transaction}, timeout=self.request_timeout if timeout is None else timeout)
+                if not done:
+                    raise asyncio.TimeoutError()
+                header, body = transaction.result()
+            finally:
+                if not transaction.done():
+                    transaction.cancel()
+                await asyncio.gather(transaction, return_exceptions=True)
             if "error" in header:
                 raise RemoteError(header["error"], header.get("error_code", "invalid_request"))
             if header.get("content") == "json":
