@@ -163,6 +163,12 @@ ose app --root /path/to/application env
 ```
 
 Application selection is `--root`, then `OSE_APP_ROOT`, then the current directory.
+
+For a generic, offline installation of OSE, SDL and the web console outside the
+checkout, see the [framework release guide](docs/release.md). `make release`
+builds a platform-specific archive with all five SDK languages and all features
+selected by default; missing target compilers produce installation warnings.
+
 Build, validate, simulate and distributed use the application's Makefile targets.
 `ose app run` builds first, then executes `build/plan.json` until Ctrl+C by default;
 `app-run DURATION=60` remains accepted. The distributed demo defaults to 300 seconds.

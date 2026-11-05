@@ -1,0 +1,14 @@
+#!/bin/sh
+# Invoke with sh on hosts whose shell is outside /bin (including Termux).
+set -eu
+release=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+if [ -n "${OSE_INSTALL_PYTHON:-}" ]; then
+    exec "$OSE_INSTALL_PYTHON" "$release/install.py" "$@"
+fi
+for interpreter in python3 python; do
+    if command -v "$interpreter" >/dev/null 2>&1 && "$interpreter" -c 'import sys; raise SystemExit(sys.version_info < (3, 9))' 2>/dev/null; then
+        exec "$interpreter" "$release/install.py" "$@"
+    fi
+done
+printf '%s\n' 'WARNING: Python is unavailable or older than 3.9; installing resources and deferred launchers only.' >&2
+exec sh "$release/install-resources.sh" "$@"

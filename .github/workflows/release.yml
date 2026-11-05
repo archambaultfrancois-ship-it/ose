@@ -1,0 +1,29 @@
+name: Framework release
+on:
+  workflow_dispatch:
+  push:
+    paths: ['tools/release/**', 'ose/**', 'sdl/**', 'ose-ws/src/**', 'ose-ws/requirements.lock', 'Makefile', '.github/workflows/release.yml']
+  pull_request:
+    paths: ['tools/release/**', 'ose/**', 'sdl/**', 'ose-ws/src/**', 'ose-ws/requirements.lock', 'Makefile', '.github/workflows/release.yml']
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '${{ matrix.python }}'
+      - name: Test installer selection and warning-only prerequisites
+        run: make test-release
+      - name: Build a complete offline archive
+        run: make release
+      - name: Install, compile unrelated applications and capture through the console
+        run: python tools/release/check.py build/releases/*.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ose-linux-python-${{ matrix.python }}
+          path: build/releases/*
