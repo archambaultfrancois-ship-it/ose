@@ -11,6 +11,12 @@ Distributed mixed routing sends the 64 KiB signals directly between adapters;
 analysis and alarm events use the distributed coordinator's broker queues.
 Business callbacks and generated typed APIs are identical for both paths.
 
+The `events` link illustrates compatible SDL contract evolution: the alarm adds
+the optional string `source_note` (ID 7) to the logical message `Alarm`. The
+observer's separate input schema keeps fields 1–6; SDL skips the additional
+source field, preserving the existing terminal JSON. The Web Console diagnostic
+shows a compatible ignored field, and Live can display its source value.
+
 Each source's elapsed OSE time determines the amplitude ramp; sample index and
 seed determine the waveform and noise. Rates, sizes and units are explicit in
 the source configuration and signal contract. An analyzer computes RMS and peak

@@ -17,6 +17,7 @@ from ose_ws import __version__
 from ose_ws.auth import Auth
 from ose_ws.config import loopback
 from ose_ws.schema.adapter import SchemaAdapter
+from ose_ws.schema.compatibility import diagnose
 from ose_ws.services.connection import ApplicationConnection
 from ose_ws.services.logs import LogReader
 from ose_ws.services.flows import FlowManager
@@ -215,6 +216,42 @@ def create_app(config):
                 "The application changed; refresh its status.", 409, "APPLICATION_CHANGED")
         adapter = await asyncio.to_thread(SchemaAdapter, catalogue.decode(), desc["root"])
         return public(await asyncio.to_thread(adapter.description))
+
+    @app.get("/api/v1/flow/diagnostic")
+    async def flow_diagnostic(request: Request, subscription: str, epoch: str):
+        session(request).check("components.read")
+
+        def current():
+            require(collector.error is None, "The OSE application is unavailable.", 503, "SOURCE_UNAVAILABLE")
+            require(epoch == collector.snapshot.get("epoch"),
+                    "The application changed; refresh its status.", 409, "APPLICATION_CHANGED")
+
+        current()
+        subscriptions = collector.snapshot.get("observation", {}).get("subscriptions", {})
+        require(subscription in subscriptions, "Subscription not found.", 404, "NOT_FOUND")
+        expected = subscriptions[subscription]
+        client = await connection.connect()
+        contracts = {}
+        try:
+            for side in ("source", "destination"):
+                desc, catalogue = await client.request("subscription_schema", subscription=subscription, side=side, timeout=3)
+                current()
+                require(desc.get("epoch") == epoch,
+                        "The application changed; refresh its status.", 409, "APPLICATION_CHANGED")
+                require(desc.get("side") == side,
+                        "Contract diagnostics require an updated OSE runtime; restart OSE with these sources.",
+                        503, "CONTRACT_DIAGNOSTIC_UNSUPPORTED")
+                require((desc.get("from"), desc.get("to")) == (expected["from"], expected["to"]),
+                        "The subscription changed; refresh its status.", 409, "APPLICATION_CHANGED")
+                contracts[side] = (catalogue.decode(), desc["root"])
+        finally:
+            await client.close()
+        report = await asyncio.to_thread(diagnose, *contracts["source"], *contracts["destination"])
+        current()
+        report.update(subscription=subscription, epoch=epoch)
+        report["source"]["endpoint"] = expected["from"]
+        report["destination"]["endpoint"] = expected["to"]
+        return public(report)
 
     @app.post("/api/v1/flow-watches")
     async def flow_watch(request: Request):

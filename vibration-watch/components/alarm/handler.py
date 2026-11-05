@@ -17,7 +17,7 @@ def process(ctx, message):
     state = classify(message.rms, threshold)
     ctx.publish_event(Alarm(machine_id=message.machine_id, sequence=message.sequence,
         time_ns=message.time_ns, rms=message.rms, peak=message.peak,
-        state=state))
+        state=state, source_note="RMS threshold evaluation"))
     previous = ctx.alarm_states.get(message.machine_id)
     changed = previous != state
     if changed or message.sequence % 10 == 0:

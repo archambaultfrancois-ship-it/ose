@@ -227,7 +227,7 @@ class Broker(Sessions):
                         await self._reply(peer, header['request'], result)
                         continue
                     if op == 'subscription_schema':
-                        result, response_body = subscription_schema(self.plan, self.subscriptions[header['subscription']])
+                        result, response_body = subscription_schema(self.plan, self.subscriptions[header['subscription']], header.get('side', 'source'))
                         await self._reply(peer, header['request'], {**result, 'epoch': self.epoch}, binary=response_body)
                         continue
                     attach_subscription = None

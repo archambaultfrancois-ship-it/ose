@@ -178,7 +178,7 @@ References: [simulation](ose/docs/simulation.md),
 | Term | Meaning |
 | --- | --- |
 | **Application flow / topology** | The console graph of components, external topics and declared subscriptions, derived from OSE's compiled plan. Arrows represent declared connections. |
-| **Link / source contract** | A link represents one subscription. Its panel shows the connected ports, delivery policy and source SDL schema, fetched on demand. |
+| **Link / source contract** | A link represents one subscription. Its panel shows ports, delivery policy and source SDL schema. Its diagnostic checks source-to-destination compatibility and explains field differences by numeric ID. |
 | **Live values** | A read-only preview of the latest observed source publication, with bounded values and no file or history. It may skip publications and does not confirm destination delivery. |
 
 References: [Web Console](ose-ws/README.md), [monitoring](ose/docs/monitoring.md).

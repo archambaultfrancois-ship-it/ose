@@ -107,7 +107,8 @@
     "observer": {
       "inputs": {
         "input": {
-          "root": "Alarm"
+          "root": "Alarm",
+          "schema": "components/observer/observer_alarm.sdl"
         }
       },
       "outputs": {},
@@ -188,6 +189,7 @@
   "shared_parameters": {
     "observer/display": {
       "root": "ObserverSettings",
+      "schema": "schemas/observer_settings.sdl",
       "initial": {
         "label": null,
         "machine_ids": [1, 2],

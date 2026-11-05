@@ -140,6 +140,26 @@ the framework, restart the application when new engine capabilities are needed.
 See the [console guide](../ose-ws/README.md) for captures, permissions,
 network access and the complete-block parameter overwrite semantics.
 
+#### Compatible contract example
+
+In **Components → Application flow**, select **events**
+(`alarm.event → observer.input`), then **Diagnose compatibility** and
+**Differences only**. The result is **Compatible**, with one source-only field:
+
+| Field ID | Alarm source | Observer destination | Type |
+| --- | --- | --- | --- |
+| 7 | optional `source_note` | Not declared (ignored) | `string` |
+
+The alarm publisher fills this optional note with `RMS threshold evaluation`.
+SDL skips source fields whose numeric IDs are unknown to the consumer, so the
+observer still reads all its declared fields. Both contracts keep the logical
+root `Alarm`. The source contract is in
+`schemas/alarm.sdl`; the observer's input contract is in
+`components/observer/observer_alarm.sdl`. **Live** shows the note in source
+publications; the observer's terminal JSON keeps its existing fields. The other
+links use matching field declarations. Rebuild and restart the application after updating
+these sources; the diagnostic reads the running application's compiled plan.
+
 Recording content filters are evaluated at the source: in the broker for local
 execution, or in each producer worker for distributed execution, before capture
 queue admission and network delivery. Each recorder has independent filters.

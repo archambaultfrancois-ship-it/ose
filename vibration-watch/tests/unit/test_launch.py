@@ -38,6 +38,17 @@ class LaunchTests(unittest.TestCase):
                 self.assertEqual(workflow.main(), 0)
                 build.assert_called_once()
 
+    def test_explicit_contract_paths_survive_preparing_and_replay_models(self):
+        for task in ("prepare", "replay-build"):
+            args = argparse.Namespace(scenario="normal", profile="local", task=task, routing="mixed")
+            with self.subTest(task=task), patch.object(workflow, "write") as write:
+                workflow.prepare(args)
+                model = write.call_args_list[0].args[1]
+                self.assertEqual(model["components"]["observer"]["inputs"]["input"]["schema"],
+                                 str(ROOT / "components/observer/observer_alarm.sdl"))
+                self.assertEqual(model["shared_parameters"]["observer/display"]["schema"],
+                                 str(ROOT / "schemas/observer_settings.sdl"))
+
     def test_sync_is_rejected_for_simulation_before_building(self):
         with patch.object(sys, "argv", ["vibration.py", "simulate", "--params-sync"]), \
                 patch.object(workflow, "compile_app") as build, patch("sys.stderr", new_callable=io.StringIO) as stderr:

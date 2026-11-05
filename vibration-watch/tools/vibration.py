@@ -90,6 +90,14 @@ def prepare(args):
            (machines["machines"], thresholds["rms"], scenario["ramp_per_second"])):
         raise ValueError("configuration must describe machines 1 and 2")
     model["schemas"] = str(ROOT / "schemas")
+    # Prepared models move under build/; preserve explicit per-port/block schemas.
+    descriptors = list(model.get("shared_parameters", {}).values()) + list(model.get("external_topics", {}).values())
+    for node in model["components"].values():
+        for direction in ("inputs", "outputs", "recording_types"):
+            descriptors.extend(node.get(direction, {}).values())
+    for desc in descriptors:
+        if "schema" in desc:
+            desc["schema"] = str((ROOT / desc["schema"]).resolve())
     for identity, machine in machines["machines"].items():
         number = int(identity)
         values = sensor_settings({**{key: value for key, value in machine.items() if key != "name"},

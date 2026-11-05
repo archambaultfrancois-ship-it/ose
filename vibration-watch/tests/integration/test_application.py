@@ -23,6 +23,16 @@ class ApplicationTests(unittest.TestCase):
         normal = observations(invoke("simulate", "--scenario", "normal", "--duration", "2", "--workers", "1").stderr)
         self.assertEqual(len(normal), 40)
         self.assertTrue(all(event["state"] == 0 for event in normal))
+        # The prepared/generated plan must retain the observer's distinct contract.
+        plan = json.loads((ROOT / "build/plan.json").read_text())
+        source = plan["components"]["alarm"]["outputs"]["event"]
+        destination = plan["components"]["observer"]["inputs"]["input"]
+        self.assertEqual(source["root"], destination["root"])
+        self.assertIn("7?:string:source_note;", source["catalogue"])
+        self.assertNotIn("source_note", destination["catalogue"])
+        # Real generated bindings skip the populated optional source-only field.
+        self.assertTrue(all(event["peak"] >= event["rms"] > 0 for event in normal))
+        self.assertTrue(all("source_note" not in event for event in normal))
         first = invoke("simulate", "--duration", "2", "--workers", "1")
         trace = (ROOT / "build/simulation.jsonl").read_bytes()
         parallel = invoke("simulate", "--duration", "2", "--workers", "4")

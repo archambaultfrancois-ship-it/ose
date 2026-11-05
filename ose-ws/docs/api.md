@@ -32,6 +32,7 @@ Observation and log `sequence` fields are decimal order strings.
 | Application | `GET /application`: connection, epoch, versions, capabilities, freshness and service errors. |
 | Components | `GET /components`, `GET /components/{id}`: shared diagnostics, never a fresh RPC per browser. The collection includes declared flow `topology`. |
 | Link contract | `GET /flow/schema?subscription=...&epoch=...`: source SDL contract for a declared subscription; requires `components.read`. |
+| Contract diagnostic | `GET /flow/diagnostic?subscription=...&epoch=...`: directional source/destination compatibility and field explanations; requires `components.read`. |
 | Link Live | `POST /flow-watches`, `GET/DELETE /flow-watches/{id}`: leased read-only latest-publication previews; requires source-topic `flows.read`. |
 | Logs | `GET /logs`: bounded in-memory component history with component, level, category and text filters; follow with `after`/`epoch`. Requires component-scoped `logs.read`. FATAL is distinct from CRITICAL. |
 | Measures | `GET /measurements`, `POST /measurement-watches`, `DELETE /measurement-watches/{id}`. |
@@ -67,6 +68,30 @@ external topics and direct routes use the same mechanism. This requires
 enablement. An unknown subscription returns 404, an obsolete epoch returns 409
 and a disconnected source returns 503. Contracts are not included in periodic
 status messages. A compatible OSE runtime is required.
+
+`GET /flow/diagnostic` reads both compiled port contracts through
+`subscription_schema` with `side:source` and `side:destination`. It works for
+local, distributed direct/broker and external subscriptions without a source
+worker, tap or recording permission. Epoch and endpoints are checked across
+both reads. Older runtimes return 503 `CONTRACT_DIAGNOSTIC_UNSUPPORTED` rather
+than silently comparing the source contract with itself.
+
+The result includes `subscription`, `epoch`, `compatible`, `identical` (exact
+root/catalogue equality), `require_required:true`, and SDL's first `diagnostic`
+(`code`, `path` and available type/field details). `ROOT_MISMATCH` also rejects
+different selected roots. `source` and `destination` contain the endpoint,
+root and schema digest. Compatibility is directional and uses numeric field IDs;
+unknown source fields are skipped, missing nonrequired destination fields keep
+defaults, and every required destination field must be published.
+
+`fields` explains reachable fields with `path`, `destination_path`, `field_id`,
+source/destination descriptors (or null), `status` (`matching`, `different`,
+`incompatible`) and `findings` (`code`, `message`, `severity`). Descriptors include
+name, type, cardinality, dimensions and wire settings. Compatible renames,
+packed/repeated sequences, enum labels and wire differences remain visible.
+Details stop at 256 rows or 16 nested levels and set `truncated:true`; the SDL
+verdict still checks the complete selected root. Unrelated catalogue declarations
+do not affect this verdict. No values, queues or application configuration change.
 
 `POST /flow-watches` accepts `subscription`, `epoch`, optional `interval_ms`
 (250–1,000; default 500) and `array_offset` (0–1,000,000; default 0). It returns

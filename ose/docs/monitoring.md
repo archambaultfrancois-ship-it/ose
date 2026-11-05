@@ -95,14 +95,22 @@ plan: component triggers, input/output roots, external topics and declared
 subscription endpoints and delivery policies. This lets the Web Console draw
 the application flow without a local model checkout.
 
-The read-only `subscription_schema` RPC accepts a `subscription` ID and returns
-the source port's `root`, `from`, `to` and application `epoch` in the response
-header, with its SDL catalogue as the binary body. The broker and distributed
+The read-only `subscription_schema` RPC accepts a `subscription` ID and optional
+`side` (`source`, the default, or `destination`). It returns the selected port's
+`root`, `from`, `to`, `side` and application `epoch` in the response header,
+with its SDL catalogue as the binary body. The broker and distributed
 coordinator serve this from the compiled plan, including direct routes and
 external topics, without contacting a worker or opening a recording. Clients
 should match the returned epoch to their displayed graph before showing the
 contract. Schema catalogues are fetched on demand and stay out of periodic
 status responses.
+
+The Web Console's **Diagnose compatibility** action reads both contracts and
+uses SDL's directional comparison with required destination fields enforced,
+as at application build time. The report explains field-ID matches, nested
+differences, skipped/defaulted fields, arrays, enums and wire representations.
+The check concerns compiled contracts; it does not validate live message values
+or confirm downstream processing.
 
 The Web Console's **Live** link inspector samples publications through the same
 bounded read-only taps as recording, keeping one queued message and writing no

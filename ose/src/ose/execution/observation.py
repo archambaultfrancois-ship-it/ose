@@ -186,14 +186,19 @@ def describe(plan):
     }
 
 
-def subscription_schema(plan, sub):
-    """Describe the source contract of a declared subscription on demand."""
-    if "from_topic" in sub:
+def subscription_schema(plan, sub, side="source"):
+    """Describe either port contract of a declared subscription on demand."""
+    if side == "destination":
+        component, port = sub["to"].split(".")
+        desc = plan["components"][component]["inputs"][port]
+    elif side != "source":
+        raise ValueError("subscription schema side must be source or destination")
+    elif "from_topic" in sub:
         desc = plan["external_topics"][sub["from_topic"]]
     else:
         component, port = sub["from"].split(".")
         desc = plan["components"][component]["outputs"][port]
-    return {"from": sub["from"], "to": sub["to"], "root": desc["root"]}, desc["catalogue"].encode()
+    return {"from": sub["from"], "to": sub["to"], "side": side, "root": desc["root"]}, desc["catalogue"].encode()
 
 
 class TickTimings:

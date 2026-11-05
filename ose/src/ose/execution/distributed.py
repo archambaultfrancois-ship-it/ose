@@ -303,7 +303,7 @@ class Coordinator:
         if op == 'logs':
             return self.logs.query(**header.get('filters', {})), None
         if op == 'subscription_schema':
-            result, catalogue = subscription_schema(self.plan, self.subscriptions[header['subscription']])
+            result, catalogue = subscription_schema(self.plan, self.subscriptions[header['subscription']], header.get('side', 'source'))
             return {**result, 'epoch': self.epoch}, catalogue
         if op in ("external_open", "external_publish", "external_close"):
             return await self.external_request(peer, header, body, caller)

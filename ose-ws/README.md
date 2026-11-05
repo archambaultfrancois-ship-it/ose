@@ -136,6 +136,15 @@ enums, cardinalities, array dimensions and wire encodings. This uses
 without recording permissions. Update and restart OSE for the
 `subscription_schema` RPC; the compiled plan already contains the contracts.
 
+Choose **Diagnose compatibility** below the source contract to compare it with
+the destination input contract. The report uses SDL's source → destination
+rules and matches fields by numeric ID. It explains nested field differences,
+ignored fields, missing required fields, dimensions, cardinalities and enum
+values. Renames and different wire settings can remain compatible. Field details
+are limited to 256 rows and 16 levels; the verdict checks the complete root.
+This read-only check requires `components.read` and an updated OSE runtime;
+it opens no recording and does not inspect message values or prove delivery.
+
 Select **Live** in the link panel to inspect the latest observed publication
 from its source. This read-only view creates no file or history and does not
 consume application input queues. It starts at two updates per second; select
