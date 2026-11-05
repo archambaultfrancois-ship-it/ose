@@ -47,15 +47,21 @@ class ExternalTests(unittest.IsolatedAsyncioTestCase):
         publisher = await asyncio.to_thread(p.publisher, 'capteur.mesure', self.Message)
         for transport, qos in [('tcp',Fifo(ack='received',retry=Retry(ack_timeout_ms=20))),('udp',Latest(ack='received',retry=Retry(ack_timeout_ms=20)))]:
             c = await self.client(transport)
-            received = []; event=threading.Event()
+            received = []; available=threading.Condition()
             def callback(value,info):
-                received.append((value,info));event.set()
+                with available:
+                    received.append((value,info));available.notify_all()
             sub = await asyncio.to_thread(c.subscribe,'capteur.mesure',self.Message,callback,qos=qos,transport=transport)
             result = await asyncio.to_thread(publisher.publish,self.Message(sequence=7,value=3.5))
             self.assertTrue(result.accepted)
-            self.assertTrue(await asyncio.to_thread(event.wait,2))
-            self.assertEqual(received[-1][0].value,3.5)
-            self.assertEqual(received[-1][1].publication_id,result.publication_id)
+            # Latest may replay the previous publication before this one arrives.
+            def wait_for_publication():
+                with available:
+                    return available.wait_for(lambda:any(info.publication_id==result.publication_id for _,info in received),2)
+            self.assertTrue(await asyncio.to_thread(wait_for_publication))
+            value,info=next(pair for pair in received if pair[1].publication_id==result.publication_id)
+            self.assertEqual(value.value,3.5)
+            self.assertEqual(info.publication_id,result.publication_id)
             await asyncio.to_thread(sub.close)
         c = await self.client('late')
         event=threading.Event();values=[]
@@ -323,8 +329,11 @@ class ExternalTests(unittest.IsolatedAsyncioTestCase):
         self.broker.engines['unattached']=DeliveryEngine(policy,MemoryStore(1))
         first=await asyncio.to_thread(p.publish,self.Message(sequence=1,value=1.))
         results=await asyncio.gather(*(asyncio.to_thread(p.publish,self.Message(sequence=n,value=float(n))) for n in range(2,6)))
-        self.assertEqual([first.sequence]+[r.sequence for r in results],list(range(1,6)))
-        for r in results:self.assertEqual(r.publication_id,f'{r.epoch}:{r.sequence}')
+        self.assertEqual(first.sequence,1)
+        # Executor threads can reach the broker in a different order from the
+        # gather arguments. Each reply still needs its own unique sequence.
+        self.assertCountEqual([r.sequence for r in results],range(2,6))
+        for r in [first,*results]:self.assertEqual(r.publication_id,f'{r.epoch}:{r.sequence}')
 
     async def test_external_publisher_wait_includes_long_internal_admission(self):
         port={'root':'Measurement','catalogue':CAT,'catalogue_id':self.codec.identity(CAT)}
