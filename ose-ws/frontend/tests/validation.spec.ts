@@ -42,7 +42,7 @@ it('reveals and focuses an invalid paginated array entry and clears it only when
     Nested: { kind: 'message', fields: [{ id: 1, name: 'items', type: 'uint32', cardinality: 'repeated', dimensions: [] }] },
   } }
   const initial = { label: 'Initial label', nested: { items: Array.from({ length: 50 }, (_, n) => n) } }
-  let validations = 0
+  let validations = 0, writes = 0
   vi.stubGlobal('fetch', vi.fn(async (path: string, options: any = {}) => {
     let result: any, status = 200
     if (path.endsWith('/schema')) result = schema
@@ -53,7 +53,8 @@ it('reveals and focuses an invalid paginated array entry and clears it only when
         status = 422
         result = { error: { code: 'PARAMETER_INVALID', message: 'Invalid value for SDL type uint32.', details: { pointer: '/nested/items/45' } } }
       } else result = { value, schema_digest: 'digest', preview_hash: 'preview', encoded_bytes: 100 }
-    } else result = { value: initial, schema_digest: 'digest' }
+    } else if (options.method === 'PUT') { writes++; result = { id: 'operation', status: 'complete', result: { result: 'stored' } } }
+    else result = { value: initial, schema_digest: 'digest' }
     return new Response(JSON.stringify(result), { status })
   }))
   const root = mount(() => h(ParametersPage, { blocks: [{ id: 'block', path: 'machine/settings', permissions: { read: true, write: true } }], change: null, connected: true }))
@@ -65,7 +66,7 @@ it('reveals and focuses an invalid paginated array entry and clears it only when
   button(root, 'Previous 40').click()
   await nextTick()
   for (const branch of root.querySelectorAll('.schema-field details')) branch.open = false
-  button(root, 'Validate draft').click()
+  button(root, 'Apply').click()
   await until(() => !!root.querySelector('[aria-invalid="true"]'))
   const invalid = input(root, '[45]')
   expect(invalid.getAttribute('aria-invalid')).toBe('true')
@@ -81,7 +82,8 @@ it('reveals and focuses an invalid paginated array entry and clears it only when
     ancestor = ancestor.parentElement
   }
   expect(root.querySelector('.parameter-editor .validation-summary[role="alert"]')?.textContent).toContain('Parameter error')
-  expect(button(root, 'Apply complete block').disabled).toBe(true)
+  expect(writes).toBe(0)
+  expect(button(root, 'Apply').disabled).toBe(false)
   await enter(input(root, 'label'), 'Unrelated edit')
   expect(input(root, '[45]').getAttribute('aria-invalid')).toBe('true')
   button(root, 'Previous 40').click()
@@ -93,9 +95,11 @@ it('reveals and focuses an invalid paginated array entry and clears it only when
   expect(root.querySelector('[aria-invalid="true"]')).toBeNull()
   expect(root.querySelector('.validation-summary')).toBeNull()
   expect(validations).toBe(1)
-  expect(button(root, 'Apply complete block').disabled).toBe(true)
-  button(root, 'Validate draft').click()
-  await until(() => !button(root, 'Apply complete block').disabled)
+  expect(button(root, 'Apply').disabled).toBe(false)
+  button(root, 'Apply').click()
+  await until(() => !!root.textContent?.includes('Stored by OSE.'))
+  expect(validations).toBe(2)
+  expect(writes).toBe(1)
 })
 
 it('marks escaped optional fields and the exact complex part without marking their siblings', async () => {
@@ -129,7 +133,7 @@ it('keeps a block-level failure visible near the editor controls without guessin
   const root = mount(() => h(ParametersPage, { blocks: [{ id: 'block', path: 'settings', permissions: { read: true, write: true } }], change: null, connected: true }))
   button(root, 'settings').click()
   await until(() => !!root.querySelector('.parameter-editor'))
-  button(root, 'Validate draft').click()
+  button(root, 'Apply').click()
   await until(() => !!root.querySelector('.validation-summary'))
   expect(root.querySelector('.validation-summary')?.textContent).toContain('OSE is unavailable.')
   expect(root.querySelector('.schema-field.invalid')).toBeNull()
