@@ -1,7 +1,9 @@
 """Event-driven control retains bounded state, prompt logs and cancellation."""
 import asyncio
+from types import SimpleNamespace
 import unittest
 
+from ose.execution.adapter import Adapter
 from ose.execution.logs import ComponentLogs, log_body
 from ose.execution.observation import ReportSchedule, ObservationDemand
 from ose.recording.component import RemoteRecording
@@ -136,6 +138,43 @@ class DemandTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.hub.notifications)
 
 
+class AdapterShutdownTests(unittest.IsolatedAsyncioTestCase):
+    async def test_idle_worker_exits_when_a_wait_absorbs_cancellation(self):
+        entered = asyncio.Event()
+
+        class Activity:
+            calls = 0
+
+            def clear(self):
+                pass
+
+            async def wait(self):
+                self.calls += 1
+                entered.set()
+                try:
+                    await asyncio.Future()
+                except asyncio.CancelledError:
+                    if self.calls != 1:
+                        raise
+                    return True
+
+        adapter = Adapter.__new__(Adapter)
+        adapter.closing = False
+        adapter.activity = Activity()
+        adapter.scheduler = SimpleNamespace(select=lambda: None, wait_timeout=lambda: None)
+        task = asyncio.create_task(adapter._work())
+        await entered.wait()
+        adapter.closing = True
+        task.cancel()
+        try:
+            done, _ = await asyncio.wait({task}, timeout=1)
+            self.assertIn(task, done)
+            self.assertEqual(adapter.activity.calls, 1)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
 class ActivationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.point = dict(topic='source.record.dsp.value', root='Value', catalogue='SDL2|Value{}',
@@ -229,3 +268,27 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
         task.cancel()
         await asyncio.wait_for(task, 1)
         self.assertEqual(remote.active, set())
+
+    async def test_close_stops_the_sender_even_if_cancellation_is_absorbed(self):
+        entered = asyncio.Event()
+
+        async def request(op, *args, **arguments):
+            entered.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                return {}, b''
+
+        remote = RemoteRecording(None, request)
+        remote.emit('dsp.value', {}, b'payload')
+        task = asyncio.create_task(remote.send())
+        await entered.wait()
+        remote.close()
+        task.cancel()
+        try:
+            done, _ = await asyncio.wait({task}, timeout=1)
+            self.assertIn(task, done)
+            self.assertEqual(remote.bytes, 0)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)

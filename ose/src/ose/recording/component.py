@@ -102,9 +102,11 @@ class RemoteRecording:
         self.active.clear()
 
     async def send(self):
-        while True:
+        while not self.closed:
             name, payload = await self.queue.get()
             try:
+                if self.closed:
+                    return
                 await self.request("recording_emit", payload, name=name)
             finally:
                 self.bytes -= len(payload)

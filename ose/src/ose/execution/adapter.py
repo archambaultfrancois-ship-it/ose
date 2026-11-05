@@ -41,6 +41,7 @@ class Adapter:
         self.timings = TickTimings()
         self.started_at = time.monotonic()
         self.timed_ticks, self.tick_index, self.activated_at_ns = False, 0, 0
+        self.closing = False
 
     def _changed(self):
         self.activity.set()
@@ -61,7 +62,7 @@ class Adapter:
 
     async def _receiver(self, subscription):
         queue = self.network_queues[subscription]
-        while True:
+        while not self.closing:
             header, body, address = await queue.get()
             try:
                 if header["subscription"] != subscription:
@@ -139,14 +140,14 @@ class Adapter:
         self.reports.configure(result.get('reporting'))
 
     async def _report(self):
-        while True:
+        while not self.closing:
             full = await self.reports.next(self.process.logs)
             if full is None:
                 return
             await self._send_report(full)
 
     async def _work(self):
-        while True:
+        while not self.closing:
             self.activity.clear()
             if hasattr(self, "parameters"):
                 await updates(self.process, self.node, self.parameters.drain())
@@ -225,6 +226,7 @@ class Adapter:
                 task.result()
             raise RuntimeError(f"component {self.name} stopped unexpectedly")
         finally:
+            self.closing = True
             self.reports.close()
             if hasattr(self, 'component_recording'):
                 self.component_recording.close()
