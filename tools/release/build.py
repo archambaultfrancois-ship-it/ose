@@ -19,7 +19,9 @@ HERE = Path(__file__).resolve().parent
 REQUIREMENTS = {
     'base': ['pip', 'setuptools==84.2.1', 'wheel==0.48.0'],
     'sdk': ['PyYAML==6.0.3'],
-    'web': ['fastapi==0.162.0', 'uvicorn==0.54.0', 'websockets==17.4'],
+    # The lock selects Python-compatible versions, including websockets 16 on
+    # Python 3.10 and 17 on Python 3.11+.
+    'web': ['fastapi==0.162.0', 'uvicorn==0.54.0', 'websockets>=14,<18'],
     'recording': ['mcap==1.5.0'],
     'filter': [],
     'sync': ['inotify-simple>=1.3.5,<3'],
