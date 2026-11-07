@@ -49,7 +49,19 @@ async def start_component(node, parameters=None, recording=None, logs=None, *, w
             if node.get("parameter_bindings") and body != b"\x03":
                 raise ValueError("shared parameters require an updated component SDK; regenerate the container")
             return body in (ipc.TICK_CONTEXT, b"\x03")
-        capable = await asyncio.wait_for(initialize(), 15)
+        initialization = asyncio.create_task(initialize())
+        try:
+            # Python 3.9/3.10 wait_for can lose cancellation when READY arrives
+            # in the same loop turn. Shutdown must still stop the component.
+            done, _ = await asyncio.wait({initialization}, timeout=15)
+            if not done:
+                raise asyncio.TimeoutError()
+            capable = initialization.result()
+        finally:
+            if not initialization.done():
+                initialization.cancel()
+            # Release the stdout reader before stop_component drains the pipe.
+            await asyncio.gather(initialization, return_exceptions=True)
         return process, capable
     except BaseException:
         await stop_component(process)
