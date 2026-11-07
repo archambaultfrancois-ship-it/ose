@@ -117,10 +117,13 @@ def manifest(stage, root):
     dirty = bool(subprocess.check_output(['git', '-C', str(root), 'status', '--porcelain'], text=True))
     files = {p.relative_to(stage).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
              for p in sorted(stage.rglob('*')) if p.is_file()}
-    return {'format': 1, 'revision': revision, 'dirty': dirty,
+    data = {'format': 1, 'revision': revision, 'dirty': dirty,
             'target': {'platform': sysconfig.get_platform(), 'system': sys.platform,
                        'machine': platform.machine(), 'python': f'{sys.version_info.major}.{sys.version_info.minor}'},
             'requirements': REQUIREMENTS, 'files': files}
+    if (stage / 'python/runtime.json').is_file():
+        data['python_runtime'] = json.loads((stage / 'python/runtime.json').read_text())
+    return data
 
 
 def write_bundle(archive, bundle):
@@ -138,6 +141,7 @@ def write_bundle(archive, bundle):
 
 
 def main(argv=None):
+    from private_python import prepare as prepare_python
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=ROOT / 'build/releases')
     parser.add_argument('--packages-dir', type=Path, help='local wheels to use when preparing dependencies')
@@ -156,6 +160,7 @@ def main(argv=None):
             (stage / 'ose-install').chmod(0o755)
             prepare_packages(stage, args.packages_dir, args.offline)
             prepare_native(stage, args.offline)
+            prepare_python(stage)
             data = manifest(stage, ROOT)
             (stage / 'manifest.json').write_text(json.dumps(data, indent=2, sort_keys=True) + '\n')
             (stage / 'SHA256SUMS').write_text(''.join(value + '  ' + name + '\n' for name, value in data['files'].items()))

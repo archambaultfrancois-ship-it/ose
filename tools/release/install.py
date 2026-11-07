@@ -48,7 +48,7 @@ def verify(source):
 
 def included(name, profile, languages, features):
     parts = Path(name).parts
-    if parts[0] == 'packages':
+    if parts[0] in ('packages', 'python'):
         return True  # Keep the offline repository for later repairs and SDK builds.
     if parts[0] == 'cargo-vendor':
         return profile == 'sdk' and bool({'recording', 'filter'} & set(features))
@@ -161,17 +161,21 @@ def environment(prefix, packages, requirements, warnings):
     python = prefix / '.venv' / 'bin' / 'python'
     log = prefix / 'installation.log'
     try:
-        import venv
-        venv.EnvBuilder(with_pip=False, clear=True).create(prefix / '.venv')
+        if not (prefix / '.venv/runtime.json').is_file():
+            # Backwards compatibility with releases predating private Python.
+            import venv
+            venv.EnvBuilder(with_pip=False, clear=True).create(prefix / '.venv')
+        subprocess.run([str(python), '-I', '-c', 'import sysconfig'],
+                       check=True, capture_output=True, timeout=20)
     except (ImportError, OSError, subprocess.SubprocessError) as error:
-        warnings.append('The isolated Python environment could not be created: ' + str(error))
+        warnings.append('The private Python environment could not be prepared: ' + str(error))
         return None, False
     wheels = sorted(packages.glob('pip-*.whl'))
     if not wheels:
         warnings.append('No pip wheel is available; Python dependencies remain uninstalled')
         return python, False
     bootstrap = 'import sys; sys.path.insert(0, sys.argv.pop(1)); from pip._internal.cli.main import main; raise SystemExit(main())'
-    cmd = [python, '-c', bootstrap, wheels[-1], '--isolated', 'install', '--no-index', '--no-compile',
+    cmd = [python, '-I', '-c', bootstrap, wheels[-1], '--isolated', 'install', '--no-index', '--no-compile',
            '--disable-pip-version-check', '--find-links', packages, *requirements]
     try:
         ok = run_logged(cmd, log) == 0
@@ -193,7 +197,7 @@ def write_commands(prefix, bin_dir, python, features, warnings):
     if 'recording' in features:
         commands['sdl-recording'] = 'recording'
     # Use a real shell on the target; /bin/sh does not exist on every Android host.
-    shell = shutil.which('sh') or '/bin/sh'
+    shell = str(Path(shutil.which('sh') or '/bin/sh').resolve())
     for name in ('ose', 'ose-ws', 'sdlc', 'sdl-recording'):
         old = own_bin / name
         if name not in commands and (old.exists() or old.is_symlink()):
@@ -260,8 +264,12 @@ def install(args, source):
             shutil.copy2(source / name, target_path)
         shutil.copy2(source / 'launch.py', staged / 'launch.py')
         prefix.mkdir(exist_ok=True)
-        for name in ('framework', 'packages', 'cargo-vendor', 'launch.py'):
-            old = prefix / name
+        replacements = {'framework': 'framework', 'packages': 'packages',
+                        'cargo-vendor': 'cargo-vendor', 'launch.py': 'launch.py'}
+        if (staged / 'python').is_dir():
+            replacements['python'] = '.venv'
+        for name, installed in replacements.items():
+            old = prefix / installed
             if old.exists() or old.is_symlink():
                 if old.is_dir() and not old.is_symlink():
                     shutil.rmtree(old)
@@ -287,7 +295,9 @@ def install(args, source):
                 paths.append(prefix / 'framework/ose-ws/src')
             if 'filter' in args.features:
                 paths += [prefix / 'framework/sdl/runtime/filter/python', prefix / 'framework/sdl/build/filter/release']
-            (Path(result.stdout.strip()) / 'ose-framework.pth').write_text(''.join(str(p) + '\n' for p in paths))
+            site_packages = Path(result.stdout.strip())
+            site_packages.mkdir(parents=True, exist_ok=True)
+            (site_packages / 'ose-framework.pth').write_text(''.join(str(p) + '\n' for p in paths))
     capabilities = {}
     imports = {'engine': ['ose', 'sdl_runtime'], 'web': ['ose_ws', 'fastapi', 'uvicorn', 'websockets'],
                'recording': ['sdl_recording'], 'filter': ['sdl_filter'], 'sync': ['inotify_simple']}
@@ -310,6 +320,9 @@ def install(args, source):
     report = {'format': 1, 'release': manifest['revision'], 'profile': args.profile,
               'languages': args.languages, 'features': args.features, 'python_dependencies': dependencies,
               'capabilities': capabilities, 'warnings': warnings, 'files': names}
+    report['python_runtime'] = {'bundled': 'python_runtime' in manifest,
+                                'version': manifest.get('python_runtime', {}).get('version', platform.python_version()),
+                                'executable': str(python) if python else None}
     (prefix / 'install-report.json').write_text(json.dumps(report, indent=2) + '\n')
     shutil.copy2(source / 'manifest.json', prefix / 'release-manifest.json')
     for warning in warnings[before:]:

@@ -77,13 +77,29 @@ def check(bundle):
         root = Path(temporary)
         prefix, commands = root / 'installed files', root / 'commands'
         env = {key: value for key, value in os.environ.items()
-               if key not in ('PYTHONPATH', 'SDL_ROOT', 'FRAMEWORK_ROOT', 'OSE_APP_ROOT', 'OSE_INSTALL_PYTHON') and not key.startswith('OSE_WS_')}
+               if key not in ('PYTHONPATH', 'PYTHONHOME', 'SDL_ROOT', 'FRAMEWORK_ROOT', 'OSE_APP_ROOT', 'OSE_INSTALL_PYTHON') and not key.startswith('OSE_WS_')}
         # Installation must not depend on an index, even if pip is configured globally.
         env['PIP_INDEX_URL'] = 'http://127.0.0.1:1/unavailable'
+        utilities = root / 'shell utilities without Python'
+        utilities.mkdir()
+        for name in ('sh', 'mktemp', 'tail', 'tar', 'gzip', 'rm', 'dirname', 'pwd', 'sha256sum'):
+            executable = shutil.which(name)
+            if executable:
+                (utilities / name).symlink_to(executable)
+        forbidden = utilities / 'python3'
+        sentinel = root / 'system-python-was-used'
+        forbidden.write_text('#!' + shutil.which('sh') + '\n: > "$HOST_PYTHON_SENTINEL"\nexit 97\n')
+        forbidden.chmod(0o755)
+        bootstrap_env = dict(env, PATH=str(utilities), HOST_PYTHON_SENTINEL=str(sentinel),
+                             OSE_INSTALL_PYTHON=str(forbidden), PYTHONHOME='/unavailable/python',
+                             PYTHONPATH='/unavailable/python-modules')
+        bootstrap_env.pop('LD_LIBRARY_PATH', None)
         subprocess.run([shutil.which('sh'), bundle, '--prefix', prefix, '--bin-dir', commands,
-                        '--offline'], env=env, cwd=root, check=True, timeout=180)
+                        '--offline'], env=bootstrap_env, cwd=root, check=True, timeout=180)
         report = json.loads((prefix / 'install-report.json').read_text())
         assert report['python_dependencies'], (prefix / 'installation.log').read_text()
+        assert report['python_runtime']['bundled'], report
+        assert not sentinel.exists(), 'Installation used system Python'
 
         def run(name, *args, cwd=None, timeout=120):
             result = subprocess.run([str(commands / name), *map(str, args)], cwd=cwd or root,
@@ -92,8 +108,16 @@ def check(bundle):
             return result
 
         python = prefix / '.venv/bin/python'
-        subprocess.run([python, '-c', 'import fastapi, mcap, sdl_filter, inotify_simple, yaml'],
-                       env=env, cwd=root, check=True)
+        probe = '''import sys, pathlib, ssl, sqlite3, fastapi, mcap, lz4.frame, sdl_filter, inotify_simple, yaml
+root = pathlib.Path(sys.executable).parents[1]
+assert pathlib.Path(sys.prefix) == root
+assert all(pathlib.Path(p).is_relative_to(root.parent) for p in sys.path), sys.path
+for row in pathlib.Path('/proc/self/maps').read_text().splitlines():
+    path = row.split(maxsplit=5)[-1]
+    if any(name in path for name in ('libpython', 'libssl.so', 'libcrypto.so', 'libsqlite3.so', 'liblz4.so', '/lib-dynload/')):
+        assert pathlib.Path(path).is_relative_to(root), path
+'''
+        subprocess.run([python, '-I', '-c', probe], env=bootstrap_env, cwd=root, check=True)
         one, two, runtime = root / 'first app', root / 'another app', root / 'runtime outputs'
         runtime.mkdir()
         application(one, ('python', 'c', 'rust'))
@@ -195,7 +219,7 @@ def check(bundle):
             assert (runtime / '.ose-ws/captures' / capture / artifact['name']).stat().st_size > 0
         assert (runtime / '.ose-ws/state.sqlite3').is_file()
         assert not (one / '.ose-ws/state.sqlite3').exists()
-    print('Release passed: offline installation, independent C/Rust/Python applications, simulation, real-time execution, web login and filtered capture.')
+    print('Release passed: offline installation without system Python, private native libraries, independent C/Rust/Python applications, simulation, real-time execution, web login and filtered capture.')
 
 
 if __name__ == '__main__':

@@ -2,6 +2,13 @@
 # Invoke with sh on hosts whose shell is outside /bin (including Termux).
 set -eu
 release=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+# A compatible bundled interpreter always takes precedence over host Python.
+if [ -x "$release/python/bin/python" ]; then
+    if "$release/python/bin/python" -I -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
+        exec "$release/python/bin/python" -I "$release/install.py" "$@"
+    fi
+    printf '%s\n' 'WARNING: Bundled Python could not start on this host; trying system Python for resource installation.' >&2
+fi
 if [ -n "${OSE_INSTALL_PYTHON:-}" ]; then
     exec "$OSE_INSTALL_PYTHON" "$release/install.py" "$@"
 fi

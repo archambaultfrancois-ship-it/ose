@@ -57,6 +57,11 @@ case "$prefix/" in "$release/"*) printf '%s\n' 'Destination overlaps the release
 case "$release/" in "$prefix/"*) printf '%s\n' 'Destination overlaps the release' >&2; exit 1 ;; esac
 cp -R "$release/framework" "$prefix/"
 cp -R "$release/packages" "$prefix/"
+if [ -d "$release/python" ]; then
+    # Replace the owned runtime so legacy venv symlinks cannot be followed by cp.
+    if [ -e "$prefix/.venv" ] || [ -L "$prefix/.venv" ]; then rm -rf -- "$prefix/.venv"; fi
+    cp -R "$release/python" "$prefix/.venv"
+fi
 if [ -d "$release/cargo-vendor" ]; then cp -R "$release/cargo-vendor" "$prefix/"; fi
 cp "$release/launch.py" "$prefix/launch.py"
 cp "$release/manifest.json" "$prefix/release-manifest.json"
@@ -65,14 +70,16 @@ for name in ose ose-ws sdlc sdl-recording; do
     case "$name" in ose) action=ose ;; ose-ws) action=web ;; sdlc) action=sdlc ;; *) action=recording ;; esac
     # Resolve links when invoked from the user's command directory.
     {
-        printf '#!%s\n' "$(command -v sh)"
+        printf '#!%s\n' "$(readlink -f "$(command -v sh)")"
         printf '%s\n' 'set -eu' 'script=$0' \
             'while [ -L "$script" ]; do' \
             '  parent=$(CDPATH= cd -- "$(dirname -- "$script")" && pwd -P)' \
             '  script=$(readlink "$script")' \
             '  case "$script" in /*) ;; *) script=$parent/$script ;; esac' 'done' \
             'root=$(CDPATH= cd -- "$(dirname -- "$script")/.." && pwd -P)'
-        printf 'exec "${OSE_INSTALL_PYTHON:-python3}" "$root/launch.py" %s "$@"\n' "$action"
+        printf '%s\n' 'python=${OSE_INSTALL_PYTHON:-python3}' \
+            'if [ -x "$root/.venv/bin/python" ]; then python=$root/.venv/bin/python; fi'
+        printf 'exec "$python" "$root/launch.py" %s "$@"\n' "$action"
     } > "$prefix/bin/$name"
     chmod +x "$prefix/bin/$name"
 done
