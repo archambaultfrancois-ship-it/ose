@@ -102,8 +102,8 @@ class ApplicationDirectoryTests(unittest.TestCase):
                 stdout, stderr = process.communicate(timeout=30)
             finally:
                 if process.poll() is None:
-                    process.terminate()
-                    process.communicate(timeout=30)
+                    process.kill()
+                    process.communicate(timeout=5)
         self.assertEqual(process.returncode, 0, stdout + stderr)
         self.assertEqual(self.plan.read_bytes(), self.original_plan)
 
