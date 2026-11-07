@@ -1,0 +1,21 @@
+name: CI watchdog policy
+on:
+  push:
+    paths: ['tools/ci/**', '.github/workflows/ci-watchdog.yml']
+  pull_request:
+    paths: ['tools/ci/**', '.github/workflows/ci-watchdog.yml']
+jobs:
+  policy:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Verify watchdog decisions and publication safeguards
+        run: python -m unittest discover -s tools/ci/tests -v
