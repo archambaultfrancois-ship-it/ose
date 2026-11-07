@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 from ose.modeling.compiler import build
@@ -14,10 +15,15 @@ from ose.modeling.compiler import build
 SDL_ROOT = os.environ.get('SDL_ROOT')
 FILES = [language + '-' + stage + '.txt' for language in ('python', 'c') for stage in ('start', 'tick', 'stop')]
 PYTHON_SOURCE = '''from pathlib import Path
+tick_recorded = False
 def write(stage):
     Path('python-' + stage + '.txt').write_text(str(Path.cwd()))
 def on_start(ctx): write('start')
-def on_tick(ctx): write('tick')
+def on_tick(ctx):
+    global tick_recorded
+    if not tick_recorded:
+        write('tick')
+        tick_recorded = True
 def on_stop(ctx): write('stop')
 '''
 C_SOURCE = '''#include "component.h"
@@ -32,7 +38,12 @@ static int write_path(const char *name) {
     return fclose(file) == 0 && ok;
 }
 static int start(OseContext *ctx) { (void)ctx; return write_path("c-start.txt"); }
-static int tick(OseContext *ctx) { (void)ctx; return write_path("c-tick.txt"); }
+static int tick(OseContext *ctx) {
+    static int recorded = 0;
+    (void)ctx;
+    if (!recorded) recorded = write_path("c-tick.txt");
+    return recorded;
+}
 static int stop(OseContext *ctx) { (void)ctx; return write_path("c-stop.txt"); }
 const ComponentCallbacks component_callbacks = { .on_start=start, .on_tick=tick, .on_stop=stop };
 '''
@@ -68,10 +79,32 @@ class ApplicationDirectoryTests(unittest.TestCase):
         for name in FILES:
             (self.project / name).unlink(missing_ok=True)
 
-    def launch(self, options, caller):
-        result = subprocess.run(self.command + options, cwd=caller, env=self.environment,
-                                capture_output=True, text=True, timeout=30)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    def launch(self, options, caller, output, mode):
+        options += ['--mode', mode]
+        if mode == 'simulated':
+            options += ['--duration', '.15']
+        with subprocess.Popen(self.command + options, cwd=caller, env=self.environment,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
+            try:
+                if mode == 'realtime':
+                    # Wait for actual callbacks, independent of runner load. The
+                    # fixture records each first tick once, so shutdown cannot
+                    # interrupt a later rewrite of the evidence being asserted.
+                    deadline = time.monotonic() + 20
+                    while process.poll() is None:
+                        if all((output / name).is_file() and (output / name).read_text() == str(output)
+                               for name in ('python-tick.txt', 'c-tick.txt')):
+                            break
+                        self.assertLess(time.monotonic(), deadline, 'first component ticks timed out')
+                        time.sleep(.01)
+                    if process.poll() is None:
+                        process.terminate()
+                stdout, stderr = process.communicate(timeout=30)
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    process.communicate(timeout=30)
+        self.assertEqual(process.returncode, 0, stdout + stderr)
         self.assertEqual(self.plan.read_bytes(), self.original_plan)
 
     def assert_outputs(self, directory):
@@ -83,10 +116,10 @@ class ApplicationDirectoryTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 caller = self.directory / ('launch ' + mode)
                 caller.mkdir()
-                options = ['app', '--root', str(self.project), 'run', '--duration', '.15', '--mode', mode]
+                options = ['app', '--root', str(self.project), 'run']
                 if mode == 'simulated':
                     options += ['--trace', 'trace.jsonl']
-                self.launch(options, caller)
+                self.launch(options, caller, caller, mode)
                 self.assert_outputs(caller)
                 self.assertTrue(all(not (self.project / name).exists() for name in FILES))
                 self.assertEqual((self.project / 'build/make-cwd.txt').read_text().strip(), str(self.project))
@@ -103,8 +136,8 @@ class ApplicationDirectoryTests(unittest.TestCase):
                 caller = self.directory / ('launch with override ' + mode)
                 output = caller / 'output files'
                 output.mkdir(parents=True)
-                self.launch(['app', '--root', str(self.project), 'run', '--duration', '.15',
-                             '--mode', mode, '--working-directory', 'output files'], caller)
+                self.launch(['app', '--root', str(self.project), 'run',
+                             '--working-directory', 'output files'], caller, output, mode)
                 self.assert_outputs(output)
                 self.assertTrue(all(not (caller / name).exists() for name in FILES))
                 self.assertTrue(all(not (self.project / name).exists() for name in FILES))
@@ -116,6 +149,6 @@ class ApplicationDirectoryTests(unittest.TestCase):
                     (self.project / name).unlink(missing_ok=True)
                 caller = self.directory / ('low level launch ' + mode)
                 caller.mkdir()
-                self.launch(['run', '--plan', str(self.plan), '--duration', '.15', '--mode', mode], caller)
+                self.launch(['run', '--plan', str(self.plan)], caller, self.project, mode)
                 self.assert_outputs(self.project)
                 self.assertTrue(all(not (caller / name).exists() for name in FILES))
