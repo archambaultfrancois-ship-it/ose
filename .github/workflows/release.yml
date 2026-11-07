@@ -1,4 +1,5 @@
 name: Framework release
+run-name: Framework release (${{ github.ref_name }})
 on:
   workflow_dispatch:
   push:
