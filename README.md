@@ -63,6 +63,9 @@ ose-ws/                 Standalone Python web server and bundled Vue frontend
 vibration-watch/         Application sources, scenarios, tests and deployment tools
 ```
 
+A [local autonomous CI watchdog](docs/ci-watchdog.md) can monitor GitHub Actions
+and use Codex to diagnose, test and publish bounded repairs.
+
 Each project has a separate GitHub Actions workflow. Vibration Watch uses this
 checkout's SDL/OSE framework directly and is also tested when its framework or
 web console dependencies change. From the repository root, run
