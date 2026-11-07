@@ -1,7 +1,9 @@
 /* Relocatable CPython entry point for Linux and Android release bundles.
  * This executable links only to the platform loader, never to system Python.
  */
-#define _GNU_SOURCE
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE 1
+#endif
 #include <Python.h>
 #include <dlfcn.h>
 #include <limits.h>
