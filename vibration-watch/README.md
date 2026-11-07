@@ -9,6 +9,10 @@ The sensor uses the OSE clock and a seeded generator, so simulation is reproduci
 
 ## Requirements and first run
 
+New to the framework? The **[beginner OSE quick start](../docs/quick-start.md)**
+walks through this application, its output, live parameter changes, simulation
+and optional web/recording/distributed workshops.
+
 Python 3.9+, a C99 compiler, Rust/Cargo and Git. OpenSSL is needed to generate
 development TLS certificates. The optional parameter directory sync uses
 `inotify-simple` on Linux/Termux; ordinary runs need no third-party Python packages.

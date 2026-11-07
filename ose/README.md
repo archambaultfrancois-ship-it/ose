@@ -68,6 +68,9 @@ downloads SDL. OSE uses `sdlc/generator.py` for compilation.
 
 ## Quick start
 
+For a step-by-step introduction with prerequisites, expected results and a live
+parameter exercise, see the **[beginner quick start](../docs/quick-start.md)**.
+
 From this project's root (`cd ose` from the repository root):
 
 ```sh
