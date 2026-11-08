@@ -1,7 +1,7 @@
 # Interactive live recording
 
 `ose record` is a generic external console included in OSE. It discovers
-the outputs and declared internal points of a running application and records
+the inputs, outputs and declared internal points of a running application and records
 selected samples through SDL's recording service. It needs no model, generated application classes or
 recorder component in the graph. Start and stop files repeatedly in one session.
 It supports the local broker and distributed workers, including direct routes.
@@ -71,8 +71,8 @@ such as `sensor_1.signal`, including outputs with no model subscriber. The local
 broker also exposes externally declared topics. An unavailable point can be
 selected for later use, but cannot be recorded until its producer is available.
 
-`list` includes both output and internal points and displays their `output` or
-`internal` kind. `list --kind internal` and `list --kind output` narrow the view;
+`list` displays each point's `input`, `output`, `internal` or `external` kind.
+`list --kind input`, `list --kind internal` and `list --kind output` narrow the view;
 an optional glob may be combined with either. List numbers keep their positions
 in the complete directory even in a filtered view. `show` includes kind, component,
 description, availability, selection and filter before the complete SDL catalogue.
@@ -135,6 +135,37 @@ current directory. Paths are local to the recorder process, even for a remote
 application. Quote paths containing spaces. Files are created exclusively;
 existing files are never overwritten at startup. The parent directory must already exist.
 The filename extension does not select the format: pass `mcap` explicitly.
+
+## Component input points
+
+Each input is an automatic recording point named `component.port`, without an
+extra namespace. Several producers feeding that port share one input point.
+`show` includes its sources, reception settings and observation stage:
+
+```text
+record> list --kind input
+record> show --kind input analyse.input
+record> select --kind input analyse.input
+record> start inputs.pcapng
+```
+
+An input and output may have the same name. Both remain listed with their kind;
+use `--kind input` or `--kind output` with `select`, `unselect`, `show` and `filter`
+to address them separately. Unqualified selection matches both; list numbers
+also identify individual points. Files retain the natural topic name on separate
+channels, distinguished by `ose.kind` metadata.
+
+Input recording observes the value selected at the start of each tick. FIFO
+records the selected message after overflow handling; latest records the state
+used on each tick, including repeated values. Absent inputs and timed-out null
+values emit no SDL sample. Observation does not confirm callback completion.
+Compatible producer schemas are projected to the input's catalogue when needed;
+input filters apply to that representation. Output points still capture source
+publications independently. No component SDK or handler change is needed.
+
+Local adapters forward selected values through bounded recording queues; in
+distributed execution the receiver worker serves its own input points. These
+are read-only recording points, not new publication topics for network SDKs.
 
 ## Component-owned internal points
 
@@ -365,7 +396,8 @@ uses its existing plaintext endpoint and respects `broker.external.enabled`.
 
 Direct payloads are captured at their producer, without routing them through the
 coordinator. A broker route is captured at the same worker publication boundary.
-An observation is a publication, not evidence that downstream processing completed.
+Output observation captures publication; input observation captures tick selection.
+Neither confirms that downstream processing completed.
 There is no historical replay or network ACK-to-disk guarantee.
 
 ## Bounds, stopping and errors
@@ -416,8 +448,9 @@ Log and publish timestamps both use the recorder's Unix arrival time, since OSE'
 publication protocol does not provide a Unix production timestamp. Model clock
 fields such as `time_ns` stay untouched inside payloads. A channel's metadata
 records its source generation. Output channels use the OSE publication counter
-modulo 2^32; internal points use a separate source counter, so their capture does
-not advance business publication sequences. Both are independent of any
+modulo 2^32; input points use the receiving component's tick index. Internal points
+use a separate source counter, so their capture does not advance business
+publication sequences. These counters are independent of any
 application counter in the payload.
 Cross-producer file order is recorder write order, not a global causal ordering.
 

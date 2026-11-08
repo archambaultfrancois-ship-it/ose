@@ -62,6 +62,28 @@ class ConsoleSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.console.names(["1"]), ["alarm.event"])
         self.assertEqual(self.console.names(["sensor_*.signal"]), ["sensor_1.signal", "sensor_2.signal"])
 
+    async def test_same_named_input_output_selection_uses_kind_and_global_ordinals(self):
+        self.recorder.points = {
+            "node.value": dict(topic="node.value", root="Value", kind="output", available=True),
+            "input:node.value": dict(topic="node.value", root="Value", kind="input", available=True)}
+        await self.console.execute("select --kind input node.value")
+        self.assertEqual(self.recorder.selected, {"input:node.value": None})
+        self.assertNotIn("input:node.value", self.console.output.getvalue())
+        self.assertIn('"kind": "input"', self.console.output.getvalue())
+        await self.console.execute("select --kind output node.value")
+        self.assertEqual(set(self.recorder.selected), set(self.recorder.points))
+        await self.console.execute("unselect --kind input node.value")
+        self.assertEqual(self.recorder.selected, {"node.value": None})
+        self.assertEqual(self.console.names(["1"]), ["input:node.value"])
+        self.assertEqual(self.console.names(["2"]), ["node.value"])
+        self.assertEqual(set(self.console.names(["node.value"])), set(self.recorder.points))
+
+    async def test_kind_filters_preserve_existing_selection_on_invalid_options(self):
+        for command in ("select --kind", "select --kind unknown all", "select --kind input --kind output all"):
+            with self.subTest(command=command), self.assertRaises(ValueError):
+                await self.console.execute(command)
+        self.assertEqual(self.recorder.selected, {})
+
 
 class ConsoleStatusTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):

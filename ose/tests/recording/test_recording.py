@@ -530,7 +530,7 @@ class DistributedRecordingTests(unittest.IsolatedAsyncioTestCase):
         await self.start_graph()
         before = copy.deepcopy(self.plan)
         recorder = await self.recorder()
-        self.assertEqual(set(recorder.points), {"source.value", "middle.value"})
+        self.assertEqual(set(recorder.points), {"source.value", "middle.value", "middle.input", "sink.input"})
         recorder.selected = {topic: None for topic in recorder.points}
         path = Path(self.directory.name) / "distributed.pcapng"
         capture = await recorder.start(path)
@@ -544,7 +544,8 @@ class DistributedRecordingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("signal", self.coordinator.engines)
         for record in records:
             value = record.decode()
-            self.assertEqual(value.fields["value"], value.fields["sequence"] * (2 if record.channel.topic == "middle.value" else 1))
+            self.assertEqual(value.fields["value"], value.fields["sequence"] *
+                             (2 if record.channel.topic in ("middle.value", "sink.input") else 1))
 
     async def test_worker_replacement_is_explicit_and_a_new_session_can_resume(self):
         await self.start_graph()

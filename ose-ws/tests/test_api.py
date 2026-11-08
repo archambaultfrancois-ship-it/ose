@@ -28,6 +28,67 @@ SDL_ROOT = Path(__file__).resolve().parents[2] / "sdl"
 
 
 class APITests(unittest.IsolatedAsyncioTestCase):
+    async def test_input_point_rights_use_the_natural_topic_name(self):
+        node = self.broker.plan["components"]["source"]
+        node["inputs"]["settings"] = dict(node["outputs"]["settings"])
+        await self.app.state.recordings.refresh(force=True)
+        signed_in = next(iter(self.app.state.auth.sessions.values()))
+        with patch.object(signed_in, "permissions", {"recordings.create": ["source.settings"]}):
+            points = (await self.client.get("/api/v1/recording-points")).json()["items"]
+            self.assertEqual({p["kind"] for p in points}, {"input", "output"})
+            point = next(p for p in points if p["kind"] == "input")
+            self.assertEqual((await self.client.get(f"/api/v1/recording-points/{point['id']}/schema")).status_code, 200)
+            self.assertEqual((await self.request("POST", "/recording-filters/validate", {
+                "point_id": point["id"], "expression": "enabled == true"})).status_code, 200)
+            created = await self.wait_operation(await self.request("POST", "/recordings", {"selection": [point["id"]]}))
+            self.assertEqual(created["status"], "complete", created)
+            self.assertEqual(created["result"]["selection"][0]["kind"], "input")
+        with patch.object(signed_in, "permissions", {"recordings.create": ["input:*"]}):
+            self.assertEqual((await self.client.get("/api/v1/recording-points")).json()["items"], [])
+            self.assertEqual((await self.client.get(f"/api/v1/recording-points/{point['id']}/schema")).status_code, 403)
+
+    async def test_same_named_input_output_capture_keeps_categories_and_filters_separate(self):
+        node = self.broker.plan["components"]["source"]
+        node["inputs"]["settings"] = dict(node["outputs"]["settings"])
+        manager = self.app.state.recordings
+        await manager.refresh(force=True)
+        points = (await self.client.get("/api/v1/recording-points", params={"search": "source.settings"})).json()["items"]
+        self.assertEqual(len(points), 2)
+        by_kind = {point["kind"]: point for point in points}
+        self.assertNotEqual(by_kind["input"]["id"], by_kind["output"]["id"])
+        self.assertEqual({point["topic"] for point in points}, {"source.settings"})
+        only_inputs = (await self.client.get("/api/v1/recording-points", params={"kind": "input"})).json()["items"]
+        self.assertEqual([p["id"] for p in only_inputs], [by_kind["input"]["id"]])
+        for point in points:
+            self.assertEqual((await self.client.get(f"/api/v1/recording-points/{point['id']}/schema")).status_code, 200)
+        created = await self.wait_operation(await self.request("POST", "/recordings", {
+            "selection": [by_kind["input"]["id"], by_kind["output"]["id"]],
+            "filters": {by_kind["input"]["id"]: "enabled == true"}}))
+        self.assertEqual(created["status"], "complete", created)
+        capture = created["result"]
+        selection = {point["kind"]: point for point in capture["selection"]}
+        self.assertEqual(selection["input"]["topic"], "source.settings")
+        self.assertNotEqual(selection["input"]["point_key"], selection["output"]["point_key"])
+        self.assertEqual(selection["input"]["filter"], "enabled == true")
+        self.assertIsNone(selection["output"]["filter"])
+        identity = capture["id"]
+        started = await self.wait_operation(await self.request("POST", f"/recordings/{identity}/start"))
+        self.assertEqual(started["status"], "complete", started)
+        envelope = self.broker.codec.wrap(CATALOGUE, self.broker.parameters.service.values["machine/settings"])
+        self.broker.component_recording("source", "recording_input", dict(port="settings", sequence=1), envelope)
+        await self.broker.publish("source.settings", envelope)
+        await self.until(lambda: manager.recorders[identity].capture.counts["written"] == 2)
+        stopped = await self.wait_operation(await self.request("POST", f"/recordings/{identity}/stop"))
+        self.assertEqual(stopped["status"], "complete", stopped)
+        saved = (await self.client.get(f"/api/v1/recordings/{identity}")).json()
+        self.assertEqual(saved["status"]["topics"], {p["point_key"]: 1 for p in capture["selection"]})
+        from sdl_recording import RecordingReader
+        records = list(RecordingReader(Path(self.config["state_dir"]) / "captures" / identity / "capture.pcapng").iter_records())
+        self.assertEqual({r.channel.metadata["ose.kind"] for r in records}, {"input", "output"})
+        self.assertEqual({r.channel.topic for r in records}, {"source.settings"})
+        scoped = await self.wait_operation(await self.request("POST", "/recordings", {"selection": ["all"], "kind": "input"}))
+        self.assertEqual([p["kind"] for p in scoped["result"]["selection"]], ["input"])
+
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

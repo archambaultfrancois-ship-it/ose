@@ -19,8 +19,7 @@ from ose.modeling.compiler import build
 SDL_ROOT = os.environ.get("SDL_ROOT")
 
 
-@unittest.skipUnless(SDL_ROOT, "set SDL_ROOT")
-class FaninTests(unittest.IsolatedAsyncioTestCase):
+class FaninFixture:
     @classmethod
     def setUpClass(cls):
         temporary = tempfile.TemporaryDirectory()
@@ -36,7 +35,8 @@ class FaninTests(unittest.IsolatedAsyncioTestCase):
             name: dict(inputs={}, outputs={"out": desc}, trigger=dict(mode="periodic", period_ms=1000))
             for name in ("left", "right")}, subscriptions=[
                 dict(id=name, **{"from": name + ".out", "to": "sink.input"}) for name in ("left", "right")])
-        model["components"]["sink"] = dict(inputs={"input": desc}, outputs={},
+        model["components"]["sink"] = dict(inputs={"input": desc},
+            outputs={"input": desc} if getattr(cls, "sink_output", False) else {},
             trigger=dict(mode="periodic", period_ms=5), parameters={"path": "unused"})
         deployment = dict(version=1, components={name: dict(container=dict(language="python",
             handler="sink.py" if name == "sink" else "idle.py")) for name in model["components"]})
@@ -137,6 +137,9 @@ class FaninTests(unittest.IsolatedAsyncioTestCase):
         if latest:
             self.assertEqual(set(self.values()), {30})
 
+
+@unittest.skipUnless(SDL_ROOT, "set SDL_ROOT")
+class FaninTests(FaninFixture, unittest.IsolatedAsyncioTestCase):
     async def test_local_fifo_merges_tcp_udp_with_independent_ack(self):
         await self.exercise()
 

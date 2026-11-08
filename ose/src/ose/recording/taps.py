@@ -53,13 +53,22 @@ class TapHub:
             offset = header.get("offset", 0)
             if type(offset) is not int or offset < 0:
                 raise ValueError("invalid recording point offset")
-            points = sorted(self.points().values(), key=lambda point: point["topic"])
+            points = sorted(self.points().values(), key=lambda point: (point["topic"], point.get("kind", "output")))
             page = [{k: v for k, v in point.items() if k != "catalogue"}
                     for point in points[offset:offset + 100]]
             return {"points": page, "next": offset + len(page) if offset + len(page) < len(points) else None,
                     "max_frame": self.max_frame}, None
         if op in ("recording_describe", "recording_state"):
-            point = self.points()[header["topic"]]
+            points = self.points()
+            key = header["topic"]
+            if "kind" in header:
+                matches = [point for point in points.values()
+                           if point["topic"] == key and point.get("kind", "output") == header["kind"]]
+                if len(matches) != 1:
+                    raise ValueError("recording point name and kind must identify one point")
+                point = matches[0]
+            else:
+                point = points[key]
             return {k: v for k, v in point.items() if k != "catalogue"}, point["catalogue"].encode() if op == "recording_describe" else None
         if op == "recording_open":
             label = session_label(header.get("label", DEFAULT_LABEL))
@@ -128,8 +137,8 @@ class TapHub:
             metadata, body = session["queue"].popleft()
             session["bytes"] -= len(body)
             session["counts"]["delivered"] += 1
-            session["point_counts"][metadata["topic"]]["delivered"] += 1
-            return {"record": metadata, **self.stats(session, metadata["topic"])}, body
+            session["point_counts"][metadata.get("point", metadata["topic"])]["delivered"] += 1
+            return {"record": metadata, **self.stats(session, metadata.get("point", metadata["topic"]))}, body
         finally:
             session["polling"] = False
 
@@ -155,11 +164,13 @@ class TapHub:
         # Keep the hot path constant when nobody is recording.
         if not self.sessions:
             return
-        metadata = {"topic": topic, "generation": generation, "sequence": sequence}
         for session in self.sessions.values():
             expected = session["points"].get(topic)
             if not session["active"] or expected is None:
                 continue
+            metadata = {"topic": expected.get("topic", topic), "generation": generation, "sequence": sequence}
+            if metadata["topic"] != topic:
+                metadata["point"] = topic
             session["counts"]["observed"] += 1
             session.setdefault("point_counts", {}).setdefault(topic, Counter())["observed"] += 1
             if (catalogue, root, generation) != (expected["catalogue"], expected["root"], expected["generation"]):
@@ -201,7 +212,7 @@ class TapHub:
                 old_metadata, old = session["queue"].popleft()
                 session["bytes"] -= len(old)
                 session["counts"]["dropped"] += 1
-                session["point_counts"][old_metadata["topic"]]["dropped"] += 1
+                session["point_counts"][old_metadata.get("point", old_metadata["topic"])]["dropped"] += 1
             session["queue"].append((metadata, body))
             session["bytes"] += len(body)
             session["changed"].set()

@@ -4,6 +4,58 @@ import RecordingsPage from '../src/components/RecordingsPage.vue'
 import { account } from '../src/api'
 
 let app: ReturnType<typeof createApp> | undefined
+
+it('selects and filters same-named inputs and outputs independently by point identity', async () => {
+  const points = [
+    { id: 'point-in', topic: 'node.value', kind: 'input', root: 'Value', available: true, sources: ['a.out', 'b.out'], reception: { buffer: 'fifo', capacity: 8 } },
+    { id: 'point-out', topic: 'node.value', kind: 'output', root: 'Value', available: true },
+  ]
+  const requests: any[] = []
+  vi.stubGlobal('fetch', vi.fn(async (path: string, options: any) => {
+    requests.push({ path, data: JSON.parse(options.body) })
+    return new Response(JSON.stringify({ status: 'complete', result: { selection: points } }), { status: 200 })
+  }))
+  const root = document.createElement('div'); document.body.append(root)
+  app = createApp({ render: () => h(RecordingsPage, { points, captures: [] }) }); app.mount(root)
+  const kind = root.querySelector('select') as HTMLSelectElement
+  kind.value = 'input'; kind.dispatchEvent(new Event('change', { bubbles: true })); await nextTick()
+  expect(root.querySelectorAll('.point')).toHaveLength(1)
+  expect(root.textContent).toContain('Sources: a.out, b.out')
+  ;(root.querySelector('.point input[type="checkbox"]') as HTMLInputElement).click(); await nextTick()
+  const inputFilter = root.querySelector('.filter-row input') as HTMLInputElement
+  inputFilter.value = 'value > 10'; inputFilter.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+  button(root, 'Validate').click(); await until(() => requests.length === 1)
+  expect(requests[0].data).toEqual({ point_id: 'point-in', expression: 'value > 10' })
+  kind.value = ''; kind.dispatchEvent(new Event('change', { bubbles: true })); await nextTick()
+  const checkboxes = root.querySelectorAll<HTMLInputElement>('.point input[type="checkbox"]')
+  expect(checkboxes[0].checked).toBe(true); expect(checkboxes[1].checked).toBe(false)
+  checkboxes[1].click(); await nextTick()
+  const outputFilter = root.querySelectorAll<HTMLInputElement>('.filter-row input')[1]
+  expect(outputFilter.value).toBe('')
+  outputFilter.value = 'value < 5'; outputFilter.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+  button(root, 'Create capture draft').click(); await until(() => requests.length === 2)
+  expect(requests[1].data.selection).toEqual(['point-in', 'point-out'])
+  expect(requests[1].data.filters).toEqual({ 'point-in': 'value > 10', 'point-out': 'value < 5' })
+})
+
+it('keeps same-named point counters and duplicated configurations separate', async () => {
+  const selection = [
+    { topic: 'node.value', kind: 'input', point_id: 'point-in', point_key: 'input:node.value', root: 'Value', filter: 'value > 10' },
+    { topic: 'node.value', kind: 'output', point_id: 'point-out', point_key: 'node.value', root: 'Value', filter: null },
+  ]
+  const points = selection.map(p => ({ ...p, id: p.point_id, available: true }))
+  const recorded = { ...capture(), selection, status: { topics: { 'input:node.value': 3, 'node.value': 7 }, topic_bytes: { 'input:node.value': 1000, 'node.value': 7000 } } }
+  const root = document.createElement('div'); document.body.append(root)
+  app = createApp({ render: () => h(RecordingsPage, { points, captures: [recorded] }) }); app.mount(root)
+  const rows = root.querySelectorAll('.point-selection li')
+  expect(rows[0].textContent).toContain('input'); expect(rows[0].textContent).toContain('3 recorded')
+  expect(rows[1].textContent).toContain('output'); expect(rows[1].textContent).toContain('7 recorded')
+  expect(rows[0].querySelector('.point-recording-size')?.textContent).toContain('1.00 KB')
+  expect(rows[1].querySelector('.point-recording-size')?.textContent).toContain('7.00 KB')
+  button(root, 'Duplicate configuration').click(); await nextTick()
+  expect([...root.querySelectorAll<HTMLInputElement>('.point input[type="checkbox"]')].map(p => p.checked)).toEqual([true, true])
+  expect([...root.querySelectorAll<HTMLInputElement>('.filter-row input')].map(p => p.value)).toEqual(['value > 10', ''])
+})
 afterEach(() => {
   app?.unmount()
   document.body.innerHTML = ''

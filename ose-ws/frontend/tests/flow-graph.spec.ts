@@ -11,8 +11,8 @@ const topology: Topology = {
 
 it('lays out the real vibration model in producer order without overlapping nodes', () => {
   const graph = layout(topology)
-  expect(graph.nodes).toHaveLength(6)
-  expect(graph.edges).toHaveLength(5)
+  expect(graph.nodes).toHaveLength(Object.keys(model.components).length)
+  expect(graph.edges).toHaveLength(model.subscriptions.length)
   for (const edge of graph.edges) {
     const source = graph.nodes.find(node => node.id === edge.source)!
     const target = graph.nodes.find(node => node.id === edge.target)!
@@ -60,8 +60,8 @@ it('opens diagnostics from graph nodes and updates or freezes graph and details 
   const value = ref(report())
   const root = document.createElement('div'); document.body.append(root)
   app = createApp({ render: () => h(ComponentsPage, { report: value.value }) }); app.mount(root)
-  expect(root.querySelectorAll('.flow-node')).toHaveLength(6)
-  expect(root.querySelectorAll('.flow-edge')).toHaveLength(5)
+  expect(root.querySelectorAll('.flow-node')).toHaveLength(Object.keys(model.components).length)
+  expect(root.querySelectorAll('.flow-edge')).toHaveLength(model.subscriptions.length)
   expect(root.querySelector('.flow-edge title')?.textContent).toContain('→')
   const node = root.querySelector('[aria-label="sensor_1: ACTIVE"]')!
   node.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
@@ -93,7 +93,7 @@ it('keeps the status table usable when topology metadata is unavailable', () => 
   const root = document.createElement('div'); document.body.append(root)
   app = createApp(ComponentsPage, { report: { ...report(), topology: null } }); app.mount(root)
   expect(root.textContent).toContain('Flow topology is unavailable')
-  expect(root.querySelectorAll('tbody tr')).toHaveLength(6)
+  expect(root.querySelectorAll('tbody tr')).toHaveLength(Object.keys(model.components).length)
 })
 
 it('opens full link details by tapping a line or label, without a hover event', async () => {

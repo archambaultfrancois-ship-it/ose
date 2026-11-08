@@ -102,6 +102,14 @@ an exclusive lock refuses another console using the same state directory.
   and offline validation. Closing a browser does not stop a capture. Capture
   configuration can be duplicated into a new one-shot object.
 
+Recording inputs use their natural `component.port` names and an `input` category.
+They capture the values selected at tick start, after FIFO overflow or latest-state
+selection. Input/output points with the same name can be selected, filtered and
+duplicated independently; counters remain separate in the capture details.
+The category selector filters the catalogue and additional name/type/glob patterns;
+explicitly checked points remain selected across categories. Source names and
+reception settings are shown for input points. Existing captures remain readable.
+
 - **Parameters:** exact-path access, schema exploration, recursive typed fields,
   fixed multidimensional arrays, paged sequences, optional presence, enums and
   complex values. Validation round-trips through the SDL codec and previews

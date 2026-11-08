@@ -93,3 +93,10 @@ class ComponentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(remote.queue.qsize(), 64)
         self.assertEqual(remote.bytes, 64 * 5)
         self.assertEqual(remote.counts["dropped"], 936)
+
+    async def test_oversize_input_capture_is_dropped_before_it_can_fail_control_rpc(self):
+        remote = RemoteRecording(None, Mock(), max_frame=128)
+        remote.emit_input("input", {}, b"x" * 100, 1)
+        self.assertEqual(remote.queue.qsize(), 0)
+        self.assertEqual(remote.counts["oversize"], 1)
+        self.assertEqual(remote.bytes, 0)

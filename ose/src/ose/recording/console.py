@@ -11,21 +11,21 @@ import sys
 from ose.recording.recorder import Recorder
 from ose.recording.command_input import CommandInput
 from ose.recording.rotation import parse_size
-from ose.recording.selection import resolve
+from ose.recording.selection import resolve, ordered
 from ose.transport.secure import contexts
 
 
-HELP = """list [PATTERN] [--kind internal|output]  discover/refresh recording points
+HELP = """list [PATTERN] [--kind input|output|internal|external]  discover recording points
 reconnect                     reconnect after an application/coordinator restart
-select POINT_OR_PATTERN ...    select by point name, message type, number, or glob
+select [--kind KIND] POINT_OR_PATTERN ...  select by point name, SDL type, number, or glob
 select all                    select all discovered recording points
 unselect POINT_OR_PATTERN ...  same matching rules; all clears the selection
 selected                      show the selection and its filters
 label [NAME]                  show/set the session label (default: recorder)
 max-size [SIZE|off]            rotate at SIZE bytes (B/KB/MB/GB; default: off)
 cycle [N|off]                 keep N files with increasing indices (default: off)
-show POINT                    show its SDL catalogue and applicable field types
-filter POINT EXPRESSION        prepare an SDL filter for a selected point
+show [--kind KIND] POINT       show its SDL catalogue and applicable field types
+filter [--kind KIND] POINT EXPRESSION  prepare an SDL filter for a selected point
 filter POINT off               remove its filter
 start [PATH] [pcapng|mcap]      start a new capture with the current file settings
 status                        show a text summary of files, counts, losses and errors
@@ -42,7 +42,7 @@ Examples: select sensor_*.signal alarm.event
           cycle 3
           start capture.pcapng
 Only matching messages are written. Indeterminate results are counted and skipped.
-Filters run on original encoded values at the source, before capture queueing and transfer.
+Filters run on encoded values at the observation point, before capture queueing and transfer.
 Size units: KB/MB/GB use powers of 1000.
 """
 
@@ -56,9 +56,38 @@ class Console:
     def print(self, value):
         print(value, file=self.output, flush=True)
 
-    def names(self, patterns, *, unselect=False, match_types=False):
+    def names(self, patterns, *, unselect=False, match_types=False, kind=None):
         return resolve(self.recorder.points, patterns,
-                       selected=self.recorder.selected if unselect else None, match_types=match_types)
+                       selected=self.recorder.selected if unselect else None, match_types=match_types, kind=kind)
+
+    @staticmethod
+    def kind_args(values):
+        kind = None
+        if "--kind" in values:
+            position = values.index("--kind")
+            if position + 1 >= len(values) or values[position + 1] not in ("input", "output", "internal", "external"):
+                raise ValueError("--kind requires input, output, internal or external")
+            kind = values[position + 1]
+            del values[position:position + 2]
+        if any(value.startswith("--") for value in values):
+            raise ValueError("unknown recording option")
+        return values, kind
+
+    def label(self, key):
+        point = self.recorder.points.get(key, {})
+        topic = point.get("topic", key)
+        if sum(p.get("topic", name) == topic for name, p in self.recorder.points.items()) > 1:
+            return f"{topic} ({point.get('kind', 'output')})"
+        return topic
+
+    def print_selection(self):
+        if any(self.label(key) != self.recorder.points.get(key, {}).get("topic", key)
+               for key in self.recorder.selected):
+            self.print(json.dumps([dict(name=self.recorder.points[key]["topic"],
+                kind=self.recorder.points[key].get("kind", "output"), filter=expression)
+                for key, expression in self.recorder.selected.items()], sort_keys=True))
+        else:
+            self.print(json.dumps(self.recorder.selected, sort_keys=True))
 
     def print_status(self, status):
         max_size, cycle = status["max_size"], status["cycle"]
@@ -86,7 +115,7 @@ class Console:
         if not selected:
             lines.append("  none")
         for name, expression in sorted(selected.items()):
-            lines.append(f"  {name} — filter: {expression or 'off'}")
+            lines.append(f"  {self.label(name)} — filter: {expression or 'off'}")
             if "file" in status:
                 lines.append(f"    Written: {status['topics'].get(name, 0)}; "
                              f"in current file: {status['file_topics'].get(name, 0)}")
@@ -111,37 +140,32 @@ class Console:
             await self.execute("list")
         elif command in ("list", "refresh"):
             await self.recorder.refresh()
-            values = shlex.split(rest)
-            kind = None
-            if "--kind" in values:
-                position = values.index("--kind")
-                if position + 1 >= len(values) or values[position + 1] not in ("internal", "output"):
-                    raise ValueError("list [PATTERN] [--kind internal|output]")
-                kind = values[position + 1]
-                del values[position:position + 2]
+            values, kind = self.kind_args(shlex.split(rest))
             if len(values) > 1 or any(value.startswith("--") for value in values):
-                raise ValueError("list [PATTERN] [--kind internal|output]")
+                raise ValueError("list [PATTERN] [--kind input|output|internal|external]")
             pattern = values[0] if values else "*"
-            for number, (name, point) in enumerate(sorted(self.recorder.points.items()), 1):
+            for number, name in enumerate(ordered(self.recorder.points), 1):
+                point = self.recorder.points[name]
+                topic = point.get("topic", name)
                 nature = point.get("kind", "output")
-                if fnmatch.fnmatchcase(name, pattern) and (kind is None or kind == nature):
+                if fnmatch.fnmatchcase(topic, pattern) and (kind is None or kind == nature):
                     mark = "*" if name in self.recorder.selected else " "
                     state = "available" if point["available"] else "unavailable"
-                    self.print(f"{number:3} {mark} {name}  {nature}  {point['root']}  {state}")
+                    self.print(f"{number:3} {mark} {topic}  {nature}  {point['root']}  {state}")
         elif command in ("select", "unselect"):
             self.recorder.editable()
-            patterns = shlex.split(rest)
+            patterns, kind = self.kind_args(shlex.split(rest))
             if not patterns:
                 raise ValueError(f"{command} requires a point, message type, list number, pattern or all")
             patterns = ["*" if pattern == "all" else pattern for pattern in patterns]
-            for name in self.names(patterns, unselect=command == "unselect", match_types=True):
+            for name in self.names(patterns, unselect=command == "unselect", match_types=True, kind=kind):
                 if command == "select":
                     self.recorder.selected.setdefault(name, None)
                 else:
                     self.recorder.selected.pop(name, None)
-            self.print(json.dumps(self.recorder.selected, sort_keys=True))
+            self.print_selection()
         elif command == "selected":
-            self.print(json.dumps(self.recorder.selected, sort_keys=True))
+            self.print_selection()
         elif command == "label":
             values = shlex.split(rest)
             if len(values) > 1:
@@ -161,23 +185,39 @@ class Console:
             value = self.recorder.max_size if command == "max-size" else self.recorder.cycle
             self.print(json.dumps({command: value if value is not None else "off"}))
         elif command == "show":
-            names = self.names([rest.strip()])
+            patterns, kind = self.kind_args(shlex.split(rest))
+            if len(patterns) != 1:
+                raise ValueError("show [--kind KIND] POINT")
+            names = self.names(patterns, kind=kind)
             for name in names:
                 desc = await self.recorder.describe(name)
-                self.print(f"{name}: {desc['root']}\nKind: {desc.get('kind', 'output')}\n"
+                detail = ""
+                if desc.get("kind") == "input":
+                    detail = (f"Port: {desc['port']}\nSources: {', '.join(desc['sources']) or 'none'}\n"
+                              f"Reception: {json.dumps(desc['reception'], sort_keys=True)}\n"
+                              "Observation: value selected at tick start\n")
+                self.print(f"{desc.get('topic', name)}: {desc['root']}\nKind: {desc.get('kind', 'output')}\n"
                            f"Component: {desc.get('component', name.split('.')[0])}\n"
                            f"Description: {desc.get('description', '')}\n"
+                           f"{detail}"
                            f"Available: {desc['available']}\nSelected: {name in self.recorder.selected}\n"
                            f"Filter: {self.recorder.selected.get(name) or 'off'}\n{desc['catalogue']}")
         elif command == "filter":
+            kind = None
+            if rest.startswith("--kind "):
+                values = rest.split(None, 2)
+                if len(values) != 3:
+                    raise ValueError("filter [--kind KIND] POINT EXPRESSION")
+                _, kind = self.kind_args(values[:2])
+                rest = values[2]
             point, separator, expression = rest.strip().partition(" ")
             if not separator or not expression.strip():
                 raise ValueError("filter requires POINT EXPRESSION (or POINT off)")
-            names = self.names([point])
+            names = self.names([point], kind=kind)
             if len(names) != 1:
                 raise ValueError("filter requires exactly one point")
             await self.recorder.set_filter(names[0], None if expression.strip() == "off" else expression)
-            self.print(json.dumps(self.recorder.selected, sort_keys=True))
+            self.print_selection()
         elif command == "start":
             values = shlex.split(rest)
             if len(values) > 2:

@@ -13,6 +13,7 @@ from ose.execution.observation import TickTimings, ReportSchedule
 from ose.transport.tcp import Client
 from ose.transport.udp import UDP
 from ose.recording.component import RemoteRecording
+from ose.recording.inputs import InputRecording
 from ose.execution.logs import ComponentLogs
 
 
@@ -23,6 +24,9 @@ class Adapter:
         self.reports = ReportSchedule()
         self.component_logs = ComponentLogs(on_change=self.reports.wake)
         self.codec = SDL2(plan["sdl_root"])
+        self.component_recording = RemoteRecording(self.codec, self._recording_request, max_frame=plan["max_frame"])
+        self.input_recording = InputRecording(self.codec, self.node,
+            lambda: self.component_recording.active_inputs, self.component_recording.emit_input)
         self.subscriptions = {s["id"]: s for s in plan["subscriptions"] if s["to"].split(".")[0] == name}
         self.policies = {identity: SubscriptionPolicy.from_dict(sub["policy"])
                          for identity, sub in self.subscriptions.items()}
@@ -45,6 +49,9 @@ class Adapter:
     def _changed(self):
         self.activity.set()
         self.reports.mark()
+
+    async def _recording_request(self, *args, **kwargs):
+        return await self.client.request(*args, **kwargs)
 
     async def _tcp_data(self, header, body):
         # This callback runs on the subscription's data connection, never the control reader.
@@ -163,6 +170,7 @@ class Adapter:
             reserve_snapshot(self.buffers, selected)
             self.reports.mark()
             self.tick_index += 1
+            self.input_recording.observe(selected, self.tick_index)
             timestamp = time.monotonic_ns() - self.activated_at_ns if self.timed_ticks else None
             async for port, payload in self.timings.events(
                     tick_events(self.process, self.node, selected, timestamp, self.tick_index,
@@ -201,7 +209,6 @@ class Adapter:
                     self.data_clients[identity] = client
                     await client.request("attach", node=self.name, subscription=identity)
             self.parameters = await RemoteBindings(self.node, self.client.request, self.activity).open()
-            self.component_recording = RemoteRecording(self.codec, self.client.request)
             self.process, self.timed_ticks = await start_component(self.node, self.parameters, self.component_recording.endpoint, self.component_logs,
                 **({"working_directory": self.working_directory} if self.working_directory is not None else {}))
             self.process.measurements.on_change = self.reports.mark
@@ -220,7 +227,7 @@ class Adapter:
                      *(client.task for client in self.data_clients.values()), asyncio.create_task(self.process.wait())]
             if self.parameters.task:
                 tasks.append(self.parameters.task)
-            if self.component_recording.endpoint.points:
+            if self.component_recording.endpoint.points or self.node["inputs"]:
                 tasks.extend([asyncio.create_task(self.component_recording.poll()),
                               asyncio.create_task(self.component_recording.send())])
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

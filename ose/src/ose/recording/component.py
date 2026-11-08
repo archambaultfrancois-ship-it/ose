@@ -2,6 +2,7 @@
 import asyncio
 import re
 from collections import Counter
+from ose.transport.protocol import encode
 
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\Z")
 MAX_POINTS = 128
@@ -56,9 +57,10 @@ class ComponentRecording:
 
 class RemoteRecording:
     """Bounded adapter queue and versioned activation watch for the local broker."""
-    def __init__(self, codec, request):
-        self.request = request
+    def __init__(self, codec, request, *, max_frame=1024 * 1024):
+        self.request, self.max_frame = request, max_frame
         self.active = set()
+        self.active_inputs = set()
         self.queue = asyncio.Queue(maxsize=64)
         self.bytes = 0
         self.counts = Counter()
@@ -71,15 +73,29 @@ class RemoteRecording:
             name=name, root=desc["root"], description=desc["description"])
 
     def emit(self, name, desc, payload):
+        self.enqueue(dict(op="recording_emit", name=name), payload)
+
+    def emit_input(self, port, desc, envelope, tick_index):
+        self.enqueue(dict(op="recording_input", port=port, sequence=tick_index), envelope)
+
+    def enqueue(self, header, payload):
         if self.queue.full() or self.bytes + len(payload) > 1024 * 1024:
             self.counts["dropped"] += 1
             return
-        self.queue.put_nowait((name, payload))
+        try:
+            size = len(encode({**header, "request": 2**63 - 1}, limit=self.max_frame))
+            if size + len(payload) > self.max_frame:
+                raise ValueError("recording frame too large")
+        except ValueError:
+            self.counts["oversize"] += 1
+            return
+        self.queue.put_nowait((header, payload))
         self.bytes += len(payload)
 
     async def poll(self):
         version = None
         self.active.clear()
+        self.active_inputs.clear()
         while not self.closed:
             result, _ = await self.request("recording_component_state", watch=True, after=version)
             if self.closed:
@@ -88,6 +104,7 @@ class RemoteRecording:
             if next_version is None:
                 # Older brokers ignore watch/after and return an immediate snapshot.
                 self.active = set(result['active'])
+                self.active_inputs = set(result.get('inputs', ()))
                 await asyncio.sleep(.05)
                 continue
             if type(next_version) is not int or next_version < 0:
@@ -96,17 +113,19 @@ class RemoteRecording:
                 raise ValueError('recording activation generation changed')
             version = next_version
             self.active = set(result["active"])
+            self.active_inputs = set(result.get("inputs", ()))
 
     def close(self):
         self.closed = True
         self.active.clear()
+        self.active_inputs.clear()
 
     async def send(self):
         while not self.closed:
-            name, payload = await self.queue.get()
+            header, payload = await self.queue.get()
             try:
                 if self.closed:
                     return
-                await self.request("recording_emit", payload, name=name)
+                await self.request(header["op"], payload, **{key: value for key, value in header.items() if key != "op"})
             finally:
                 self.bytes -= len(payload)

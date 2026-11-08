@@ -36,7 +36,7 @@ class Recorder:
         while True:
             page, _ = await self.client.request("recording_points", offset=offset)
             self.max_frame = min(self.max_frame, page["max_frame"])
-            points.update((point["topic"], point) for point in page["points"])
+            points.update((point.get("id", point["topic"]), point) for point in page["points"])
             if page["next"] is None:
                 break
             offset = page["next"]
@@ -49,10 +49,12 @@ class Recorder:
             await self.client.close()
         await self.connect()
 
-    async def describe(self, topic):
-        result, body = await self.client.request("recording_describe", topic=topic)
+    async def describe(self, topic, *, kind=None):
+        result, body = await self.client.request("recording_describe", topic=topic,
+                                                **({"kind": kind} if kind is not None else {}))
         return {k: result[k] for k in ("topic", "root", "generation", "available", "endpoint",
-                "kind", "component", "name", "description") if k in result} | {"catalogue": body.decode()}
+                "kind", "component", "name", "description", "id", "port", "sources", "reception", "observation")
+                if k in result} | {"catalogue": body.decode()}
 
     def editable(self):
         if self.capture and not self.capture.task.done():
@@ -157,14 +159,19 @@ class Capture:
             "producer": "ose-recorder", "label": self.label, "started_at_ns": str(time.time_ns()),
             "filters": json.dumps(self.filters, sort_keys=True), "filtering": "source",
             "timestamps": "recorder Unix arrival time; production time unavailable",
-            "sequence": "source publication sequence modulo 2^32; generation in channel metadata",
+            "sequence": "publication sequence or input tick index modulo 2^32; generation in channel metadata",
             "base_file": str(self.files.base), "file_index": str(self.files.index),
             "max_size": str(self.max_size or "off"), "cycle": str(self.cycle or "off")})
         for topic, desc in self.descriptions.items():
-            self.channels[topic] = self.writer.register_channel(topic=topic, catalogue=desc["catalogue"],
-                root_type=desc["root"], metadata={"ose.generation": desc["generation"],
-                    "ose.filter": self.filters[topic] or "", "ose.filter_location": "source",
-                    "ose.payload": "original SDL2 bytes"})
+            metadata = {"ose.generation": desc["generation"], "ose.kind": desc.get("kind", "output"),
+                "ose.filter": self.filters[topic] or "", "ose.filter_location": "source",
+                "ose.payload": "input SDL2 value" if desc.get("kind") == "input" else "original SDL2 bytes"}
+            if desc.get("kind") == "input":
+                metadata.update({"ose.observation": "tick", "ose.component": desc["component"],
+                    "ose.port": desc["port"], "ose.sources": json.dumps(desc["sources"]),
+                    "ose.reception": json.dumps(desc["reception"], sort_keys=True)})
+            self.channels[topic] = self.writer.register_channel(topic=desc["topic"], catalogue=desc["catalogue"],
+                root_type=desc["root"], metadata=metadata)
         self.file_bytes = stream.tell()
 
     async def open(self):
@@ -202,7 +209,7 @@ class Capture:
             raise
 
     def write(self, record, envelope):
-        topic = record["topic"]
+        topic = record.get("point", record["topic"])
         desc = self.descriptions[topic]
         if record["generation"] != desc["generation"]:
             raise ValueError("recording source generation changed")

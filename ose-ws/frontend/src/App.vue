@@ -12,7 +12,7 @@ const pages = [
   { id: 'components', label: 'Components', icon: '◫', description: 'Execution health, delivery queues and protocol timings.' },
   { id: 'logs', label: 'Logs', icon: '≡', description: 'Follow component logs and filter by source, severity, category and message.' },
   { id: 'measurements', label: 'Measurements', icon: '⌁', description: 'Follow scalar observations and inspect recent history.' },
-  { id: 'recordings', label: 'Recordings', icon: '◉', description: 'Capture original messages at the source.' },
+  { id: 'recordings', label: 'Recordings', icon: '◉', description: 'Capture publications, selected inputs and internal points.' },
   { id: 'parameters', label: 'Parameters', icon: '⚙', description: 'Inspect, validate and replace typed parameter blocks.' },
 ]
 function pageFromLocation() {

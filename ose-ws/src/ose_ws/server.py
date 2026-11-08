@@ -352,7 +352,7 @@ def create_app(config):
         signed_in = session(request)
         await recordings.refresh()
         visible = [dict(point, id=opaque("point", topic)) for topic, point in sorted(recordings.points.items())
-                   if signed_in.allows("recordings.create", topic) and search.lower() in topic.lower() and (not kind or kind == point.get("kind"))]
+                   if signed_in.allows("recordings.create", point["topic"]) and search.lower() in point["topic"].lower() and (not kind or kind == point.get("kind"))]
         # Endpoint details are used by the server, never trusted from a browser.
         for point in visible:
             point.pop("endpoint", None)
@@ -370,7 +370,7 @@ def create_app(config):
         signed_in = session(request)
         await recordings.refresh()
         require(identity in recordings.point_ids, "Recording point not found.", 404)
-        signed_in.check("recordings.create", recordings.point_ids[identity])
+        signed_in.check("recordings.create", recordings.points[recordings.point_ids[identity]]["topic"])
         desc = await recordings.describe(identity)
         adapter = await asyncio.to_thread(SchemaAdapter, desc["catalogue"], desc["root"])
         return await asyncio.to_thread(adapter.description)
@@ -381,7 +381,7 @@ def create_app(config):
         await recordings.refresh()
         topic = recordings.point_ids.get(data.get("point_id"))
         require(topic is not None, "Recording point not found.", 404)
-        signed_in.check("recordings.create", topic)
+        signed_in.check("recordings.create", recordings.points[topic]["topic"])
         require(isinstance(data.get("expression"), str) and len(data["expression"]) <= 16384, "Invalid filter expression.")
         desc = await recordings.describe(data["point_id"])
         def validate():

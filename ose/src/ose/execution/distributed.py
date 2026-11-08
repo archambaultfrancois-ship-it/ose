@@ -29,6 +29,7 @@ from ose.transport.protocol import encode
 from ose.transport.secure import RPCServer, connect, finish_cleanup, identity, loopback
 from ose.recording.taps import TapHub, OPERATIONS as RECORDING_OPERATIONS
 from ose.recording.component import ComponentRecording, validate_name, MAX_POINTS
+from ose.recording.inputs import InputRecording, input_points, input_key
 from ose.execution.logs import LogStore, ComponentLogs
 
 
@@ -164,6 +165,11 @@ class Coordinator:
                     endpoint={"host": nodes[name]["host"], "port": nodes[name]["port"], "identity": name}
                              if name in nodes else None)
                 for name, node in self.plan["components"].items() for port, desc in node["outputs"].items()}
+        for name in self.plan["components"]:
+            endpoint = ({"host": nodes[name]["host"], "port": nodes[name]["port"], "identity": name}
+                        if name in nodes else None)
+            points.update(input_points(self.plan, name, nodes.get(name, {}).get("token"),
+                                       self.activated and name in nodes, endpoint))
         for name, session in self.sessions.items():
             for local, desc in session.get("recording_points", {}).items():
                 topic = f"{name}.record.{local}"
@@ -497,6 +503,8 @@ class Worker:
         self.scheduler = Scheduler(self.node, self.buffers)
         self.timings = TickTimings()
         self.recording = TapHub(self.recording_points, plan["max_frame"], codec=self.codec)
+        self.input_recording = InputRecording(self.codec, self.node,
+                                             self._active_inputs, self._emit_input)
         self.internal_recording = ComponentRecording(self.codec, declare=self._declare_recording,
             active=self._active_recording, emit=self._emit_recording)
         self.recording_sequence = 0
@@ -518,11 +526,22 @@ class Worker:
         points = {f"{self.name}.{port}": dict(topic=f"{self.name}.{port}", root=desc["root"], catalogue=desc["catalogue"], kind="output",
                     generation=getattr(self, "token", None), available=self.started.is_set(), endpoint=None)
                 for port, desc in self.node["outputs"].items()}
+        points.update(input_points(self.plan, self.name, getattr(self, "token", None), self.started.is_set()))
         for local, desc in self.internal_recording.points.items():
             topic = f"{self.name}.record.{local}"
             points[topic] = dict(desc, topic=topic, kind="internal", component=self.name, name=local,
                 generation=getattr(self, "token", None), available=self.started.is_set(), endpoint=None)
         return points
+
+    def _emit_input(self, port, desc, envelope, tick_index):
+        self.recording.observe(input_key(self.plan, self.name, port), envelope,
+            generation=self.token, sequence=tick_index, catalogue=desc["catalogue"], root=desc["root"])
+
+    def _active_inputs(self):
+        if not self.recording.sessions:
+            return ()
+        active = self.recording.active_points()
+        return {port for port in self.node["inputs"] if input_key(self.plan, self.name, port) in active}
 
     async def _declare_recording(self, name, desc):
         await self.control("recording_declare", desc["catalogue"].encode(), name=name,
@@ -767,6 +786,7 @@ class Worker:
             reserve_snapshot(self.buffers, selected)
             self.reports.mark()
             self.metrics["ticks"] += 1
+            self.input_recording.observe(selected, self.metrics["ticks"])
             async for port, payload in self.timings.events(tick_events(self.process, self.node, selected,
                     time.monotonic_ns() - self.started_at, self.metrics["ticks"], **({"parameters": self.parameters} if self.node.get("parameter_bindings") else {}))):
                 desc = self.node["outputs"][port]

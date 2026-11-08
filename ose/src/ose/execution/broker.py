@@ -16,6 +16,7 @@ from ose.parameters.service import ParameterEndpoint, OPERATIONS as PARAMETER_OP
 from ose.recording.taps import TapHub, OPERATIONS as RECORDING_OPERATIONS
 from ose.execution.observation import describe, ObservationDemand, subscription_schema
 from ose.recording.component import validate_name, MAX_POINTS
+from ose.recording.inputs import input_points, input_key
 from ose.execution.logs import LogStore
 
 
@@ -76,15 +77,35 @@ class Broker(Sessions):
             generation=self.generations.get(desc["component"]),
             available=self.enabled and desc["component"] in self.ready)
             for topic, desc in self.internal_points.items()})
+        for name in self.plan["components"]:
+            outputs.update(input_points(self.plan, name, self.generations.get(name),
+                self.enabled and name in self.ready))
         return outputs
+
+    def recording_activation(self, node, active):
+        prefix = f"{node}.record."
+        return dict(active=sorted(topic[len(prefix):] for topic in active if topic.startswith(prefix)),
+                    inputs=sorted(port for port in self.plan["components"][node]["inputs"]
+                                  if input_key(self.plan, node, port) in active))
 
     def component_recording(self, node, op, header, body):
         if node is None:
             raise ValueError("recording component operations require an identified component")
         prefix = f"{node}.record."
         if op == "recording_component_state":
-            return {"active": [topic[len(prefix):] for topic in self.recording.active_points()
-                               if topic.startswith(prefix)]}
+            return self.recording_activation(node, self.recording.active_points())
+        if op == "recording_input":
+            port = header["port"]
+            desc = self.plan["components"][node]["inputs"][port]
+            sequence = header["sequence"]
+            if node not in self.ready or type(sequence) is not int or sequence < 1:
+                raise ValueError("input recording requires a ready component and positive tick index")
+            key = input_key(self.plan, node, port)
+            if key in self.recording.active_points():
+                self.codec.validate_only(desc["catalogue"], desc["root"], body)
+                self.recording.observe(key, body, generation=self.generations[node], sequence=sequence,
+                                       catalogue=desc["catalogue"], root=desc["root"])
+            return {}
         name = validate_name(header["name"])
         topic = prefix + name
         if op == "recording_declare":
@@ -319,7 +340,7 @@ class Broker(Sessions):
                         self.readiness.set()
                         if peer in self.demand.members:
                             result['reporting'] = self.demand.state()
-                    elif op in ("recording_declare", "recording_component_state", "recording_emit"):
+                    elif op in ("recording_declare", "recording_component_state", "recording_emit", "recording_input"):
                         result = self.component_recording(node, op, header, body)
                     elif op == "state":
                         result = {"enabled": self.enabled}
@@ -378,7 +399,8 @@ class Broker(Sessions):
                 await self.close_session(session)
             if node is not None and self.peers.get(node, (None,))[0] is peer:
                 topics = [topic for topic, desc in self.internal_points.items() if desc["component"] == node]
-                self.recording.invalidate(topics)
+                self.recording.invalidate(topics + [input_key(self.plan, node, port)
+                                                    for port in self.plan["components"][node]["inputs"]])
                 for topic in topics:
                     del self.internal_points[topic]
                 self.peers.pop(node, None)
@@ -402,9 +424,8 @@ class Broker(Sessions):
             if header['watch'] is not True:
                 raise ValueError('recording watch must be boolean')
             version, active = await self.recording.activation(header.get('after'))
-            prefix = f'{node}.record.'
             await self._reply(peer, header['request'], dict(version=version,
-                active=sorted(topic[len(prefix):] for topic in active if topic.startswith(prefix))))
+                **self.recording_activation(node, active)))
         except (ValueError, KeyError, TypeError) as error:
             await self._reply(peer, header.get('request'), error=str(error))
 

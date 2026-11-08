@@ -58,7 +58,7 @@ class RecordingManager:
                 await self.discovery.connect()
                 self.points = self.discovery.points
                 for topic, point in self.points.items():
-                    component, _, name = topic.partition(".")
+                    component, _, name = point["topic"].partition(".")
                     point.setdefault("component", component)
                     point.setdefault("name", name)
                 self.point_ids = {opaque("point", topic): topic for topic in self.points}
@@ -117,15 +117,32 @@ class RecordingManager:
         await self.refresh()
         patterns = body.get("selection", [])
         require(isinstance(patterns, list) and patterns and all(isinstance(p, str) for p in patterns), "Select recording points, types or globs.")
-        topics = resolve(self.points, patterns)
+        kind = body.get("kind") or None
+        require(kind in (None, "input", "output", "internal", "external"), "Invalid recording point kind.")
+        topics = set()
+        for pattern in patterns:
+            if pattern in self.point_ids:
+                topics.add(self.point_ids[pattern])
+            else:
+                topics.update(resolve(self.points, [pattern], kind=kind))
+        topics = sorted(topics)
         filters = body.get("filters", {})
-        require(isinstance(filters, dict) and all(topic in topics and isinstance(value, str) for topic, value in filters.items()), "Invalid point filters.")
+        require(isinstance(filters, dict) and all(isinstance(value, str) for value in filters.values()), "Invalid point filters.")
         require(all(len(value) <= 16384 for value in filters.values()), "A source filter exceeds 16384 characters.")
+        resolved_filters = {}
+        for selector, expression in filters.items():
+            matches = ([self.point_ids[selector]] if selector in self.point_ids else
+                       [key for key in topics if self.points[key]["topic"] == selector])
+            require(matches and all(key in topics for key in matches), "Invalid point filters.")
+            for key in matches:
+                require(key not in resolved_filters or resolved_filters[key] == expression, "Conflicting point filters.")
+                resolved_filters[key] = expression
+        filters = resolved_filters
         result = []
         for topic in topics:
-            session.check("recordings.create", topic)
             point = self.points[topic]
-            require(point["available"], f"Point unavailable: {topic}", 409)
+            session.check("recordings.create", point["topic"])
+            require(point["available"], f"Point unavailable: {point['topic']}", 409)
             if filters.get(topic):
                 async with self.discovery_lock:
                     description = await self.discovery.describe(topic)
@@ -134,7 +151,9 @@ class RecordingManager:
                     predicate = prepare_filter(description, filters[topic])
                     predicate.close()
                 await asyncio.to_thread(validate_filter)
-            result.append({"topic": topic, "generation": point["generation"], "root": point["root"], "filter": filters.get(topic) or None})
+            result.append({"topic": point["topic"], "point_key": topic, "point_id": opaque("point", topic),
+                           "kind": point.get("kind", "output"), "generation": point["generation"],
+                           "root": point["root"], "filter": filters.get(topic) or None})
         return result
 
     async def create(self, session, body):
@@ -232,10 +251,13 @@ class RecordingManager:
                 await recorder.connect()
                 for selected in capture["selection"]:
                     session.check("recordings.create", selected["topic"])
-                    desc = await recorder.describe(selected["topic"])
+                    point_key = selected.get("point_key", selected["topic"])
+                    desc = await recorder.describe(point_key)
                     require(desc["generation"] == selected["generation"] and desc["root"] == selected["root"],
                             "A selected source changed; create a new draft.", 409, "SOURCE_CHANGED")
-                    recorder.selected[selected["topic"]] = selected["filter"]
+                    require("kind" not in selected or desc.get("kind", "output") == selected["kind"],
+                            "A selected point changed kind; create a new draft.", 409, "SOURCE_CHANGED")
+                    recorder.selected[point_key] = selected["filter"]
                 directory = self.store.root / "captures" / identity
                 directory.mkdir(mode=0o700)
                 await recorder.start(directory / ("capture." + capture["settings"]["format"]), format=capture["settings"]["format"])
