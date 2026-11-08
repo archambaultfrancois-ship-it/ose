@@ -379,26 +379,38 @@ class Project:
             component, port = destination.split('.')
             if port not in model.get('components', {}).get(component, {}).get('inputs', {}):
                 raise ValueError('Unknown destination input')
-            if any(sub['to'] == destination for sub in subs):
-                raise ValueError('This input already has a producer')
             subscription = {**deepcopy(source), 'id': name, 'to': destination}
+            self._inherit_reception(subscription, subs)
             self.json_set(self.model, ['subscriptions', '-'], subscription)
-            self._check_connection(subscription)
             for key in self.deployments:
                 deployment = loads(self.document(key).text)
                 if source['id'] in deployment.get('subscriptions', {}):
                     self.json_set(key, ['subscriptions', name], deepcopy(deployment['subscriptions'][source['id']]))
+            self._check_connection(subscription)
         elif action == 'connect':
             model = loads(self.document(self.model).text)
             subs = model.get('subscriptions', [])
-            if any(sub['to'] == command['to'] for sub in subs):
-                raise ValueError('This input already has a producer')
             source_key = 'from_topic' if command.get('external') else 'from'
             subscription = {'id': command['name'], source_key: command['from'], 'to': command['to']}
             if any(sub['id'] == subscription['id'] for sub in subs):
                 raise ValueError('Subscription ID already exists')
+            self._inherit_reception(subscription, subs)
             self.json_set(self.model, ['subscriptions', '-'], subscription)
             self._check_connection(subscription)
+        elif action == 'set_reception':
+            from ose.delivery.policies import SubscriptionPolicy
+            model = loads(self.document(self.model).text)
+            target = command['to']
+            incoming = [(i, sub) for i, sub in enumerate(model.get('subscriptions', [])) if sub['to'] == target]
+            if not incoming:
+                raise ValueError('Connect an input before editing its reception policy')
+            settings = command['reception']
+            if not isinstance(settings, dict) or set(settings) - {'buffer', 'capacity', 'overflow', 'wait_timeout_ms'}:
+                raise ValueError('Reception settings are buffer, capacity, overflow and wait_timeout_ms')
+            reception = SubscriptionPolicy.resolve(settings).reception()
+            for index, sub in incoming:
+                self.json_set(self.model, ['subscriptions', str(index), 'qos'], {**sub.get('qos', {}), **reception})
+            self._check_reception(target)
         elif action == 'workspace':
             for key in ('positions', 'groups', 'views', 'pinned'):
                 if key in command:
@@ -427,6 +439,28 @@ class Project:
         else:
             raise ValueError('Unknown command: ' + action)
 
+    @staticmethod
+    def _inherit_reception(subscription, subscriptions):
+        from ose.delivery.policies import SubscriptionPolicy
+        existing = next((sub for sub in subscriptions if sub['to'] == subscription['to']), None)
+        if existing is not None:
+            reception = SubscriptionPolicy.resolve(existing.get('qos')).reception()
+            subscription['qos'] = {**subscription.get('qos', {}), **reception}
+
+    def _check_reception(self, target):
+        from ose.delivery.policies import SubscriptionPolicy, reception_policies
+        model = loads(self.document(self.model).text)
+        deployments = [loads(self.document(key).text) for key in self.deployments] or [{}]
+        for deployment in deployments:
+            resolved = []
+            for sub in model.get('subscriptions', []):
+                if sub['to'] != target:
+                    continue
+                transport = deployment.get('subscriptions', {}).get(sub['id'], {}).get('transport', 'tcp')
+                policy = SubscriptionPolicy.resolve(sub.get('qos'), transport)
+                resolved.append({'to': target, 'policy': policy.to_dict()})
+            reception_policies(resolved)
+
     def _check_connection(self, subscription):
         model = loads(self.document(self.model).text)
         target, input_name = subscription['to'].split('.')
@@ -452,6 +486,7 @@ class Project:
             publisher = model['external_topics'][subscription['from_topic']]
         if publisher['root'] != consumer['root']:
             raise ValueError('Connected roots must have the same logical name')
+        self._check_reception(subscription['to'])
 
     def rename(self, command):
         kind, old, new = command['kind'], command.get('old', ''), command['name']

@@ -1,3 +1,5 @@
+import { receptionFor } from './reception'
+
 export type LinkStyle = 'default' | 'straight' | 'smoothstep'
 
 export function topology(model: any, workspace: any, labels = true, linkStyle: LinkStyle = 'default') {
@@ -28,7 +30,7 @@ export function topology(model: any, workspace: any, labels = true, linkStyle: L
     const component = raw as any, id = collapsed.get(name) || 'component:' + name
     for (const direction of ['inputs', 'outputs']) for (const port of Object.keys(component[direction] || {})) endpoint.set(name + '.' + port, id)
     if (collapsed.has(name)) continue
-    const ports = (direction: string) => Object.entries(component[direction] || {}).map(([port, type]: any) => ({ name: port, endpoint: name + '.' + port, root: type.root, required: type.required !== false }))
+    const ports = (direction: string) => Object.entries(component[direction] || {}).map(([port, type]: any) => ({ name: port, endpoint: name + '.' + port, root: type.root, required: type.required !== false, ...(direction === 'inputs' ? { reception: receptionFor(model, name + '.' + port) } : {}) }))
     nodes.push({ id, type: 'component', position: workspace?.positions?.[name] || { x: nodes.length % 4 * 340, y: Math.floor(nodes.length / 4) * 260 },
       data: { name, kind: 'component', trigger: component.trigger, inputs: ports('inputs'), outputs: ports('outputs') } })
   }
@@ -49,7 +51,7 @@ export function topology(model: any, workspace: any, labels = true, linkStyle: L
       const internal = direction === 'inputs' ? internalInputs : internalOutputs, crossing = direction === 'inputs' ? crossingInputs : crossingOutputs
       return members.flatMap((name: string) => Object.entries(components[name]?.[direction] || {})
         .filter(([port]) => !internal.has(name + '.' + port) || crossing.has(name + '.' + port))
-        .map(([port, type]: any) => ({ name: name + '.' + port, endpoint: name + '.' + port, root: type.root, required: type.required !== false })))
+        .map(([port, type]: any) => ({ name: name + '.' + port, endpoint: name + '.' + port, root: type.root, required: type.required !== false, ...(direction === 'inputs' ? { reception: receptionFor(model, name + '.' + port) } : {}) })))
     }
     nodes.push({ id: 'group:' + id, type: 'component', position: workspace?.positions?.['group:' + id] || { x: 0, y: nodes.length * 200 }, data: { name: id, kind: 'group', inputs: ports('inputs'), outputs: ports('outputs') } })
   }

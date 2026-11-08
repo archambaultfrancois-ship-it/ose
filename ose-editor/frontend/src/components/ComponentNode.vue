@@ -7,7 +7,7 @@ defineProps<{ data: any; selected?: boolean }>()
     <header><span class="node-icon">{{ data.kind === 'external' ? '↗' : data.kind === 'group' ? '▣' : '◇' }}</span><strong>{{ data.name }}</strong><small>{{ data.kind }}</small></header>
     <div class="node-trigger">{{ data.trigger?.mode === 'periodic' ? '◷ ' + (data.trigger.period_ms?.$number || data.trigger.period_ms) + ' ms' : data.kind === 'group' ? 'Visual group · double-click to expand' : data.kind === 'external' ? 'External publisher' : '↯ on change' }}</div>
     <div class="node-ports">
-      <div v-for="port in data.inputs" :key="'i' + port.endpoint" class="node-port input"><Handle :id="port.endpoint" type="target" :position="Position.Left" /><span>{{ port.name }}<small v-if="!port.required"> optional</small></span><code>{{ port.root }}</code></div>
+      <div v-for="port in data.inputs" :key="'i' + port.endpoint" class="node-port input"><Handle :id="port.endpoint" type="target" :position="Position.Left" /><span>{{ port.name }}<small v-if="!port.required"> optional</small></span><code>{{ port.root }}</code><small v-if="port.reception?.subscriptions.length" :title="port.reception.subscriptions.map((sub: any) => sub.from || sub.from_topic).join(', ')">{{ port.reception.subscriptions.length }} link(s) · {{ port.reception.conflict ? 'QoS conflict' : port.reception.policy.buffer }}</small></div>
       <div v-for="port in data.outputs" :key="'o' + port.endpoint" class="node-port output"><span>{{ port.name }}</span><code>{{ port.root }}</code><Handle :id="port.endpoint" type="source" :position="Position.Right" /></div>
     </div>
   </div>

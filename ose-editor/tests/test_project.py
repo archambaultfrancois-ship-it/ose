@@ -83,8 +83,7 @@ class ProjectTests(unittest.TestCase):
             ({'copy': 'missing'}, 'Unknown subscription'),
             ({'to': 'bad'}, 'component.port'),
             ({'to': 'analyzer_2.missing'}, 'Unknown destination'),
-            ({'to': 'analyzer_2.input'}, 'already has a producer'),
-            ({'to': 'alarm.machine_1'}, 'already has a producer'),
+            ({'to': 'alarm.machine_1'}, 'same logical name'),
         ]
         self.command({'action': 'set', 'file': self.project.model,
                       'path': ['components', 'alarm', 'inputs', 'free'],
@@ -117,6 +116,53 @@ class ProjectTests(unittest.TestCase):
         sub = self.model()['subscriptions'][-1]
         self.assertEqual(sub, {'id': 'outside_copy', 'from_topic': 'outside',
                                'to': 'analyzer_2.copy', 'qos': {'capacity': 8}})
+
+    def test_connect_merges_producers_and_inherits_shared_reception_without_saving(self):
+        from ose.delivery.policies import SubscriptionPolicy
+        before = self.project.snapshot()
+        disk = (self.root / 'model.json').read_bytes()
+        self.command({'action': 'connect', 'name': 'merged', 'from': 'sensor_2.signal', 'to': 'analyzer_1.input'})
+        links = [sub for sub in self.model()['subscriptions'] if sub['to'] == 'analyzer_1.input']
+        self.assertEqual(len(links), 2)
+        self.assertEqual(SubscriptionPolicy.resolve(links[0].get('qos')).reception(),
+                         SubscriptionPolicy.resolve(links[1]['qos']).reception())
+        self.assertEqual((self.root / 'model.json').read_bytes(), disk)
+        self.project.undo(self.project.revision)
+        self.assertEqual(self.project.snapshot()['documents'], before['documents'])
+
+    def test_duplicate_to_connected_input_and_shared_edit_preserve_delivery_settings(self):
+        from ose.delivery.policies import SubscriptionPolicy
+        source_index = next(i for i, sub in enumerate(self.model()['subscriptions']) if sub['id'] == 'signal_2')
+        self.command({'action': 'set', 'file': self.project.model, 'path': ['subscriptions', str(source_index), 'qos'],
+                      'literal': '{"buffer":"latest","ack":"received","retry":{"max_retries":1}}'})
+        self.command({'action': 'duplicate_subscription', 'copy': 'signal_2', 'name': 'merged', 'to': 'analyzer_1.input'})
+        model = self.model()
+        copied = model['subscriptions'][-1]
+        target = next(sub for sub in model['subscriptions'] if sub['id'] == 'signal_1')
+        self.assertEqual(SubscriptionPolicy.resolve(copied['qos']).reception(), SubscriptionPolicy.resolve(target['qos']).reception())
+        self.assertEqual(copied['qos']['retry'], {'max_retries': 1})
+        before = self.project.snapshot()
+        self.command({'action': 'set_reception', 'to': 'analyzer_1.input', 'reception': {'buffer': 'latest'}})
+        incoming = [sub for sub in self.model()['subscriptions'] if sub['to'] == 'analyzer_1.input']
+        for sub in incoming:
+            self.assertEqual(sub['qos']['buffer'], 'latest')
+            self.assertEqual(sub['qos']['capacity'], 1)
+            self.assertEqual(sub['qos']['overflow'], 'drop_oldest')
+        self.assertEqual(incoming[-1]['qos']['retry'], {'max_retries': 1})
+        self.project.undo(self.project.revision)
+        self.assertEqual(self.project.snapshot()['documents'], before['documents'])
+
+    def test_external_fanin_and_invalid_shared_udp_policy_are_atomic(self):
+        self.command({'action': 'set', 'file': self.project.model, 'path': ['external_topics'],
+                      'literal': '{"outside":{"root":"SignalBlock"}}'})
+        self.command({'action': 'connect', 'name': 'outside', 'from': 'outside', 'external': True, 'to': 'analyzer_1.input'})
+        self.command({'action': 'set', 'file': 'deployment.local.json', 'path': ['subscriptions'],
+                      'literal': '{"outside":{"transport":"udp"}}'})
+        before = self.project.snapshot()
+        with self.assertRaisesRegex(ValueError, 'UDP cannot wait'):
+            self.project.prepare({'action': 'set_reception', 'to': 'analyzer_1.input',
+                                  'reception': {'overflow': 'wait'}}, self.project.revision)
+        self.assertEqual(self.project.snapshot(), before)
 
     def test_nested_visual_groups_survive_undo_rename_save_and_reopen(self):
         original = (self.root / 'model.json').read_bytes()

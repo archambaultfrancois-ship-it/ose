@@ -79,9 +79,13 @@ keeps its existing array format, with numeric paths used internally for edits.
 New JSON objects and arrays are expanded across indented lines, following the
 file's indentation and line endings while preserving exact scalar literals.
 To duplicate a subscription, select it and choose **Duplicate**, then enter a
-new ID and an unused destination input (`component.port`). The copy preserves
-its source, QoS and explicit deployment settings. Review the diff before
-applying; the operation is undoable.
+new ID and a destination input (`component.port`), including an already connected
+input. New connections and duplicates inherit that input's shared reception
+settings; duplicates preserve their source, ACK/retry and explicit deployment
+settings. Selecting an input or subscription shows its incoming links and a
+shared FIFO/latest reception editor. Applying it updates every incoming link in
+one previewable, undoable operation. Incompatible policies (including UDP wait)
+are rejected without partial changes. Graph ports show their link count and mode.
 In Graph, use **Shift**, **Ctrl**, or **Cmd + click** to add or remove components
 from the selection, or **Shift**, **Ctrl**, or **Cmd + drag** on the empty canvas
 to select an area. A plain drag on the canvas moves the view. The

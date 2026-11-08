@@ -8,6 +8,7 @@ import { keysFor, nodeLabel } from '../src/hints'
 import { useProject } from '../src/store'
 import JsonTree from '../src/components/JsonTree.vue'
 import App from '../src/App.vue'
+import ReceptionView from '../src/components/ReceptionView.vue'
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 const model = {
@@ -19,6 +20,19 @@ const model = {
 }
 
 describe('domain to graph projection', () => {
+  it('keeps multiple producers on one input handle and exposes shared reception', () => {
+    const merged = { ...model, external_topics: { outside: { root: 'Reading' } }, subscriptions: [
+      ...model.subscriptions, { id: 'outside', from_topic: 'outside', to: 'compute.input' },
+    ] }
+    const before = JSON.stringify(merged)
+    const graph = topology(merged, {})
+    const input = graph.nodes.find(node => node.id === 'component:compute')!.data.inputs[0]
+    expect(input.endpoint).toBe('compute.input')
+    expect(input.reception.subscriptions.map((sub: any) => sub.id)).toEqual(['readings', 'outside'])
+    expect(input.reception.policy).toEqual({ buffer: 'fifo', capacity: 1024, overflow: 'reject_new', wait_timeout_ms: 100 })
+    expect(graph.edges.filter(edge => edge.targetHandle === 'compute.input')).toHaveLength(2)
+    expect(JSON.stringify(merged)).toBe(before)
+  })
   it('retains endpoint handles and does not mutate the model', () => {
     const before = JSON.stringify(model)
     const graph = topology(model, {})
@@ -133,6 +147,33 @@ describe('domain to graph projection', () => {
     const graph = topology(model, { positions: { source: { x: 91, y: 27 } } }, false)
     expect(graph.nodes[0].position).toEqual({ x: 91, y: 27 })
     expect(graph.edges[0].label).toBe('')
+  })
+})
+
+describe('shared reception inspector', () => {
+  it('previews one shared latest edit for all links without modifying source or delivery settings', async () => {
+    const pinia = createPinia(); setActivePinia(pinia)
+    const store = useProject()
+    const merged = { ...model, subscriptions: [...model.subscriptions,
+      { id: 'outside', from_topic: 'outside', to: 'compute.input', qos: { ack: 'received', retry: {} } }] }
+    const before = JSON.stringify(merged)
+    store.project = { revision: 'one', model: 'model.json', documents: { 'model.json': { value: merged } } }
+    store.selection = { file: 'model.json', path: ['components', 'compute', 'inputs', 'input'] }
+    const command = vi.spyOn(store, 'command').mockResolvedValue(undefined)
+    const wrapper = mount(ReceptionView, { global: { plugins: [pinia, [PrimeVue, { unstyled: true }]] } })
+    try {
+      expect(wrapper.text()).toContain('2 incoming link(s)')
+      expect(wrapper.text()).toContain('source.out')
+      expect(wrapper.text()).toContain('outside')
+      await wrapper.get('select[aria-label="Shared reception buffer"]').setValue('latest')
+      expect((wrapper.get('input[aria-label="Shared reception capacity"]').element as HTMLInputElement).value).toBe('1')
+      await wrapper.get('button').trigger('click')
+      expect(store.selection?.path).toEqual(['subscriptions', '0'])
+      await wrapper.findAll('button').find(button => button.text() === 'Apply shared reception')!.trigger('click')
+      expect(command).toHaveBeenCalledWith({ action: 'set_reception', to: 'compute.input',
+        reception: { buffer: 'latest', capacity: 1, overflow: 'drop_oldest', wait_timeout_ms: 100 } })
+      expect(JSON.stringify(merged)).toBe(before)
+    } finally { wrapper.unmount() }
   })
 })
 
