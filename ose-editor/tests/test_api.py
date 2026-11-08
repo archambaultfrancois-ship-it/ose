@@ -1,4 +1,5 @@
 """HTTP access boundaries and public OSE/SDL validation integration."""
+from contextlib import ExitStack
 from pathlib import Path
 import shutil
 import tempfile
@@ -22,7 +23,9 @@ class ApiTests(unittest.TestCase):
         shutil.copytree(ROOT / 'vibration-watch', self.root, ignore=shutil.ignore_patterns('build', '__pycache__', '.ose-ws', '.ose-editor'))
         self.project = Project(self.root)
         self.app = create_app(self.project, ROOT / 'sdl', token='test-editor-token-that-is-never-a-project-secret')
-        self.client = self.enterContext(TestClient(self.app))
+        contexts = ExitStack()
+        self.addCleanup(contexts.close)
+        self.client = contexts.enter_context(TestClient(self.app))
         self.headers = {'Authorization': 'Bearer test-editor-token-that-is-never-a-project-secret'}
 
     def get(self, path):
