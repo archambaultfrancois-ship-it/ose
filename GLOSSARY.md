@@ -1,9 +1,11 @@
-# SDL, OSE and Web Console glossary
+# SDL, OSE, Web Console and Model Editor glossary
 
-This glossary defines the terminology used across the three projects in this
+This glossary defines the terminology used across the projects in this
 repository. **SDL** describes and encodes data; **OSE** executes component graphs;
-the **OSE Web Console** observes and configures running applications. Definitions
-describe this implementation. Links in each section lead to the detailed guides.
+the **OSE Web Console** observes and configures running applications; the
+**OSE Model Editor** edits application models, deployments and schema sources.
+Definitions describe this implementation. Links in each section lead to the
+detailed guides.
 
 ## Projects and interfaces
 
@@ -13,15 +15,17 @@ describe this implementation. Links in each section lead to the detailed guides.
 | **SDL2** | The runtime catalogue and binary message format implemented by SDL. Source `.sdl` files and runtime SDL2 catalogues have different syntax. |
 | **OSE — Orchestration, Simulation, Exécution** | The framework that validates, builds and executes graphs of components using SDL message contracts. The Python package and CLI are named `ose`. |
 | **OSE Web Console / WS** | The separate `ose-ws` application: a Python web server and bundled browser interface for components, logs, measurements, recordings and parameters. It connects to an already running OSE application. |
-| **CLI — Command-line interface** | A terminal interface such as `ose`, `ose-ws` or `sdl-recording`. The interactive `ose record` console has its own commands. |
+| **OSE Model Editor** | The separate `ose-editor` application: a local Python service and bundled browser interface for reading and editing OSE JSON models, deployments and SDL schema sources. It works without a running application; saved changes enter execution through a subsequent application build and run. |
+| **CLI — Command-line interface** | A terminal interface such as `ose`, `ose-ws`, `ose-editor` or `sdl-recording`. The interactive `ose record` console has its own commands. |
 | **SDK — Software development kit** | The language APIs and protocol helpers used to implement components or external clients. Generated SDL bindings supply the application message types. |
 | **API — Application programming interface** | A defined interface to functionality, such as an SDL codec function, an OSE client method or a Web Console HTTP endpoint. |
 | **RPC — Remote procedure call** | A request/reply operation over a connection, such as reading OSE status or replacing a parameter block. |
-| **Frontend / backend** | The browser interface and the server-side application, respectively. The console's Vue/TypeScript frontend calls its Python backend, which connects to OSE services. |
+| **Frontend / backend** | The browser interface and the server-side application, respectively. The console's Vue/TypeScript frontend calls its Python backend, which connects to OSE services. The model editor's frontend calls a separate Python backend managing application sources and validation. |
 | **Runtime** | Code active during execution. Depending on context, this means an SDL language runtime providing codecs or the OSE execution services managing components and delivery. |
 
 References: [repository overview](README.md), [SDL](sdl/README.md),
-[OSE](ose/README.md), [Web Console](ose-ws/README.md).
+[OSE](ose/README.md), [Web Console](ose-ws/README.md),
+[Model Editor](ose-editor/README.md).
 
 ## Schemas, types and values
 
@@ -121,6 +125,37 @@ References: [architecture](ose/docs/architecture.md),
 [execution](ose/docs/runtime.md), [callbacks](ose/docs/callbacks.md),
 [distributed execution](ose/docs/distributed.md).
 
+## Model authoring and source editing
+
+| Term | Meaning |
+| --- | --- |
+| **Editor project / application root** | The application source directory opened by `ose-editor --root`, containing the selected model and registered deployment/schema documents. The development shell shortcut defaults to `OSE_APP_ROOT`. |
+| **Source document / source scope** | An editable file and the filesystem roots allowed for its discovery and access. Additional schema/deployment roots are explicitly registered with `--source-root`. Source declarations retain information that a resolved runtime catalogue does not contain. |
+| **Workspace metadata** | Editor layout, groups, views and deployment registration stored in `.ose-editor/workspace.json`. These settings accompany the application sources without defining runtime component placement or delivery. |
+| **Deployment profile** | One registered deployment document selected for editing or validation against the model. Validation results belong to the selected deployment and draft revision. |
+| **Graph / Tables / Sources** | Editor views of the shared project draft: component connections, structured configuration and editable source text. The editor graph derives from authored sources; the Web Console topology derives from a compiled execution plan. |
+| **Inspector** | The editor panel exposing properties of the selected component, connection, JSON object or SDL declaration. |
+| **Authoring draft / unapplied source draft** | The authoring draft is the backend's current editable project state. Unapplied text in the Sources view remains browser-local until Preview source changes and Apply changes update that state. Neither action saves the maintained source files. |
+| **Project revision** | An opaque identifier for an editor state. Commands and validation jobs carry their base revision; mutations with an outdated revision are rejected. This identity is separate from Git commits and SDL catalogue IDs. |
+| **Structured projection / stale projection** | The parsed objects used to display source documents in structured views. Syntax errors leave the text editable and mark the structured view stale; that view cannot authorize further structured edits until the source is repaired. |
+| **Source-preserving edit** | A targeted source change that retains unaffected authored text, including formatting, comments and explicit literals where supported. Resolved catalogues and generated bindings are inspection/build outputs, not replacements for maintained sources. |
+| **Prepared command / change preview** | A proposed editor operation bound to a project revision, with affected-file diffs and available impact information. Apply changes accepts the proposal into the authoring draft; it does not write files or modify a running application. |
+| **Refactoring / Rename references** | A coordinated change to a name and its supported indexed uses, such as component references across the model and registered deployments. Handler code is listed for review rather than automatically rewritten; supported source formats and dependency cases limit coverage. |
+| **Undo / redo** | Reversing or restoring an applied project command in the shared authoring draft. A compound command is one history step; unapplied source text has its own editor history. |
+| **Validation snapshot / validation job** | An immutable copy of a draft revision checked with the matching public OSE/SDL tools in temporary directories. Validation can inspect unsaved sources, contracts and typed initial values; it does not compile or execute application handlers. Results from older revisions are stale. |
+| **Diagnostic** | A reported source or validation problem, with its origin and available file/location details. Successful model validation does not establish application business behavior; compilation, execution and application tests are separate steps. |
+| **Initial-value codec preview** | The value obtained after encoding and decoding a modeled initial parameter through SDL. It exposes representability, rounding and quantization before execution; it does not update a live parameter block. |
+| **Save / Save draft** | Save writes the shared authoring draft to maintained files after checking known errors and external changes. Save draft explicitly permits known errors. Saving alone does not establish validation success or reload a running application. |
+| **Disk baseline / save conflict** | The file contents recorded by the editor and a mismatch detected when those files change externally. A conflict exposes baseline, draft and current disk contents for review instead of silently overwriting the external edit. |
+| **Save journal / draft recovery** | The save journal supports restoring or completing an interrupted multi-file save. Separate bounded server-side draft recovery can restore applied but unsaved edits after reopening; unapplied browser-local text is outside that recovery. |
+| **Language coverage inventory** | The list of OSE model, deployment, SDL source, source-format and runtime-inspection constructs mapped to editing surfaces and qualification evidence. An inventory entry or specification requirement is not proof of complete implementation; the coverage map and validation record identify remaining limits. |
+
+References: [editor workflow](ose-editor/README.md#editing-workflow),
+[editor API](ose-editor/docs/api.md),
+[language coverage](ose-editor/docs/language-coverage.md),
+[implementation and qualification](ose-editor/docs/validation.md),
+[application commands](docs/application-environment.md).
+
 ## Delivery and bounded state
 
 | Term | Meaning |
@@ -194,7 +229,7 @@ References: [Web Console](ose-ws/README.md), [monitoring](ose/docs/monitoring.md
 | **Validation preview** | The normalized result of validating and round-tripping a draft through the SDL codec, including encoded bytes and hashes needed to apply it. It exposes floating-point rounding and wire quantization. |
 | **Schema digest / preview hash** | A schema digest fingerprints a console contract, including the contract attached to a Live sample. Parameter validation/apply also uses a preview hash binding the previewed payload and constraints. These differ from SDL's 32-bit catalogue ID and do not test whether the remote parameter value has changed. |
 | **Last-write-wins** | The last complete block write processed by OSE becomes current. Parameter editing has no automatic merge, lock or compare-and-swap against an old value. |
-| **CAS — Compare-and-swap** | A conditional write that succeeds only if an expected old value or revision still matches. OSE parameter writes do not provide this mechanism; a capture draft's local revision is a separate console feature. |
+| **CAS — Compare-and-swap** | A conditional write that succeeds only if an expected old value or revision still matches. OSE parameter writes do not provide this mechanism. Console capture draft revisions and model editor project revision checks apply to their respective drafts, not live parameter writes. |
 | **Import / export** | Transfer of parameter values as JSON. Path-keyed exports map each block path to its complete value. Multi-block imports validate first but apply sequentially without an atomic transaction across blocks. |
 | **Directory synchronization** | Optional bidirectional synchronization between parameter JSON files and OSE blocks, using the parameter service and a filesystem watcher. |
 | **JSON Pointer / glob / regular expression** | Different selection syntaxes. JSON Pointer addresses fields in console presentation metadata; globs select names in tools such as measurement/recording discovery; application parameter exports use regular expressions unless `--exact` is supplied. |
@@ -236,14 +271,15 @@ References: [OSE recording](ose/docs/recording.md),
 | **HTTP / WebSocket** | HTTP serves console resources and commands. The WebSocket connection carries live notifications, measurement points and Live previews; it does not carry mutation commands. “WS” as a project shorthand means the Web Console. |
 | **Snapshot / invalidation / resynchronization** | A web snapshot is current resource state. An invalidation asks the browser to fetch it again. A resynchronization request directs the browser to reload available history after a live-stream gap. An OSE tick snapshot is a separate concept. |
 | **Watch** | A renewable console selection owned by a browser session. Measurement watches retain observations for bounded history; Live watches expose only the latest source preview. Several watches can share collection. |
-| **Session / token** | Context-specific authentication or connection state. A browser session cookie, local console login token, OSE parameter token and recording session token have distinct roles. |
+| **Session / token** | Context-specific authentication or connection state. A browser session cookie, local console login token, editor access token, OSE parameter token and recording session token have distinct roles. |
+| **Editor access token** | The local bearer credential stored in the application's `.ose-editor/access.token` and entered in the editor login screen. It authorizes editor API requests; it is separate from Web Console login and OSE runtime client credentials. |
 | **Actor / permission / scope** | The authenticated web user, the operation they may perform, and the resources on which it is allowed. Web authorization and OSE client permissions both apply. |
 | **TLS / mTLS / CA** | TLS encrypts and authenticates connections; mutual TLS authenticates both peers using certificates from a trusted certificate authority. Browser HTTPS and OSE connection credentials are configured separately. |
 | **CSRF token** | A token required on console HTTP mutations to protect authenticated browser sessions from cross-site request forgery. |
 | **Idempotency key** | A client-supplied identifier for one explicit command. Reusing the same actor, target, key and body retrieves its recorded operation; it does not create a fresh command. |
 | **Operation / audit entry** | An operation records command intent and outcome. Audit entries preserve actor/action history. The console persists this metadata in SQLite independently of OSE's volatile delivery state. |
 | **Uncertain / closed unknown** | An uncertain operation has no confirmed outcome, for example after an acknowledgement is lost. Administrative closure records `undetermined` without resending the command or declaring success. |
-| **State directory** | Console-owned storage, normally `.ose-ws`, containing metadata and capture files. It is separate from the application's build directory and OSE's in-memory queues. |
+| **State directory** | Tool-owned storage: the console's `.ose-ws` holds metadata and capture files; the editor's `.ose-editor` holds workspace metadata, its access token, writer lock and recovery files. These directories are separate from the application's build directory and OSE's in-memory queues. |
 | **Quota / retention / budget** | Bounds on active objects, stored history, samples, bytes or disk use. Measurement history budgets are separate from capture file retention and do not cap total process memory. |
 | **JSONL / CSV** | Export formats: JSON Lines contains one JSON value per line; comma-separated values represent tabular data. Exporting observations does not recover emissions missed between readings. |
 

@@ -3,9 +3,9 @@ run-name: Framework release (${{ github.ref_name }})
 on:
   workflow_dispatch:
   push:
-    paths: ['tools/release/**', 'ose/**', 'sdl/**', 'ose-ws/src/**', 'ose-ws/requirements.lock', 'Makefile', '.github/workflows/release.yml']
+    paths: ['tools/release/**', 'ose/**', 'sdl/**', 'ose-ws/src/**', 'ose-ws/requirements.lock', 'ose-editor/**', 'Makefile', '.github/workflows/release.yml']
   pull_request:
-    paths: ['tools/release/**', 'ose/**', 'sdl/**', 'ose-ws/src/**', 'ose-ws/requirements.lock', 'Makefile', '.github/workflows/release.yml']
+    paths: ['tools/release/**', 'ose/**', 'sdl/**', 'ose-ws/src/**', 'ose-ws/requirements.lock', 'ose-editor/**', 'Makefile', '.github/workflows/release.yml']
 jobs:
   release:
     runs-on: ubuntu-22.04

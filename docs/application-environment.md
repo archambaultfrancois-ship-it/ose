@@ -30,6 +30,19 @@ or an option such as `ose run --mode` followed by a space.
 To switch applications in the same terminal, run `unset OSE_APP_ROOT`, enter the
 other repository, and source the script again.
 
+`ose-editor` opens the selected application's model editor at
+`http://127.0.0.1:8082`, including when invoked from another directory:
+
+```sh
+ose-editor
+ose-editor --port 8083
+```
+
+It uses `OSE_EDITOR_PYTHON` when set, otherwise the framework's
+`ose-editor/.venv/bin/python` when available, then `OSE_PYTHON`. Install the
+[editor dependencies](../ose-editor/README.md#run-from-the-checkout) first.
+Editor options are forwarded unchanged; `ose-editor --help` lists them.
+
 ## Recording commands
 
 With Vibration Watch, run the application and recorder in separate terminals:
@@ -88,7 +101,7 @@ Add `--dry-run` to validate the inputs and preview output files without writing.
 
 ## Application commands
 
-The only application shortcuts are `app-cd`, `app-build` and `app-run`.
+The application shortcuts are `app-cd`, `app-build` and `app-run`.
 `app-cd` changes the terminal directory; the others call `ose app build` and
 `ose app run`. All workflow logic lives in Python and also works without sourcing
 when the `ose` package is installed:

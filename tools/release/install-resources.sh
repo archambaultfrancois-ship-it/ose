@@ -65,9 +65,9 @@ fi
 if [ -d "$release/cargo-vendor" ]; then cp -R "$release/cargo-vendor" "$prefix/"; fi
 cp "$release/launch.py" "$prefix/launch.py"
 cp "$release/manifest.json" "$prefix/release-manifest.json"
-printf '%s\n' '{"format":1,"profile":"sdk","languages":["python","c","rust","java","ada"],"features":["web","recording","filter","sync"],"python_dependencies":false,"warnings":["Python unavailable; rerun the installer after installing Python."]}' > "$prefix/install-report.json"
-for name in ose ose-ws sdlc sdl-recording; do
-    case "$name" in ose) action=ose ;; ose-ws) action=web ;; sdlc) action=sdlc ;; *) action=recording ;; esac
+printf '%s\n' '{"format":1,"profile":"sdk","languages":["python","c","rust","java","ada"],"features":["web","editor","recording","filter","sync"],"python_dependencies":false,"warnings":["Python unavailable; rerun the installer after installing Python."]}' > "$prefix/install-report.json"
+for name in ose ose-ws ose-editor sdlc sdl-recording; do
+    case "$name" in ose) action=ose ;; ose-ws) action=web ;; ose-editor) action=editor ;; sdlc) action=sdlc ;; *) action=recording ;; esac
     # Resolve links when invoked from the user's command directory.
     {
         printf '#!%s\n' "$(readlink -f "$(command -v sh)")"
@@ -84,7 +84,7 @@ for name in ose ose-ws sdlc sdl-recording; do
     chmod +x "$prefix/bin/$name"
 done
 if mkdir -p "$bin_dir"; then
-    for name in ose ose-ws sdlc sdl-recording; do
+    for name in ose ose-ws ose-editor sdlc sdl-recording; do
         if [ ! -e "$bin_dir/$name" ] && [ ! -L "$bin_dir/$name" ]; then
             ln -s "$prefix/bin/$name" "$bin_dir/$name" || printf '%s\n' "WARNING: Cannot link $name" >&2
         fi

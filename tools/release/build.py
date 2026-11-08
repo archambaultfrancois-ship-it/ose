@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a platform-specific, offline OSE/SDL/web framework release."""
+"""Build a platform-specific, offline OSE/SDL/web/editor framework release."""
 import argparse
 import hashlib
 import json
@@ -22,6 +22,7 @@ REQUIREMENTS = {
     # The lock selects Python-compatible versions, including websockets 16 on
     # Python 3.10 and 17 on Python 3.11+.
     'web': ['fastapi==0.162.0', 'uvicorn==0.54.0', 'websockets>=14,<18'],
+    'editor': ['fastapi==0.162.0', 'uvicorn==0.54.0', 'PyYAML==6.0.3'],
     'recording': ['mcap==1.5.0'],
     'filter': [],
     'sync': ['inotify-simple>=1.3.5,<3'],
@@ -36,7 +37,32 @@ def run(command, **kwargs):
 def copy_resources(root, destination):
     if not (root / 'ose-ws/src/ose_ws/static/index.html').is_file():
         raise ValueError('Build the embedded web frontend before creating a release')
-    directories = ['ose/src/ose', 'ose/sdk', 'ose-ws/src/ose_ws', 'sdl/sdlc',
+    editor_static = root / 'ose-editor/src/ose_editor/static'
+    if not (editor_static / 'index.html').is_file() or not list((editor_static / 'assets').glob('*.js')):
+        raise ValueError('Build the embedded editor frontend before creating a release')
+    asset_manifest = editor_static / 'asset-manifest.json'
+    if not asset_manifest.is_file():
+        raise ValueError('Rebuild the editor frontend to create its asset manifest')
+    assets = json.loads(asset_manifest.read_text())
+    if assets.get('version') != 1 or not all(name in assets.get('files', {}) for name in ('index.html', 'licenses.txt')):
+        raise ValueError('Incomplete editor asset manifest')
+    frontend = root / 'ose-editor/frontend'
+    sources = [frontend / name for name in ('index.html', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts')]
+    sources += [path for folder in ('src', 'scripts') for path in (frontend / folder).rglob('*') if path.is_file()]
+    fingerprint = hashlib.sha256()
+    for path in sorted(sources, key=lambda item: item.relative_to(frontend).as_posix()):
+        fingerprint.update(path.relative_to(frontend).as_posix().encode() + b'\0' + path.read_bytes() + b'\0')
+    if assets.get('source_hash') != fingerprint.hexdigest():
+        raise ValueError('Editor frontend is out of date; run make frontend-editor before creating a release')
+    for name, expected in assets['files'].items():
+        relative = Path(name)
+        path = editor_static / relative
+        if relative.is_absolute() or '..' in relative.parts or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise ValueError('Missing or corrupt editor asset: ' + name)
+    for name in ('__init__.py', 'api.py', 'cli.py', 'coverage.json'):
+        if not (editor_static.parent / name).is_file():
+            raise ValueError('Missing editor resource: ' + name)
+    directories = ['ose/src/ose', 'ose/sdk', 'ose-ws/src/ose_ws', 'ose-editor/src/ose_editor', 'sdl/sdlc',
                    *['sdl/runtime/' + lang for lang in ('python', 'c', 'rust', 'java', 'ada', 'filter', 'recording')],
                    'sdl/tools/filter', 'sdl/tools/recording']
     excluded = {'__pycache__', 'tests', 'target', 'build', '.git', 'matlab'}
@@ -54,14 +80,14 @@ def copy_resources(root, destination):
                 shutil.copy2(path, target)
     shutil.copy2(HERE / 'sdl.Makefile', destination / 'framework/sdl/Makefile')
     for name in ('README.md', 'LICENSE', 'LICENSE.md', 'COPYING', 'NOTICE'):
-        for project in ('', 'ose', 'sdl', 'ose-ws'):
+        for project in ('', 'ose', 'sdl', 'ose-ws', 'ose-editor'):
             source = root / project / name
             if source.is_file():
                 target = destination / 'framework' / project / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
     # Include third-party license files, including those accompanying the frontend.
-    for path in (root / 'ose-ws/src/ose_ws/static').rglob('*'):
+    for path in [*(root / 'ose-ws/src/ose_ws/static').rglob('*'), *editor_static.rglob('*')]:
         if path.is_file() and path.suffix in ('.js', '.css') and not path.stat().st_size:
             raise ValueError('Empty frontend asset: ' + str(path))
 
@@ -70,7 +96,8 @@ def prepare_packages(stage, packages_dir=None, offline=False):
     packages = stage / 'packages'
     packages.mkdir()
     command = [sys.executable, '-m', 'pip', 'wheel', '--wheel-dir', str(packages),
-               '--constraint', str(ROOT / 'ose-ws/requirements.lock')]
+               '--constraint', str(ROOT / 'ose-ws/requirements.lock'),
+               '--constraint', str(ROOT / 'ose-editor/requirements.lock')]
     if packages_dir:
         command += ['--find-links', str(packages_dir)]
     if offline:

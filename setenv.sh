@@ -67,6 +67,20 @@ _ose_env_app_cd() {
     cd -- "$OSE_APP_ROOT"
 }
 
+# Keep the editor's optional dependencies separate from the application Python.
+ose-editor() {
+    local editor_python
+    if [[ -n "${OSE_EDITOR_PYTHON:-}" ]]; then
+        editor_python="$OSE_EDITOR_PYTHON"
+    elif [[ -x "$FRAMEWORK_ROOT/ose-editor/.venv/bin/python" ]]; then
+        editor_python="$FRAMEWORK_ROOT/ose-editor/.venv/bin/python"
+    else
+        editor_python="$OSE_PYTHON"
+    fi
+    PYTHONPATH="$FRAMEWORK_ROOT/ose-editor/src${PYTHONPATH:+:$PYTHONPATH}" \
+        "$editor_python" -m ose_editor.cli --root "$OSE_APP_ROOT" --sdl-root "$SDL_ROOT" "$@"
+}
+
 # Application commands resolve credentials afresh on every invocation.
 if [[ ${_ose_env_parameter_token_auto+x} &&
         "${OSE_PARAMETER_TOKEN-}" == "${_ose_env_parameter_token_auto-}" ]]; then

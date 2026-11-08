@@ -55,6 +55,9 @@ in the application directory. `ose app record` prepares missing recording/filter
 dependencies and opens the external console. `ose app env` shows the selected paths; `ose app --help` lists workflows.
 Interactive Bash terminals also enable `ose` completion for commands,
 subcommands, options and option choices. Source `./setenv.sh`, then press Tab.
+After installing the [model editor dependencies](../ose-editor/README.md),
+`ose-editor` opens this application's graphical model editor at
+`http://127.0.0.1:8082`, using its separate Python environment.
 `ose app record inspect FILE` displays all recorded messages; use `--limit N` to show
 only the first N selected messages.
 

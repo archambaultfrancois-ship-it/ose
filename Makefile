@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := all
 SDL_ROOT ?= $(abspath $(CURDIR)/sdl)
 
-.PHONY: all check test check-sdl check-ose test-sdl test-ose check-ws test-ws frontend-ws clean help release test-release
+.PHONY: all check test check-sdl check-ose test-sdl test-ose check-ws test-ws frontend-ws check-editor test-editor frontend-editor clean help release test-release
 all:
 	+$(MAKE) -C sdl all
 check: check-sdl check-ose
@@ -19,6 +19,10 @@ check-ws test-ws:
 	+$(MAKE) -C ose-ws test SDL_ROOT="$(SDL_ROOT)"
 frontend-ws:
 	+$(MAKE) -C ose-ws frontend
+check-editor test-editor:
+	+$(MAKE) -C ose-editor test SDL_ROOT="$(SDL_ROOT)"
+frontend-editor:
+	+$(MAKE) -C ose-editor frontend
 release:
 	python3 tools/release/build.py $(RELEASE_OPTIONS)
 test-release:
@@ -32,7 +36,9 @@ help:
 	@echo 'make test        Run both projects with verbose output'
 	@echo 'make test-ws     Run the optional OSE Web Console tests'
 	@echo 'make frontend-ws Build the bundled OSE Web Console frontend'
-	@echo 'make release     Build the offline OSE/SDL/web release for this platform'
+	@echo 'make test-editor Run the OSE Model Editor tests'
+	@echo 'make frontend-editor Build the bundled model editor frontend'
+	@echo 'make release     Build the offline OSE/SDL/web/editor release for this platform'
 	@echo 'make test-release Test the generic release installer'
 	@echo 'Other targets are forwarded to the SDL project (for example test-java).'
 

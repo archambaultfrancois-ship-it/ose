@@ -1,0 +1,1478 @@
+[
+  {
+    "id": "M01",
+    "construct": "Root `version`, `schemas`, `components`, `subscriptions`, `external_topics`, `shared_parameters`",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M02",
+    "construct": "Component names and maps",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M03",
+    "construct": "Component `inputs`, `outputs`",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M04",
+    "construct": "Port `root`, `schema`",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M05",
+    "construct": "Port `required`, `timeout`",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M06",
+    "construct": "`trigger.mode`, `trigger.period_ms`",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M07",
+    "construct": "Component `parameters`",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M08",
+    "construct": "`parameter_bindings.<alias>.path`, `.access`",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M09",
+    "construct": "`recording_types.<alias>.root`, `.schema`",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M10",
+    "construct": "Subscription `id`, `from`, `from_topic`, `to`",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M11",
+    "construct": "External topic names, `root`, `schema`",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M12",
+    "construct": "Shared parameter paths, `root`, `schema`, `initial`",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M13",
+    "construct": "Graph invariants",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "M14",
+    "construct": "JSON source rules",
+    "backend": [
+      "project.py",
+      "json_source.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py",
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "Q01",
+    "construct": "`qos.buffer`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/ContractView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "Q02",
+    "construct": "`qos.capacity`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/ContractView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "Q03",
+    "construct": "`qos.overflow`, `qos.wait_timeout_ms`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/ContractView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "Q04",
+    "construct": "`qos.ack`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/ContractView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "Q05",
+    "construct": "`qos.retry`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/ContractView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "Q06",
+    "construct": "Retry `max_retries`, `ack_timeout_ms`, `backoff_multiplier`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/ContractView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "Q07",
+    "construct": "Legacy `qos.durability: \"memory\"`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/ContractView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "Q08",
+    "construct": "Resolved policy",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/ContractView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D01",
+    "construct": "Root `version`, `components`, `subscriptions`, `max_frame`, `max_datagram`, `broker`, `execution`, `parameter_clients`, `process_names`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D02",
+    "construct": "Component map",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D03",
+    "construct": "Component `command`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D04",
+    "construct": "`container.language`, `.handler`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D05",
+    "construct": "`container.class`, `.unit`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D06",
+    "construct": "Component `build`, `cwd`, `env`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D07",
+    "construct": "Substitutions `{python}`, `{project}`, `{sdl_root}`, `{build}`, `{generated}`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D08",
+    "construct": "`execution`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D09",
+    "construct": "Component `placement`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D10",
+    "construct": "Placement `node_selector`, `resources.requests`, `resources.limits`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D11",
+    "construct": "Subscription `transport`, `routing`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D12",
+    "construct": "`max_frame`, `max_datagram`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D13",
+    "construct": "`broker.host`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D14",
+    "construct": "`broker.external.enabled`, `.max_clients`, `.max_subscriptions`, `.max_capacity`, `.max_topics`, `.max_catalogues`, `.max_wait_timeout_ms`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D15",
+    "construct": "`process_names.prefix`, `.components`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D16",
+    "construct": "`parameter_clients.<identity>.read`, `.write`, `.token`",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "D17",
+    "construct": "JSON source rules and profile comparison",
+    "backend": [
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/TablesView.vue",
+      "hints.ts"
+    ],
+    "tests": [
+      "test_project.py",
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S01",
+    "construct": "UTF-8 source units and recursive directory discovery",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S02",
+    "construct": "`package` and global/qualified/unqualified references",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S03",
+    "construct": "`message`, `structure`, `struct` named declarations",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S04",
+    "construct": "Anonymous nested `message`/`structure`/`struct` fields",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S05",
+    "construct": "`enum`, item names and signed int32 values",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S06",
+    "construct": "`bool`, `int8/16/32/64`, `uint8/16/32/64`",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S07",
+    "construct": "`fl32`, `fl64`, `c32`, `c64`, `string`",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S08",
+    "construct": "Message/enum field references",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S09",
+    "construct": "Explicit and implicit numeric field IDs",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S10",
+    "construct": "`required`, `optional`, `repeated`, `packed`, omitted modifier",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S11",
+    "construct": "Fixed arrays `T[d1][d2]...`",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S12",
+    "construct": "Top-level `const NAME = expression`",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S13",
+    "construct": "Constant literals, references, unary signs, `+`, `-`, `*`, `/`, parentheses",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S14",
+    "construct": "Top-level `alias NAME = TYPE`, alias chains",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S15",
+    "construct": "`wire(bits=N)`",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S16",
+    "construct": "`wire(q=Q)`",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S17",
+    "construct": "`wire(encoding=varint/zigzag)`",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S18",
+    "construct": "`wire(align=N,pad_after=N)`",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S19",
+    "construct": "Wire option ordering/combinations",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S20",
+    "construct": "`//`, `/* ... */`, `/** ... */`",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S21",
+    "construct": "Source ordering, punctuation, whitespace and numeric spelling",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S22",
+    "construct": "Names, namespace uniqueness and backend restrictions",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S23",
+    "construct": "Size/depth/count constraints",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "S24",
+    "construct": "Source and resolved views",
+    "backend": [
+      "sdl_source.py",
+      "project.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/SdlTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py",
+      "test_project.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "F01",
+    "construct": "`.sdl`, `.sdl.json`, `.sdl.yaml`/`.sdl.yml`, `.sdl.xsd`",
+    "backend": [
+      "formats.py",
+      "json_source.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "F02",
+    "construct": "Descriptor `format`, `version`, `package`, `doc`, `constants`, `aliases`, `enums`, `messages`, `generated_by`",
+    "backend": [
+      "formats.py",
+      "json_source.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "F03",
+    "construct": "Constant `{value, doc}`, alias `{target, doc}`",
+    "backend": [
+      "formats.py",
+      "json_source.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "F04",
+    "construct": "Enum `{values, doc}` and item `{name, value, doc}`",
+    "backend": [
+      "formats.py",
+      "json_source.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "F05",
+    "construct": "Message `{fields, doc}` and field `{name, type, id, modifier, dimensions, wire, doc}`",
+    "backend": [
+      "formats.py",
+      "json_source.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "F06",
+    "construct": "Wire numeric/string `q`, dimensions and anonymous descriptor types",
+    "backend": [
+      "formats.py",
+      "json_source.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "F07",
+    "construct": "YAML JSON-style scalars, comments and rejected YAML features",
+    "backend": [
+      "formats.py",
+      "json_source.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py"
+    ],
+    "status": "partial",
+    "note": "Only scalar-source fidelity and rejection cases qualified; complex YAML insertion needs broader fixtures."
+  },
+  {
+    "id": "F08",
+    "construct": "Annotated XSD structure, SDL metadata, documentation and unit ownership",
+    "backend": [
+      "formats.py",
+      "json_source.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py"
+    ],
+    "status": "partial",
+    "note": "Primitive metadata/name/cardinality coupling implemented; automatic complex XSD regeneration and dependency-copy refactoring remain incomplete."
+  },
+  {
+    "id": "F09",
+    "construct": "XSD naming/profile constraints",
+    "backend": [
+      "formats.py",
+      "json_source.py",
+      "validation.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_sources.py"
+    ],
+    "status": "partial",
+    "note": "Profile acceptance is checked by SDL; complete structured-profile boundary cases are not qualified."
+  },
+  {
+    "id": "F10",
+    "construct": "Explicit conversion/export",
+    "backend": [
+      "conversion.py",
+      "project.py"
+    ],
+    "frontend": [
+      "components/JsonTree.vue",
+      "components/SourceEditor.vue"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Explicit previewed exports implemented; full four-format and rejection-boundary qualification is pending."
+  },
+  {
+    "id": "R01",
+    "construct": "Resolved SDL2 catalogues and identities",
+    "backend": [
+      "runtime_inspect.py",
+      "validation.py",
+      "api.py"
+    ],
+    "frontend": [
+      "components/ContractView.vue",
+      "components/JsonTree.vue"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "R02",
+    "construct": "Publisher-to-consumer compatibility",
+    "backend": [
+      "runtime_inspect.py",
+      "validation.py",
+      "api.py"
+    ],
+    "frontend": [
+      "components/ContractView.vue",
+      "components/JsonTree.vue"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "R03",
+    "construct": "SDL-typed initial-value encode/decode",
+    "backend": [
+      "runtime_inspect.py",
+      "validation.py",
+      "api.py"
+    ],
+    "frontend": [
+      "components/ContractView.vue",
+      "components/JsonTree.vue"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "implemented-unqualified",
+    "note": "Implementation surface exists; full inventory-specific acceptance qualification is pending."
+  },
+  {
+    "id": "R04",
+    "construct": "Uses and impact",
+    "backend": [
+      "runtime_inspect.py",
+      "validation.py",
+      "api.py"
+    ],
+    "frontend": [
+      "components/ContractView.vue",
+      "components/JsonTree.vue"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "partial",
+    "note": "Indexed text-SDL/model refactorings implemented; mixed-format refactorings remain incomplete."
+  },
+  {
+    "id": "R05",
+    "construct": "Public tool compatibility",
+    "backend": [
+      "runtime_inspect.py",
+      "validation.py",
+      "api.py"
+    ],
+    "frontend": [
+      "components/ContractView.vue",
+      "components/JsonTree.vue"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "partial",
+    "note": "Tool versions are reported; automatic negotiation with future grammar revisions is not qualified."
+  },
+  {
+    "id": "R06",
+    "construct": "Coverage manifest",
+    "backend": [
+      "runtime_inspect.py",
+      "validation.py",
+      "api.py"
+    ],
+    "frontend": [
+      "components/ContractView.vue",
+      "components/JsonTree.vue"
+    ],
+    "tests": [
+      "test_api.py"
+    ],
+    "status": "partial",
+    "note": "Manifest maps implementation surfaces and tests; complete row-by-row boundary qualification is pending."
+  }
+]

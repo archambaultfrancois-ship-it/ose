@@ -1,0 +1,33 @@
+name: OSE Model Editor
+on:
+  workflow_dispatch:
+  push:
+    paths: ['ose-editor/**', 'ose/**', 'sdl/sdlc/**', 'sdl/runtime/python/**', '.github/workflows/ose-editor.yml']
+  pull_request:
+    paths: ['ose-editor/**', 'ose/**', 'sdl/sdlc/**', 'sdl/runtime/python/**', '.github/workflows/ose-editor.yml']
+jobs:
+  editor:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '${{ matrix.python }}'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ose-editor/frontend/package-lock.json
+      - run: python -m pip install -c ose-editor/requirements.lock ./ose './ose-editor[test]'
+      - run: npm ci --no-audit --no-fund
+        working-directory: ose-editor/frontend
+      - run: npm test
+        working-directory: ose-editor/frontend
+      - run: npm run build
+        working-directory: ose-editor/frontend
+      - run: make -C ose-editor test-python
+      - run: python -m build
+        working-directory: ose-editor

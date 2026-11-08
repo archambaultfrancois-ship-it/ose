@@ -16,6 +16,8 @@ def main():
     paths = [framework / 'ose/src', framework / 'sdl/runtime/python']
     if 'web' in report['features']:
         paths.append(framework / 'ose-ws/src')
+    if 'editor' in report['features']:
+        paths.append(framework / 'ose-editor/src')
     if 'filter' in report['features']:
         paths += [framework / 'sdl/runtime/filter/python', framework / 'sdl/build/filter/release']
     sys.path[:0] = list(map(str, paths))
@@ -32,8 +34,9 @@ def main():
         # Keep rustup's normal toolchain discovery when using an isolated Cargo home.
         os.environ.setdefault('RUSTUP_HOME', str(Path.home() / '.rustup'))
     try:
-        if action in ('ose', 'web'):
-            runpy.run_module('ose.cli' if action == 'ose' else 'ose_ws.cli', run_name='__main__')
+        if action in ('ose', 'web', 'editor'):
+            modules = {'ose': 'ose.cli', 'web': 'ose_ws.cli', 'editor': 'ose_editor.cli'}
+            runpy.run_module(modules[action], run_name='__main__')
         else:
             path = framework / ('sdl/sdlc/generator.py' if action == 'sdlc' else 'sdl/tools/recording/sdl-recording')
             sys.path.insert(0, str(path.parent))

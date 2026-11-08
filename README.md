@@ -4,7 +4,7 @@
   <img src="docs/branding/ose-banner.svg" alt="OSE — Orchestration, Simulation, Exécution" width="960">
 </p>
 
-The `ose` repository contains four projects that evolve together:
+The `ose` repository contains five projects that evolve together:
 
 - **[SDL](sdl/README.md)** (Schema Design Language) generates message codecs
   for C99, Rust, Python, Java, Ada, and Matlab/Octave. It also provides catalogue filtering,
@@ -15,6 +15,10 @@ The `ose` repository contains four projects that evolve together:
 - **[OSE Web Console](ose-ws/README.md)** (`ose-ws`) provides an independent
   English-language web interface for diagnostics, scalar measurements, message
   captures and typed parameter editing in a running OSE application.
+- **[OSE Model Editor](ose-editor/README.md)** (`ose-editor`) provides graphical
+  authoring of OSE models, deployments and SDL schemas, with synchronized
+  structured/source views, revisioned changes and offline validation. Its
+  [validation record](ose-editor/docs/validation.md) tracks initial-release qualification.
 - **[Vibration Watch](vibration-watch/README.md)** is a runnable SDL/OSE application
   with C sensors, Rust analyzers, Python alarms, and local, simulated or distributed execution.
 
@@ -60,15 +64,16 @@ ose/                    OSE project root
   docs/                 OSE documentation
 .github/workflows/      Repository CI
 ose-ws/                 Standalone Python web server and bundled Vue frontend
+ose-editor/             Independent model editor service, bundled Vue frontend and tests
 vibration-watch/         Application sources, scenarios, tests and deployment tools
 ```
 
 A [local autonomous CI watchdog](docs/ci-watchdog.md) can monitor GitHub Actions
 and use Codex to diagnose, test and publish bounded repairs.
 
-Each project has a separate GitHub Actions workflow. Vibration Watch uses this
-checkout's SDL/OSE framework directly and is also tested when its framework or
-web console dependencies change. From the repository root, run
+Implemented projects have separate GitHub Actions workflows. Vibration Watch
+uses this checkout's SDL/OSE framework directly and is also tested when its
+framework or web console dependencies change. From the repository root, run
 `make -C vibration-watch validate` and `make -C vibration-watch test`.
 
 ## Local application environment

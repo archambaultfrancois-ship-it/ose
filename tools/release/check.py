@@ -72,6 +72,63 @@ def wait_until(predicate, processes=(), timeout=30):
         time.sleep(.05)
 
 
+def editor_check(commands, root, env):
+    """Author an external source project through the installed offline editor."""
+    project = root / 'editor source project'
+    application(project, ('python',))
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        port = listener.getsockname()[1]
+    output = tempfile.TemporaryFile()
+    server = subprocess.Popen([str(commands / 'ose-editor'), '--root', str(project), '--port', str(port)],
+                              cwd=root, env=env, stdout=output, stderr=subprocess.STDOUT)
+    try:
+        token_path = project / '.ose-editor/access.token'
+        wait_until(token_path.is_file, (server,))
+        token = token_path.read_text().strip()
+        opener = build_opener()
+        def request(path, body=None):
+            data = json.dumps(body).encode() if body is not None else None
+            message = Request(f'http://127.0.0.1:{port}/api/v1/{path}', data=data,
+                              headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+            with opener.open(message, timeout=10) as response:
+                return json.load(response)
+        def ready():
+            try:
+                return bool(request('project'))
+            except (URLError, OSError):
+                return False
+        wait_until(ready, (server,))
+        state = request('project')
+        prepared = request('commands/prepare', {'revision': state['revision'], 'command': {
+            'action': 'rename', 'kind': 'component', 'old': 'python', 'name': 'edited_python'}})
+        state = request('commands/apply', {'revision': state['revision'], 'id': prepared['id']})
+        job = request('validation', {'revision': state['revision']})
+        finished = {}
+        def validated():
+            finished.update(request('validation/' + job['id']))
+            return finished['status'] not in ('queued', 'running')
+        wait_until(validated, (server,), timeout=90)
+        assert finished['status'] == 'passed', finished.get('diagnostics')
+        state = request('save', {'revision': state['revision']})
+        assert 'edited_python' in json.loads((project / 'model.json').read_text())['components']
+        assert not (project / 'build').exists(), 'Editor validation wrote application build outputs'
+        with opener.open(f'http://127.0.0.1:{port}/', timeout=10) as response:
+            index = response.read().decode()
+        assert 'https://' not in index
+        for asset in __import__('re').findall(r'(?:src|href)="(/assets/[^\"]+)"', index):
+            with opener.open(f'http://127.0.0.1:{port}{asset}', timeout=10) as response:
+                assert response.read(), asset
+        print('Installed editor authoring passed: external source rename, unsaved validation, save and local frontend.', flush=True)
+    finally:
+        server.terminate()
+        server.wait(timeout=20)
+        output.seek(0)
+        text = output.read().decode()
+        output.close()
+        assert server.returncode == 0, text
+
+
 def check(bundle):
     with tempfile.TemporaryDirectory(prefix="ose independent release ") as temporary, ExitStack() as stack:
         root = Path(temporary)
@@ -122,6 +179,7 @@ for row in pathlib.Path('/proc/self/maps').read_text().splitlines():
         runtime.mkdir()
         application(one, ('python', 'c', 'rust'))
         application(two, ('python',))
+        editor_check(commands, root, env)
         run('ose', 'app', '--root', one, 'build')
         plan = one / 'build/plan.json'
         data = json.loads(plan.read_text())

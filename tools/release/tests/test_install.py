@@ -78,6 +78,27 @@ class InstallTests(unittest.TestCase):
         self.assertTrue((self.prefix / 'framework/ose/sdk/ada/ose_component.ads').is_file())
         self.assertTrue((self.prefix / 'framework/sdl/runtime/java/SdlCodec.java').is_file())
         self.assertTrue((self.prefix / 'framework/ose-ws/src/ose_ws/static/index.html').is_file())
+        self.assertTrue((self.prefix / 'framework/ose-editor/src/ose_editor/static/index.html').is_file())
+        self.assertTrue((self.bin / 'ose-editor').is_symlink())
+
+    def test_editor_is_independent_of_web_and_owned_launcher_is_removed(self):
+        self.assertEqual(self.install('--languages', 'python', '--features', 'editor'), 0, self.errors)
+        self.assertTrue((self.bin / 'ose-editor').is_symlink())
+        self.assertFalse((self.prefix / 'framework/ose-ws').exists())
+        self.assertFalse((self.bin / 'ose-ws').exists())
+        self.assertEqual(self.invoke('ose-editor', '--help').returncode, 0)
+        self.assertEqual(self.install('--languages', 'python', '--features', 'none'), 0, self.errors)
+        self.assertFalse((self.prefix / 'framework/ose-editor').exists())
+        self.assertFalse((self.bin / 'ose-editor').is_symlink())
+
+    def test_runtime_all_omits_editor_and_explicit_editor_is_rejected(self):
+        self.assertEqual(self.install('--profile', 'runtime', '--features', 'editor'), 1)
+        self.assertIn('requires the sdk profile', self.errors)
+        self.assertFalse(self.prefix.exists())
+        self.assertEqual(self.install('--profile', 'runtime', '--languages', 'python', '--features', 'all'), 0, self.errors)
+        self.assertIn('editor is omitted', self.errors)
+        self.assertFalse((self.bin / 'ose-editor').exists())
+        self.assertNotIn('editor', json.loads((self.prefix / 'install-report.json').read_text())['features'])
 
     def test_runtime_selection_has_no_compiler_sdks_or_web(self):
         self.assertEqual(self.install('--profile', 'runtime', '--languages', 'python', '--features', 'none'), 0, self.errors)
@@ -187,6 +208,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Python is unavailable', result.stderr)
         self.assertTrue((self.prefix / 'framework/ose/src/ose/cli.py').is_file())
+        self.assertTrue((self.prefix / 'bin/ose-editor').is_file())
         self.assertEqual(self.install('--languages', 'python', '--features', 'none'), 0, self.errors)
         self.assertEqual(self.invoke('ose', '--help').returncode, 0)
 

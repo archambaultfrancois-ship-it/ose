@@ -15,7 +15,7 @@ import tempfile
 
 
 LANGUAGES = ('python', 'c', 'rust', 'java', 'ada')
-FEATURES = ('web', 'recording', 'filter', 'sync')
+FEATURES = ('web', 'editor', 'recording', 'filter', 'sync')
 
 
 def selection(value, allowed):
@@ -57,6 +57,8 @@ def included(name, profile, languages, features):
     path = '/'.join(parts[1:])
     if path.startswith('ose-ws/'):
         return 'web' in features
+    if path.startswith('ose-editor/'):
+        return profile == 'sdk' and 'editor' in features
     if path.startswith('ose/sdk/'):
         if profile != 'sdk':
             return False
@@ -194,11 +196,13 @@ def write_commands(prefix, bin_dir, python, features, warnings):
         commands['sdlc'] = 'sdlc'
     if 'web' in features:
         commands['ose-ws'] = 'web'
+    if 'editor' in features:
+        commands['ose-editor'] = 'editor'
     if 'recording' in features:
         commands['sdl-recording'] = 'recording'
     # Use a real shell on the target; /bin/sh does not exist on every Android host.
     shell = str(Path(shutil.which('sh') or '/bin/sh').resolve())
-    for name in ('ose', 'ose-ws', 'sdlc', 'sdl-recording'):
+    for name in ('ose', 'ose-ws', 'ose-editor', 'sdlc', 'sdl-recording'):
         old = own_bin / name
         if name not in commands and (old.exists() or old.is_symlink()):
             old.unlink()
@@ -239,7 +243,13 @@ def install(args, source):
         raise ValueError('The installation destination cannot be a symlink')
     if prefix.exists() and any(prefix.iterdir()) and not (prefix / 'install-report.json').is_file():
         raise ValueError('Destination is not an OSE installation or an empty directory: ' + str(prefix))
-    warnings = prerequisites(args.profile, args.languages, args.features)
+    profile_warnings = []
+    if args.profile == 'runtime' and 'editor' in args.features:
+        if not getattr(args, 'all_features', False):
+            raise ValueError('The editor requires the sdk profile; use --profile sdk --features editor')
+        args.features = [feature for feature in args.features if feature != 'editor']
+        profile_warnings.append('The editor is omitted from the runtime profile; use the sdk profile for authoring')
+    warnings = profile_warnings + prerequisites(args.profile, args.languages, args.features)
     target = manifest['target']
     compatible = (target['platform'] == sysconfig.get_platform() and
                   target['python'] == f'{sys.version_info.major}.{sys.version_info.minor}')
@@ -293,6 +303,8 @@ def install(args, source):
             paths = [prefix / 'framework/ose/src', prefix / 'framework/sdl/runtime/python']
             if 'web' in args.features:
                 paths.append(prefix / 'framework/ose-ws/src')
+            if 'editor' in args.features:
+                paths.append(prefix / 'framework/ose-editor/src')
             if 'filter' in args.features:
                 paths += [prefix / 'framework/sdl/runtime/filter/python', prefix / 'framework/sdl/build/filter/release']
             site_packages = Path(result.stdout.strip())
@@ -300,6 +312,7 @@ def install(args, source):
             (site_packages / 'ose-framework.pth').write_text(''.join(str(p) + '\n' for p in paths))
     capabilities = {}
     imports = {'engine': ['ose', 'sdl_runtime'], 'web': ['ose_ws', 'fastapi', 'uvicorn', 'websockets'],
+               'editor': ['ose_editor', 'ose_editor.api', 'fastapi', 'uvicorn', 'yaml'],
                'recording': ['sdl_recording'], 'filter': ['sdl_filter'], 'sync': ['inotify_simple']}
     for feature in ['engine', *args.features]:
         if python:
@@ -338,15 +351,17 @@ def main(argv=None, source=None):
     parser.add_argument('--bin-dir', default=str(Path.home() / '.local/bin'))
     parser.add_argument('--profile', choices=('sdk', 'runtime'), default='sdk')
     parser.add_argument('--languages', type=lambda v: selection(v, LANGUAGES), default='all')
-    parser.add_argument('--features', type=lambda v: selection(v, FEATURES), default='all')
+    parser.add_argument('--features', default='all')
     parser.add_argument('--packages-dir', help='additional local wheel repository instead of the bundled packages')
     parser.add_argument('--offline', action='store_true', help='accepted explicitly; installation always stays offline')
     parser.add_argument('--check-only', action='store_true')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args(argv)
     try:
+        args.all_features = args.features == 'all'
+        args.features = selection(args.features, FEATURES)
         return install(args, Path(source).resolve() if source else Path(__file__).resolve().parent)
-    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, argparse.ArgumentTypeError, subprocess.SubprocessError) as error:
         print('Installation failed: ' + str(error), file=sys.stderr)
         return 1
 

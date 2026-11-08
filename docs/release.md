@@ -1,9 +1,15 @@
 # Generic OSE framework releases
 
-The release installs OSE, SDL and the optional web console for any compatible
+The release installs OSE, SDL, the optional web console and the model editor for any compatible
 application. It contains no application, models, application configuration,
 credentials, captures or existing build plans. Applications remain outside the
 installation and use the public OSE commands or their own Makefile.
+
+The [OSE Model Editor](../ose-editor/README.md) is included in this bundle as an
+independent `editor` feature. It works on application source files without a
+running OSE application; the console remains the runtime observation tool.
+Its [validation record](../ose-editor/docs/validation.md) describes the current
+authoring milestone and remaining complete-release qualification.
 
 ## Build an archive
 
@@ -21,7 +27,8 @@ this host. It also packages this CPython version, its standard library, headers
 and linked libraries such as OpenSSL, SQLite, libffi and compression libraries,
 including external native dependencies of the bundled Python wheels.
 The committed
-frontend must already be built; Node.js is only needed to rebuild that frontend.
+frontends must already be built; Node.js is only needed to rebuild them with
+`make frontend-ws` and `make frontend-editor`.
 An incomplete dependency repository or failed native build fails release
 creation: the builder must deliver all resources advertised by the release.
 
@@ -89,7 +96,7 @@ startup files. Add the command directory to PATH when it is not already there.
 | `--bin-dir PATH` | `~/.local/bin` | Links to the installed commands. Existing unrelated commands are kept with a warning. |
 | `--profile sdk\|runtime` | `sdk` | SDK includes compilation and execution resources. Runtime omits the SDL generator and SDK sources. |
 | `--languages all\|LIST` | `all` | Python, C, Rust, Java, Ada. LIST is comma-separated. The engine always needs Python. |
-| `--features all\|none\|LIST` | `all` | `web`, `recording`, `filter`, `sync`. LIST is comma-separated. |
+| `--features all\|none\|LIST` | `all` | `web`, `editor`, `recording`, `filter`, `sync`. LIST is comma-separated. Editor requires SDK. |
 | `--packages-dir PATH` | Bundled `packages/` | Alternate local wheel repository. No network fallback. |
 | `--offline` | Always offline | Accepted for explicit invocation. |
 | `--check-only` | Off | Verify the package and report prerequisites without writing the installation. |
@@ -108,11 +115,16 @@ refreshes owned resources and the private environment; deselected components
 are removed. It leaves application directories and runtime state alone. An
 unrelated nonempty destination is rejected.
 
+The default SDK/all selection includes the editor. `--features editor` installs
+it without requiring the console's `web` feature. Runtime/all selections omit
+the editor with a diagnostic; runtime/explicit-editor selection fails before
+installation, since authoring validation needs SDL generator and SDK resources.
+
 The installed layout is:
 
 ```text
 <prefix>/
-  bin/                       # ose, ose-ws, sdlc, sdl-recording as selected
+  bin/                       # ose, ose-ws, ose-editor, sdlc, sdl-recording as selected
   .venv/                     # private Python executable, stdlib, native libraries and dependencies
     bin/python               # stable application entry point; also python3 and python3.x
     runtime.json             # bundled interpreter version and native library list
@@ -120,6 +132,7 @@ The installed layout is:
   framework/ose/             # engine and selected SDK files
   framework/sdl/             # generator, runtimes and native filter
   framework/ose-ws/          # optional server and embedded frontend
+  framework/ose-editor/      # optional source editor and embedded frontend (SDK)
   packages/                  # offline wheel repository retained for repairs
   cargo-vendor/              # offline third-party Rust sources in SDK profile
   cargo-home/config.toml     # Cargo source replacement and offline mode
@@ -145,6 +158,9 @@ ose build --model model.json --deployment deployment.json
 # Observe an already-running application.
 ose-ws init --config /path/to/application/web.json
 ose-ws --config /path/to/application/web.json
+
+# Edit application sources without starting OSE.
+ose-editor --root /path/to/application
 ```
 
 The application is compiled after installation. Existing plans refer to absolute
@@ -193,3 +209,6 @@ no usable system Python and an unreachable pip index, verifies private
 stdlib/native library loading, compiles two independent applications, executes
 C/Rust/Python components in simulation and real time, authenticates to
 the installed console and creates a filtered capture in the launch directory.
+It also starts the installed editor, previews/applies a component rename in an
+external source project, validates the unsaved revision and saves ordinary OSE
+files using only installed framework resources.
