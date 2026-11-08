@@ -24,6 +24,7 @@ class Entry:
     block: object
     file: Path
     mtime: object = None
+    identity: object = None
     value: object = _MISSING
     blocked: bool = False
     error: str = ''
@@ -121,7 +122,9 @@ class DirectorySync:
                 os.unlink(name)
         # Ensure directories created by this write are watched before returning.
         self.watcher.ensure(file.parent)
-        entry.mtime, entry.value, entry.blocked, entry.error = file.stat().st_mtime_ns, value, False, ''
+        status = file.stat()
+        entry.mtime, entry.identity = status.st_mtime_ns, (status.st_dev, status.st_ino)
+        entry.value, entry.blocked, entry.error = value, False, ''
         self.remote.pop(path, None)
         self.report(f'{path}: app -> file')
 
@@ -134,8 +137,9 @@ class DirectorySync:
                 return
             if not file.is_file():
                 raise ValueError('parameter path is not a regular file')
-            mtime = file.stat().st_mtime_ns
-            if not force and mtime == entry.mtime:
+            status = file.stat()
+            mtime, identity = status.st_mtime_ns, (status.st_dev, status.st_ino)
+            if not force and mtime == entry.mtime and identity == entry.identity:
                 return
             entry.blocked = True
             value = read_value(file, self.max_json_size)
@@ -145,7 +149,8 @@ class DirectorySync:
             payload = entry.block.values.encode(value[path])
             normalized = entry.block.values.decode(payload)
             await entry.block.set(value[path])
-            entry.mtime, entry.value, entry.blocked, entry.error = mtime, normalized, False, ''
+            entry.mtime, entry.identity = mtime, identity
+            entry.value, entry.blocked, entry.error = normalized, False, ''
             self.remote.pop(path, None)
             self.report(f'{path}: file -> app')
         except RemoteError as error:
@@ -210,7 +215,8 @@ class DirectorySync:
                         # Existing file content is not an import in app mode,
                         # even if its initial replacement needs a disk retry.
                         if entry.file.exists():
-                            entry.mtime = entry.file.stat().st_mtime_ns
+                            status = entry.file.stat()
+                            entry.mtime, entry.identity = status.st_mtime_ns, (status.st_dev, status.st_ino)
                         value = await entry.block.get()
                     except RemoteError as error:
                         self.diagnostic(path, error)

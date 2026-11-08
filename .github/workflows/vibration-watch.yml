@@ -1,9 +1,9 @@
 name: Vibration Watch
 on:
   push:
-    paths: ['vibration-watch/**', 'sdl/**', 'ose/**', 'ose-ws/**', 'setenv.sh', '.github/workflows/vibration-watch.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'vibration-watch/**', 'sdl/**', 'ose/**', 'ose-ws/**', 'setenv.sh', '.github/workflows/vibration-watch.yml']
   pull_request:
-    paths: ['vibration-watch/**', 'sdl/**', 'ose/**', 'ose-ws/**', 'setenv.sh', '.github/workflows/vibration-watch.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'vibration-watch/**', 'sdl/**', 'ose/**', 'ose-ws/**', 'setenv.sh', '.github/workflows/vibration-watch.yml']
 permissions:
   contents: read
 jobs:
@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        python: ['3.9', '3.12']
+        python: ['3.10', '3.12']
     defaults:
       run:
         working-directory: vibration-watch

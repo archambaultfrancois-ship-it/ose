@@ -51,7 +51,7 @@ Check your tools:
 bash --version
 git --version
 make --version
-python3 --version
+python3 --version  # Or a compatible versioned command, such as python3.12
 cc --version
 cargo --version
 rustc --version
@@ -62,7 +62,7 @@ package manager. For example, on Debian/Ubuntu:
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y bash git build-essential python3 python3-venv \
+sudo apt-get install -y bash git build-essential python3 \
   python3-pip python3-dev cargo openssl
 ```
 
@@ -277,9 +277,9 @@ ose-ws setup
 ose-ws
 ```
 
-`setup` installs optional dependencies into `vibration-watch/.venv` and needs
-network access the first time. The console requires Python 3.10+ and uses its
-own environment without changing the application's Python interpreter.
+`setup` installs optional dependencies into the framework's `build/python-deps`
+and needs network access the first time. All commands use the same detected Python 3.10+ from `PATH`, including
+versioned commands such as `python3.12`. `make setup` at the repository root prepares all Python dependencies.
 The frontend is included: no Node.js build is needed.
 
 Open **http://127.0.0.1:8080**. In a third terminal, read the local token and

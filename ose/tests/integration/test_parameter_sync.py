@@ -122,6 +122,9 @@ class SyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         incoming = self.root / 'incoming'
         incoming.mkdir()
         (incoming / 'detection.json').write_text(json.dumps({self.path: {'threshold': 124.}}))
+        # A replacement must be imported even when the filesystem clock has not advanced.
+        stamp = self.file.stat().st_mtime_ns
+        os.utime(incoming / 'detection.json', ns=(stamp, stamp))
         shutil.rmtree(self.file.parent)
         os.replace(incoming, self.file.parent)
         await self.until(lambda: self.remote() == 124.)
@@ -187,7 +190,8 @@ class SyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.setup_server()
         self.edit(5.)
         environment = dict(os.environ, OSE_PARAMETER_TOKEN=TOKEN,
-                           PYTHONPATH=str(Path(__file__).resolve().parents[2] / 'src'))
+                           PYTHONPATH=os.pathsep.join([str(Path(__file__).resolve().parents[2] / 'src'),
+                                                      os.environ.get('PYTHONPATH', '')]))
         process = await asyncio.create_subprocess_exec(os.sys.executable, '-m', 'ose.cli', 'parameter', 'sync',
             '--dir', str(self.directory), '--client', 'operator', '--initial', 'app',
             '--host', '127.0.0.1', '--port', str(self.port), '--sdl-root', str(SDL_ROOT),
@@ -216,7 +220,7 @@ class SyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         (build / 'plan.json').write_text(json.dumps(self.plan))
         (build / 'endpoint.json').write_text(json.dumps({'host': '127.0.0.1', 'port': self.port}))
         env = dict(os.environ, FRAMEWORK_ENV=str(framework / 'setenv.sh'),
-                   OSE_APP_ROOT=str(self.root), OSE_PYTHON=os.sys.executable, OSE_PARAMETER_CLIENT='operator')
+                   OSE_APP_ROOT=str(self.root), OSE_PARAMETER_CLIENT='operator')
         env.pop('OSE_PARAMETER_TOKEN', None)
         script = ('set -eu\nshopt -s expand_aliases\nsource "$FRAMEWORK_ENV"\n'
                   'ose app parameter sync --dir .\n')

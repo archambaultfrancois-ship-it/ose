@@ -102,6 +102,11 @@ startup files. Add the command directory to PATH when it is not already there.
 | `--check-only` | Off | Verify the package and report prerequisites without writing the installation. |
 | `--dry-run` | Off | Show the selection and diagnostics without installing. |
 
+The checkout's Python 3.10+ PATH requirement does not apply to the target machine:
+the offline bundle includes its own compatible interpreter. Its installed
+`.venv` directory contains that complete private runtime and is retained when
+checkout virtual environments are removed from the development workflow.
+
 The bundled interpreter takes precedence over system Python, `PYTHONHOME`, user
 site-packages and `OSE_INSTALL_PYTHON`. The installer starts it in isolated mode,
 so a previously sourced application environment cannot alter installation.

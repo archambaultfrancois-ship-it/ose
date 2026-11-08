@@ -1,9 +1,9 @@
 name: OSE language SDKs
 on:
   push:
-    paths: ['ose/**', 'sdl/**', 'Makefile', '.github/workflows/ose.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'ose/**', 'sdl/**', 'Makefile', '.github/workflows/ose.yml']
   pull_request:
-    paths: ['ose/**', 'sdl/**', 'Makefile', '.github/workflows/ose.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'ose/**', 'sdl/**', 'Makefile', '.github/workflows/ose.yml']
 jobs:
   full:
     env:
@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ['3.9', '3.10', '3.13']
+        python: ['3.10', '3.13']
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

@@ -7,22 +7,15 @@ from pathlib import Path
 import subprocess
 import sys
 from types import SimpleNamespace
-import venv
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT.parent / 'tools'))
+from python_env import install_dependencies, require_python, use_dependencies
 
 
 def setup(framework):
-    environment = ROOT / ".venv"
-    python = environment / "bin/python"
-    if not python.is_file():
-        venv.EnvBuilder(with_pip=True).create(environment)
-    install_environment = dict(os.environ)
-    # Do not let prepared SDL dependency directories satisfy the venv's install.
-    install_environment.pop("PYTHONPATH", None)
-    subprocess.run([str(python), "-m", "pip", "install", str(framework / "ose"),
-                    str(framework / "ose-ws") + "[recording]"], check=True, env=install_environment)
+    install_dependencies(framework, ['ose', 'ose-ws[recording]'], ['ose-ws/requirements.lock'])
     print("Web console dependencies are ready. Run ose-ws after source ./setenv.sh.")
     return 0
 
@@ -33,6 +26,7 @@ def launch(args, framework):
     if not directory.is_dir():
         raise ValueError(f"Working directory does not exist: {directory}")
     # Use the selected checkout, including its SDL and prepared recording services.
+    use_dependencies(framework)
     sys.path[:0] = [str(framework / "ose-ws/src"), str(framework / "ose/src")]
     from ose.app import Application
     from ose_ws import cli
@@ -78,6 +72,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     framework = Path(os.environ.get("FRAMEWORK_ROOT", ROOT.parent)).resolve()
     try:
+        require_python()
         if not (framework / "ose-ws/src/ose_ws/cli.py").is_file():
             raise ValueError("The selected framework has no web console. Use the parent SDL/OSE checkout or set FRAMEWORK_ROOT.")
         return setup(framework) if args.command == "setup" else launch(args, framework)

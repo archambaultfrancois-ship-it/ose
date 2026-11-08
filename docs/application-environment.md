@@ -19,11 +19,14 @@ source /path/to/ose/setenv.sh
 ose app env
 ```
 
-This exports `FRAMEWORK_ROOT`, `SDL_ROOT`, `OSE_ROOT`, `OSE_APP_ROOT`, and
-`OSE_PYTHON`, and adds the source runtimes and optional recording/filter modules
-to `PYTHONPATH`. `OSE_PYTHON` defaults to `python3`; set it to an interpreter path
-before sourcing to use a virtual environment. Sourcing again does not duplicate
-the added paths. No dependencies are built or installed when sourcing.
+This exports `FRAMEWORK_ROOT`, `SDL_ROOT`, `OSE_ROOT`, and `OSE_APP_ROOT`,
+and prepares source and dependency paths. It detects Python 3.10+ in `PATH`,
+preferring `python3` when compatible and otherwise using a versioned command
+such as `python3.12`. The detected path is exported as `PYTHON`; every command
+and Make uses this same interpreter. `make python-info` shows the selection.
+Setup fails immediately if no compatible interpreter is found. Run `make setup` from the
+repository root to install Python dependencies into `build/python-deps` using
+that interpreter. Sourcing again does not duplicate paths or install anything.
 Interactive Bash terminals also enable `ose` completion for commands,
 options and option choices. Press Tab after `ose`, `ose app parameter`,
 or an option such as `ose run --mode` followed by a space.
@@ -40,17 +43,11 @@ ose-editor --port 8083
 ose-editor setup
 ```
 
-On first launch, it creates the framework's `ose-editor/.venv` with `OSE_PYTHON`
-(Python 3.10+) and installs the editor's constrained runtime dependencies. Later
-launches reuse that environment, preparing it again only if dependencies are
-missing. `ose-editor setup` prepares or repairs it explicitly and needs network
-access. Sourcing the environment, `ose-editor --help` and `ose-editor --check`
-never install dependencies. The bundled frontend needs no Node.js build.
-
-`OSE_EDITOR_PYTHON` selects an existing interpreter instead of the managed
-environment. Launch never installs into that override automatically; run
-`ose-editor setup` explicitly to install its dependencies. Editor options and the
-calling directory are preserved; `ose-editor --help` lists the options.
+The first launch installs missing editor dependencies into the checkout's
+`build/python-deps`; subsequent launches reuse them. `ose-editor setup` prepares
+or repairs those dependencies explicitly. `--help` and `--check` never install
+anything. The editor, console, application and Make commands all use the same
+detected Python from `PATH`. The bundled frontend needs no Node.js build.
 
 ## Recording commands
 
@@ -64,7 +61,7 @@ app-run
 ose app record
 ```
 
-At launch, `ose app record` checks the recording and filter modules with `OSE_PYTHON`.
+At launch, `ose app record` checks the recording and filter modules with the same PATH Python.
 It automatically installs/builds only missing services, then opens the console.
 Later launches reuse them; `--help` skips preparation. The first preparation
 uses the existing Makefile targets and may require pip/network access for MCAP,

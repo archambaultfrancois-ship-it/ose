@@ -54,7 +54,7 @@ separate repository. In the [OSE repository](../README.md), the engine is in
 `ose/` and uses the sibling `../sdl` project by default. An explicit path
 supports a separate SDL dependency checkout.
 
-Requirements: Python 3.9+, a C99 compiler, Rust/Cargo, and a compatible SDL
+Requirements: Python 3.10+ in PATH, a C99 compiler, Rust/Cargo, and a compatible SDL
 checkout. Java components additionally need a Java 7-compatible compiler/JVM;
 Ada components need GNAT with the full Ada 2012 runtime. The complete `make check`
 requires both toolchains; `make check TEST_LANGUAGES=python,c,rust` selects the

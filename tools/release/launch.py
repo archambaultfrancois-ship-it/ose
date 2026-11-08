@@ -26,7 +26,6 @@ def main():
     os.environ['FRAMEWORK_ROOT'] = str(framework)
     os.environ['SDL_ROOT'] = str(framework / 'sdl')
     os.environ['OSE_ROOT'] = str(framework / 'ose')
-    os.environ['OSE_PYTHON'] = sys.executable
     os.environ['PIP_NO_INDEX'] = '1'
     os.environ['PIP_FIND_LINKS'] = str(prefix / 'packages')
     if (prefix / 'cargo-vendor').is_dir():

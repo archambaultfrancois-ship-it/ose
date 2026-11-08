@@ -76,6 +76,25 @@ uses this checkout's SDL/OSE framework directly and is also tested when its
 framework or web console dependencies change. From the repository root, run
 `make -C vibration-watch validate` and `make -C vibration-watch test`.
 
+## Python requirement
+
+The checkout automatically detects **Python 3.10 or later in `PATH`**. It prefers
+a compatible `python3`, then accepts a versioned command such as `python3.12`.
+The same interpreter is used for every checkout command:
+
+```sh
+make python-info
+make setup
+```
+
+Dependencies are stored in `build/python-deps`; the application, console, editor
+and Make commands all run with that same Python. Checkout commands do not create
+or select virtual environments. See the [application environment reference](docs/application-environment.md).
+
+The [offline installation bundle](docs/release.md) carries its own compatible
+Python runtime. Installing and running that bundle does not require Python on
+the target machine; the PATH requirement above applies to checkout development.
+
 ## Local application environment
 
 For Bash development, source the framework environment from your application
@@ -90,7 +109,7 @@ ose app env
 This selects the application, prepares source paths and enables CLI completion
 in interactive Bash. The shortcuts are `app-cd`, `app-build` and `app-run`.
 See the [application environment reference](docs/application-environment.md)
-for interpreter selection, working directories, recording commands and parameter
+for Python requirements, working directories, recording commands and parameter
 import/export. The [quick start](docs/quick-start.md) demonstrates these commands
 with Vibration Watch.
 

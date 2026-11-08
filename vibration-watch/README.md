@@ -13,7 +13,7 @@ New to the framework? The **[beginner OSE quick start](../docs/quick-start.md)**
 walks through this application, its output, live parameter changes, simulation
 and optional web/recording/distributed workshops.
 
-Python 3.9+, a C99 compiler, Rust/Cargo and Git. OpenSSL is needed to generate
+Python 3.10+, a C99 compiler, Rust/Cargo and Git. OpenSSL is needed to generate
 development TLS certificates. The optional parameter directory sync uses
 `inotify-simple` on Linux/Termux; ordinary runs need no third-party Python packages.
 
@@ -55,25 +55,16 @@ in the application directory. `ose app record` prepares missing recording/filter
 dependencies and opens the external console. `ose app env` shows the selected paths; `ose app --help` lists workflows.
 Interactive Bash terminals also enable `ose` completion for commands,
 subcommands, options and option choices. Source `./setenv.sh`, then press Tab.
-After installing the [model editor dependencies](../ose-editor/README.md),
-`ose-editor` opens this application's graphical model editor at
-`http://127.0.0.1:8082`, using its separate Python environment.
+The `ose-editor` command opens this application's graphical model editor at
+`http://127.0.0.1:8082`, using the same PATH Python as the application.
 `ose app record inspect FILE` displays all recorded messages; use `--limit N` to show
 only the first N selected messages.
 
-If the system `python3` is older than 3.9, select an installed compatible
-interpreter for the application commands:
+All checkout commands share the detected Python 3.10+ from `PATH` (`python3`
+or a versioned command such as `python3.12`). Run `make setup` from
+the repository root to prepare their shared dependencies in `build/python-deps`.
 
-```sh
-export OSE_PYTHON=/path/to/python3.12
-source ./setenv.sh
-app-build
-```
-
-`OSE_PYTHON` also applies when set after sourcing. For direct Make commands, use
-`make build PYTHON=/path/to/python3.12`. The application passes the selected
-interpreter to OSE and records it in the generated component commands, so rebuild
-after changing Python.
+Rebuild application components after changing the Python installation in PATH.
 
 ### Linux process names
 
@@ -81,7 +72,7 @@ Local and cluster deployments use the instance prefix `vw`. After rebuilding,
 `top` shows names such as `vw-broker`, `vw-a-sensor1`, `vw-c-sensor1`,
 `vw-c-analyzer1`, and `vw-web`. The `a` process runs OSE's adapter; the `c`
 process runs the business callbacks. Both are named automatically before
-business initialization, including Python 3.9 components and a Python 3.12
+business initialization, including Python components and the
 console. No handler changes are needed.
 
 For a second independent instance, export `OSE_PROCESS_PREFIX=vw2` before
@@ -100,20 +91,8 @@ source ./setenv.sh
 ose-ws setup
 ```
 
-The optional web console requires Python 3.10+. When running the application
-with Python 3.9, set `OSE_WS_PYTHON` to an installed Python 3.10+ interpreter
-before `ose-ws setup`, then unset it so the launcher uses the prepared `.venv`:
-
-```sh
-export OSE_WS_PYTHON=/usr/bin/python3.12
-ose-ws setup
-unset OSE_WS_PYTHON
-```
-
-`setup` reuses an existing `.venv`; changing `OSE_WS_PYTHON` does not change that
-environment's Python version. To change versions, preserve the old environment
-and create a new `.venv` with the selected interpreter before running `setup`.
-The application keeps using `OSE_PYTHON`.
+The console uses the same PATH Python as the application and editor. `setup`
+installs its dependencies into the framework's `build/python-deps` directory.
 
 Start the local application in one Bash terminal:
 
@@ -147,10 +126,8 @@ remain attached to the application. Relative `state_dir` and `OSE_WS_STATE_DIR`
 paths follow the runtime directory; absolute state paths retain their location.
 Launch from the same directory to reopen its database and captures.
 
-`ose-ws setup` installs into the application's `.venv`; only the console uses
-that interpreter. `app-run` retains `OSE_PYTHON`. Set `OSE_WS_PYTHON` to select a
-different interpreter with the web dependencies already installed. The launcher
-works from another directory after sourcing this application's environment.
+The launcher works from another directory after sourcing this application's
+environment. Every command uses the same detected interpreter from `PATH`.
 
 Use `ose-ws --port 8081` for another HTTP port, `ose-ws check` to check an existing
 configuration, or `ose-ws --config /path/to/console.json` for an explicit
@@ -270,7 +247,7 @@ between readings are not retained.
 Install the optional watcher once using the application's Python interpreter:
 
 ```sh
-python3 -m pip install '../ose[sync]'
+make -C .. setup
 make run PARAMS_SYNC=1 DURATION=60
 make run PARAMS_SYNC=1 PARAMS_DIR=./my-parameters SCENARIO=normal DURATION=60
 make demo-distributed PARAMS_SYNC=1 DURATION=60
@@ -279,8 +256,8 @@ make demo-distributed PARAMS_SYNC=1 DURATION=60
 The Python launcher accepts the same option:
 
 ```sh
-python3 tools/vibration.py run --params-sync --duration 60
-python3 tools/vibration.py run --params-sync ./my-parameters --duration 60
+"$PYTHON" tools/vibration.py run --params-sync --duration 60
+"$PYTHON" tools/vibration.py run --params-sync ./my-parameters --duration 60
 ```
 
 `--params-sync` defaults to the `parameters/` directory. Each block has a unit
@@ -426,7 +403,7 @@ ose app parameter get                            # All five blocks
 ose app parameter get '^machines/1/'              # Both blocks for motor 1
 ose app parameter get '/detection$'               # Both alarm thresholds
 ose app parameter get --exact machines/1/detection
-python3 tools/vibration.py set-threshold --machine 1 --rms-threshold 2.0
+"$PYTHON" tools/vibration.py set-threshold --machine 1 --rms-threshold 2.0
 ose app parameter watch machines/1/detection --count 2
 ```
 
@@ -448,7 +425,7 @@ the application's business validation:
 ```sh
 ose app parameter get --exact machines/1/sensor > build/sensor-1.json
 # Edit the seven fields under "machines/1/sensor" in build/sensor-1.json.
-python3 tools/vibration.py set-sensor --machine 1 --file build/sensor-1.json
+"$PYTHON" tools/vibration.py set-sensor --machine 1 --file build/sensor-1.json
 ```
 
 `set-sensor` accepts this single-block export or the original bare settings

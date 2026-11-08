@@ -31,7 +31,7 @@ class SharedSettingsTests(unittest.IsolatedAsyncioTestCase):
     async def parameters_shell(self, action, options, environment, data=None):
         alias = 'ose app parameter get' if action == 'get' else 'ose app parameter set'
         script = 'set -eu\nshopt -s expand_aliases\nsource "$APP_ENV"\n' + alias + ' "$@"\n'
-        env = dict(environment, APP_ENV=str(ROOT / 'setenv.sh'), OSE_PYTHON=sys.executable)
+        env = dict(environment, APP_ENV=str(ROOT / 'setenv.sh'))
         env.pop('OSE_PARAMETER_CLIENT', None)
         process = await asyncio.create_subprocess_exec('bash', '--noprofile', '--norc', '-c', script, 'test',
             *map(str, options), cwd=ROOT, env=env, stdin=asyncio.subprocess.PIPE,

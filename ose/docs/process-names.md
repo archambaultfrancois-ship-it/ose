@@ -1,8 +1,8 @@
 # Linux process identification
 
 OSE names Linux processes and its SDK threads through the kernel `comm` field.
-The names are ASCII and at most 15 bytes, including the instance prefix. Python
-3.9 and 3.12 use the same mechanism. Naming is best effort on restricted systems;
+The names are ASCII and at most 15 bytes, including the instance prefix. Supported
+Python versions use the same mechanism. Naming is best effort on restricted systems;
 other platforms continue to run without this Linux-specific diagnostic feature.
 
 Set an application prefix in the deployment:

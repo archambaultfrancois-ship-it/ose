@@ -19,6 +19,12 @@ spec.loader.exec_module(web)
 
 
 class WebConsoleTests(unittest.TestCase):
+    def test_setup_uses_the_shared_checkout_dependencies(self):
+        with patch.object(web, 'install_dependencies') as install, redirect_stdout(io.StringIO()):
+            self.assertEqual(web.setup(FRAMEWORK), 0)
+        install.assert_called_once_with(FRAMEWORK, ['ose', 'ose-ws[recording]'],
+                                        ['ose-ws/requirements.lock'])
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix="vibration web ")
         self.addCleanup(self.directory.cleanup)

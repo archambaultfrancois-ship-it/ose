@@ -37,7 +37,7 @@ def framework(args):
 
 def environment(args):
     root = framework(args)
-    return dict(os.environ, SDL_ROOT=str(root / "sdl"), PYTHONPATH=str(root / "ose/src"),
+    return dict(os.environ, SDL_ROOT=str(root / "sdl"), PYTHONPATH=os.pathsep.join([str(root / "ose/src"), str(root / "build/python-deps")]),
                 OSE_PROCESS_PREFIX=os.environ.get("OSE_PROCESS_PREFIX", "vw"))
 
 
@@ -180,7 +180,7 @@ def require_params_sync(args):
     result = subprocess.run([sys.executable, "-c", "import inotify_simple"],
                             env=environment(args), capture_output=True)
     if result.returncode:
-        raise ValueError('install the optional watcher with python3 -m pip install "inotify-simple>=1.3.5,<3"')
+        raise ValueError('install the optional watcher with make setup from the framework checkout')
 
 
 def available_port():
@@ -455,11 +455,10 @@ def main():
     parser.add_argument("--image-pull-secret", action="append", default=[])
     args = parser.parse_args()
     try:
-        if sys.version_info < (3, 9):
+        if sys.version_info < (3, 10):
             raise ValueError(
-                f"Python 3.9+ is required; {sys.executable} is Python {sys.version.split()[0]}. "
-                "Select a compatible interpreter with 'export OSE_PYTHON=/path/to/python3.12' "
-                "for app-build/app-run, or 'make build PYTHON=/path/to/python3.12'.")
+                f"Python 3.10+ is required; {sys.executable} is Python {sys.version.split()[0]}. "
+                "Use a Python 3.10+ interpreter from PATH.")
         finite(args.duration, 1e-6, 1e9, "duration")
         if args.task in ('run', 'distributed-local', 'simulate', 'replay'):
             sys.path.insert(0, str(framework(args) / 'ose/src'))

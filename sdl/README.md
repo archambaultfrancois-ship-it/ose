@@ -69,7 +69,7 @@ their terminator on the same line. See [comments](docs/schema.md#comments-and-ge
 ## Build and validation
 
 The generator's SDL/JSON/XSD paths and Python runtime use Python's standard library;
-YAML support requires optional PyYAML. XSD export uses Python 3.9+. Other
+YAML support requires optional PyYAML. This checkout requires Python 3.10+. Other
 backends need a C99 compiler, Rust/Cargo, a JDK, GNAT, and Matlab or GNU Octave.
 C requires 8-bit bytes and IEEE-754 binary32/binary64. Java bindings target Java
 7 features; tests use the compiler’s default source/target settings. Java required

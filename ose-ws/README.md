@@ -21,10 +21,9 @@ On Termux, install Rust/Cargo and a C toolchain if Pydantic's native dependency
 must be built from source rather than installed from a compatible wheel.
 
 ```sh
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install ./ose './ose-ws[recording]'
-export PYTHONPATH="$PWD/sdl/runtime/python${PYTHONPATH:+:$PYTHONPATH}"
+make python-info  # Detect Python 3.10+, including versioned commands
+make setup
+source vibration-watch/setenv.sh
 ```
 
 The checked-in frontend is included in the wheel. Installed users do not need

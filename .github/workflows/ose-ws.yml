@@ -1,9 +1,9 @@
 name: OSE Web Console
 on:
   push:
-    paths: ['ose-ws/**', 'ose/**', 'sdl/runtime/python/**', '.github/workflows/ose-ws.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'ose-ws/**', 'ose/**', 'sdl/runtime/python/**', '.github/workflows/ose-ws.yml']
   pull_request:
-    paths: ['ose-ws/**', 'ose/**', 'sdl/runtime/python/**', '.github/workflows/ose-ws.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'ose-ws/**', 'ose/**', 'sdl/runtime/python/**', '.github/workflows/ose-ws.yml']
 jobs:
   console:
     runs-on: ubuntu-22.04

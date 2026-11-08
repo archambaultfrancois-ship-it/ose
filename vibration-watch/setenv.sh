@@ -31,15 +31,7 @@ else
     return 1
 fi
 
-# The web console uses its optional environment without changing app-run's Python.
+# The console uses the same PATH Python as the application and editor.
 ose-ws() {
-    local web_python
-    if [[ -n "${OSE_WS_PYTHON:-}" ]]; then
-        web_python="$OSE_WS_PYTHON"
-    elif [[ -x "$OSE_APP_ROOT/.venv/bin/python" ]]; then
-        web_python="$OSE_APP_ROOT/.venv/bin/python"
-    else
-        web_python="$OSE_PYTHON"
-    fi
-    "$web_python" "$OSE_APP_ROOT/tools/web_console.py" "$@"
+    "$PYTHON" "$OSE_APP_ROOT/tools/web_console.py" "$@"
 }

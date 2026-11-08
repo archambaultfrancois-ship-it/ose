@@ -1,4 +1,5 @@
 PYTHON ?= python3
+-include ../tools/python.mk
 CC ?= gcc
 CARGO ?= cargo
 CFLAGS ?= -std=c99 -Wall -Wextra -pedantic -O3
@@ -28,7 +29,7 @@ JAVA_TEST_CLASSES := $(BUILD_DIR)/java-test-classes
 SDL_FILES := $(shell find schemas -type f \( -name '*.sdl' -o -name '*.sdl.json' -o -name '*.sdl.yaml' -o -name '*.sdl.yml' -o -name '*.sdl.xsd' \))
 SDL_DIRS := $(shell find schemas -type d)
 CHECK_SILENT := $(findstring s,$(firstword $(MAKEFLAGS)))
-RUN_TEST := $(if $(CHECK_SILENT),$(PYTHON) tests/run_quiet.py --,)
+RUN_TEST := $(if $(CHECK_SILENT),"$(PYTHON)" tests/run_quiet.py --,)
 matlab_available := $(if $(strip $(matlab)),$(shell command -v $(matlab) >/dev/null 2>&1 && echo yes))
 ifeq ($(matlab_available),yes)
 matlab_bench_label := Matlab
@@ -44,7 +45,7 @@ endif
 all: $(BUILD_DIR)/sdl_utest
 
 check:
-	@$(PYTHON) tests/run_check.py make
+	@"$(PYTHON)" tests/run_check.py make
 
 test:
 	@$(MAKE) --no-print-directory CHECK_SILENT= test-c
@@ -66,81 +67,81 @@ test-rust: $(GENERATED_DIR)/.stamp
 
 test-python: $(GENERATED_DIR)/.stamp
 	@if [ -z "$(CHECK_SILENT)" ]; then echo "=== Component Python: runtime, schema/codegen, invalid input, limits ==="; fi
-	$(RUN_TEST) env PYTHONPATH=runtime/python:$(PYTHON_GENERATED_DIR) $(PYTHON) tests/python/run_tests.py
+	$(RUN_TEST) env PYTHONPATH=runtime/python:$(PYTHON_GENERATED_DIR) "$(PYTHON)" tests/python/run_tests.py
 
 # Optional readers and an independent XSD validator. Core tests need neither.
 SCHEMA_DEPS ?= build/schema-deps
 schema-deps:
-	$(PYTHON) -m pip --disable-pip-version-check install --upgrade --target "$(SCHEMA_DEPS)" -r tests/requirements-schema-formats.txt
+	"$(PYTHON)" -m pip --disable-pip-version-check install --upgrade --target "$(SCHEMA_DEPS)" -r tests/requirements-schema-formats.txt
 
 test-schema-formats:
-	$(RUN_TEST) env PYTHONPATH="$(SCHEMA_DEPS):runtime/python" $(PYTHON) tests/python/test_schema_formats.py
+	$(RUN_TEST) env PYTHONPATH="$(SCHEMA_DEPS):runtime/python" "$(PYTHON)" tests/python/test_schema_formats.py
 
 .PHONY: schema-deps test-schema-formats
 
 # Optional catalogue predicate service and native language gateways.
 filter-native:
-	CARGO="$(CARGO)" CC="$(CC)" $(PYTHON) tools/filter/build_native.py
+	CARGO="$(CARGO)" CC="$(CC)" "$(PYTHON)" tools/filter/build_native.py
 
 filter-python:
-	CARGO="$(CARGO)" CC="$(CC)" $(PYTHON) tools/filter/build_native.py --python
+	CARGO="$(CARGO)" CC="$(CC)" "$(PYTHON)" tools/filter/build_native.py --python
 
 filter-jni:
-	CARGO="$(CARGO)" CC="$(CC)" JAVAC="$(JAVAC)" $(PYTHON) tools/filter/build_native.py --jni
+	CARGO="$(CARGO)" CC="$(CC)" JAVAC="$(JAVAC)" "$(PYTHON)" tools/filter/build_native.py --jni
 
 filter-mex:
-	CARGO="$(CARGO)" CC="$(CC)" $(PYTHON) tools/filter/build_native.py --mex
+	CARGO="$(CARGO)" CC="$(CC)" "$(PYTHON)" tools/filter/build_native.py --mex
 
 filter-matlab-mex: filter-native
 	env CCACHE_DISABLE=1 $(matlab) $(MATLAB_FLAGS) -r "try, addpath('runtime/filter/matlab'); build_filter_mex(pwd); catch err, disp(getReport(err, 'extended')); exit(1); end; exit(0)"
 
 filter-bindings:
-	CARGO="$(CARGO)" CC="$(CC)" JAVAC="$(JAVAC)" $(PYTHON) tools/filter/build_native.py --python --jni --mex
+	CARGO="$(CARGO)" CC="$(CC)" JAVAC="$(JAVAC)" "$(PYTHON)" tools/filter/build_native.py --python --jni --mex
 
 test-filter: filter-bindings
 	$(RUN_TEST) $(CARGO) test --offline --manifest-path runtime/rust/Cargo.toml --target-dir build/filter
 	$(RUN_TEST) $(CARGO) test --locked --offline --manifest-path runtime/filter/Cargo.toml --target-dir build/filter
-	$(RUN_TEST) env CC="$(CC)" JAVAC="$(JAVAC)" JAVA="$(JAVA)" OCTAVE="$(OCTAVE)" $(PYTHON) tests/filter/run_tests.py --gnatmake "$(GNATMAKE)"
+	$(RUN_TEST) env CC="$(CC)" JAVAC="$(JAVAC)" JAVA="$(JAVA)" OCTAVE="$(OCTAVE)" "$(PYTHON)" tests/filter/run_tests.py --gnatmake "$(GNATMAKE)"
 
 bench-filter: filter-bindings
-	CC="$(CC)" JAVAC="$(JAVAC)" JAVA="$(JAVA)" OCTAVE="$(OCTAVE)" $(PYTHON) tests/filter/run_benchmarks.py --no-build --gnatmake "$(GNATMAKE)"
+	CC="$(CC)" JAVAC="$(JAVAC)" JAVA="$(JAVA)" OCTAVE="$(OCTAVE)" "$(PYTHON)" tests/filter/run_benchmarks.py --no-build --gnatmake "$(GNATMAKE)"
 
 .PHONY: filter-native filter-python filter-jni filter-mex filter-matlab-mex filter-bindings test-filter bench-filter
 
 # Optional recording tools do not add dependencies to the core runtime tests.
 RECORDING_DEPS ?= build/recording-deps
 recording-deps:
-	$(PYTHON) -m pip --disable-pip-version-check install --upgrade --target "$(RECORDING_DEPS)" --no-deps -r tools/recording/requirements.txt
+	"$(PYTHON)" -m pip --disable-pip-version-check install --upgrade --target "$(RECORDING_DEPS)" --no-deps -r tools/recording/requirements.txt
 
 test-recording:
-	PYTHONPATH=$(RECORDING_DEPS):runtime/python $(PYTHON) -m unittest discover -s tests/recording -v
+	PYTHONPATH=$(RECORDING_DEPS):runtime/python "$(PYTHON)" -m unittest discover -s tests/recording -v
 
 test-wireshark-adapter:
-	PYTHONPATH=$(RECORDING_DEPS):runtime/python CC="$(CC)" $(PYTHON) -m unittest discover -s tests/recording -p test_dissector.py -v
+	PYTHONPATH=$(RECORDING_DEPS):runtime/python CC="$(CC)" "$(PYTHON)" -m unittest discover -s tests/recording -p test_dissector.py -v
 
 .PHONY: test-wireshark-tshark
 test-wireshark-tshark:
-	PYTHONPATH=$(RECORDING_DEPS):runtime/python SDL_TEST_TSHARK=1 $(PYTHON) -m unittest discover -s tests/recording -p test_tshark.py -v
+	PYTHONPATH=$(RECORDING_DEPS):runtime/python SDL_TEST_TSHARK=1 "$(PYTHON)" -m unittest discover -s tests/recording -p test_tshark.py -v
 
 recording-native:
-	CARGO="$(CARGO)" CC="$(CC)" $(PYTHON) tools/recording/build_native.py
+	CARGO="$(CARGO)" CC="$(CC)" "$(PYTHON)" tools/recording/build_native.py
 
 recording-jni:
-	CARGO="$(CARGO)" CC="$(CC)" JAVAC="$(JAVAC)" $(PYTHON) tools/recording/build_native.py --jni
+	CARGO="$(CARGO)" CC="$(CC)" JAVAC="$(JAVAC)" "$(PYTHON)" tools/recording/build_native.py --jni
 
 recording-mex:
-	CARGO="$(CARGO)" CC="$(CC)" $(PYTHON) tools/recording/build_native.py --mex
+	CARGO="$(CARGO)" CC="$(CC)" "$(PYTHON)" tools/recording/build_native.py --mex
 
 test-recording-native: recording-native
 	$(CARGO) test --locked --manifest-path runtime/recording/Cargo.toml --target-dir build/recording
-	PYTHONPATH=$(RECORDING_DEPS):runtime/python CC="$(CC)" $(PYTHON) -m unittest discover -s tests/recording -p test_native.py -v
-	PYTHONPATH=$(RECORDING_DEPS):runtime/python $(PYTHON) -m unittest discover -s tests/recording -p test_pcapng.py -v
+	PYTHONPATH=$(RECORDING_DEPS):runtime/python CC="$(CC)" "$(PYTHON)" -m unittest discover -s tests/recording -p test_native.py -v
+	PYTHONPATH=$(RECORDING_DEPS):runtime/python "$(PYTHON)" -m unittest discover -s tests/recording -p test_pcapng.py -v
 
 test-recording-jni: recording-jni
-	PYTHONPATH=$(RECORDING_DEPS):runtime/python JAVAC="$(JAVAC)" JAVA="$(JAVA)" $(PYTHON) tests/recording/run_gateways.py --jni
+	PYTHONPATH=$(RECORDING_DEPS):runtime/python JAVAC="$(JAVAC)" JAVA="$(JAVA)" "$(PYTHON)" tests/recording/run_gateways.py --jni
 
 test-recording-mex: recording-mex
-	PYTHONPATH=$(RECORDING_DEPS):runtime/python OCTAVE="$(OCTAVE)" $(PYTHON) tests/recording/run_gateways.py --mex
+	PYTHONPATH=$(RECORDING_DEPS):runtime/python OCTAVE="$(OCTAVE)" "$(PYTHON)" tests/recording/run_gateways.py --mex
 
 # Optional GNAT binding depends only on standard Ada packages and the C ABI.
 # Override RECORDING_GNATMAKE / RECORDING_ADA_FLAGS for a native GNAT installation.
@@ -149,12 +150,12 @@ RECORDING_ADA_FLAGS ?= $(ADA_FLAGS)
 test-recording-ada: recording-native
 	mkdir -p build/recording/ada
 	$(RECORDING_GNATMAKE) $(RECORDING_ADA_FLAGS) -Iruntime/recording/ada -D build/recording/ada -o build/recording/ada/test tests/recording/native/recording_ada_tests.adb -largs -L$(CURDIR)/build/recording/release -lsdl_recording -Wl,-rpath,$(CURDIR)/build/recording/release
-	$(PYTHON) tests/recording/run_ada.py
+	"$(PYTHON)" tests/recording/run_ada.py
 
 .PHONY: recording-deps test-recording test-wireshark-adapter recording-native recording-jni recording-mex test-recording-native test-recording-jni test-recording-mex test-recording-ada
 
 bench: $(GENERATED_DIR)/.stamp
-	@$(PYTHON) tests/run_benchmarks.py make "$(BENCH_ITERATIONS)" "$(matlab_bench_label)"
+	@"$(PYTHON)" tests/run_benchmarks.py make "$(BENCH_ITERATIONS)" "$(matlab_bench_label)"
 
 bench-c: $(BUILD_DIR)/sdl_bench
 	SDL_BENCH_ITERATIONS=$(BENCH_ITERATIONS) ./$(BUILD_DIR)/sdl_bench
@@ -163,16 +164,16 @@ bench-rust: $(GENERATED_DIR)/.stamp
 	SDL_BENCH_ITERATIONS=$(BENCH_ITERATIONS) $(CARGO) run --release --manifest-path tests/rust/Cargo.toml --bin bench
 
 sdl-python-native: $(GENERATED_DIR)/.stamp
-	CC="$(CC)" $(PYTHON) tests/python/build_native.py "$(PYTHON_GENERATED_DIR)"
+	CC="$(CC)" "$(PYTHON)" tests/python/build_native.py "$(PYTHON_GENERATED_DIR)"
 
 bench-python-buffers: $(GENERATED_DIR)/.stamp
-	SDL_BENCH_ITERATIONS=$(BENCH_ITERATIONS) PYTHONPATH=runtime/python:$(PYTHON_GENERATED_DIR) $(PYTHON) tests/python/bench_buffers.py
+	SDL_BENCH_ITERATIONS=$(BENCH_ITERATIONS) PYTHONPATH=runtime/python:$(PYTHON_GENERATED_DIR) "$(PYTHON)" tests/python/bench_buffers.py
 
 bench-python: $(GENERATED_DIR)/.stamp
-	SDL_BENCH_ITERATIONS=$(BENCH_ITERATIONS) PYTHONPATH=runtime/python:$(PYTHON_GENERATED_DIR) $(PYTHON) tests/python/bench.py
+	SDL_BENCH_ITERATIONS=$(BENCH_ITERATIONS) PYTHONPATH=runtime/python:$(PYTHON_GENERATED_DIR) "$(PYTHON)" tests/python/bench.py
 
 bench-python-fixed: $(GENERATED_DIR)/.stamp
-	PYTHONPATH=runtime/python:$(PYTHON_GENERATED_DIR) $(PYTHON) tests/python/bench_fixed.py
+	PYTHONPATH=runtime/python:$(PYTHON_GENERATED_DIR) "$(PYTHON)" tests/python/bench_fixed.py
 
 test-matlab: $(GENERATED_DIR)/.stamp
 	$(RUN_TEST) env $(matlab_run)
@@ -202,7 +203,7 @@ bench-java: $(GENERATED_DIR)/.stamp
 
 $(GENERATED_DIR)/.stamp: $(SDL_DIRS) $(SDL_FILES) sdlc/generator.py sdlc/schema_formats.py sdlc/c_backend.py sdlc/rust_backend.py sdlc/python_backend.py sdlc/matlab_backend.py sdlc/java_backend.py sdlc/ada_backend.py sdlc/ada_filter.py sdlc/ada_direct.py runtime/java/SdlCodec.java runtime/matlab/sdl_matlab_runtime.m runtime/matlab/sdl_mex_context.m runtime/matlab/sdl_representation.m Makefile
 	mkdir -p $(GENERATED_DIR)
-	$(PYTHON) sdlc/generator.py -c -rust -python -matlab -java -ada schemas $(GENERATED_DIR)
+	"$(PYTHON)" sdlc/generator.py -c -rust -python -matlab -java -ada schemas $(GENERATED_DIR)
 	touch $@
 
 $(C_GENERATED_DIR)/schema.h $(C_GENERATED_DIR)/codec_cases.h $(C_GENERATED_DIR)/benchmark.h $(C_GENERATED_DIR)/empty_message.h $(C_GENERATED_DIR)/sdl_registry.h: $(GENERATED_DIR)/.stamp
@@ -251,8 +252,8 @@ bench-ada-fixed: build/ada/sdl_ada_bench_fixed
 
 .PHONY: test-representation
 test-representation:
-	$(RUN_TEST) $(PYTHON) tests/run_representation.py --gnatmake "$(GNATMAKE)" $(if $(matlab_available),--matlab "$(matlab)")
+	$(RUN_TEST) "$(PYTHON)" tests/run_representation.py --gnatmake "$(GNATMAKE)" $(if $(matlab_available),--matlab "$(matlab)")
 
 .PHONY: test-packages
 test-packages:
-	$(RUN_TEST) $(PYTHON) tests/run_packages.py --gnatmake "$(GNATMAKE)" $(if $(matlab_available),--matlab "$(matlab)")
+	$(RUN_TEST) "$(PYTHON)" tests/run_packages.py --gnatmake "$(GNATMAKE)" $(if $(matlab_available),--matlab "$(matlab)")

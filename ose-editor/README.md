@@ -32,42 +32,29 @@ specification are acceptance targets, not measured desktop results.
 
 ## Run from the checkout
 
-From the repository root, select Python 3.10+ and start the editor against the
-application. The first launch creates `ose-editor/.venv` and installs its runtime
-dependencies using `requirements.lock`; subsequent launches reuse that environment:
+The checkout requires Python 3.10+ in `PATH` (`python3` or a versioned command
+such as `python3.12`, detected automatically). From the repository root:
 
 ```bash
-export OSE_PYTHON=python3.12
+make python-info
+make setup
 source vibration-watch/setenv.sh
 ose-editor
 ```
 
-To prepare the environment separately, run `ose-editor setup` before launching.
-Initial setup needs pip/network access. The bundled frontend needs no Node.js
-build. `ose-editor --help` and `ose-editor --check` never install dependencies,
-and sourcing `setenv.sh` does not create an environment or install anything.
+`make setup` installs the Python dependencies for the application, editor, console
+and backend tests into `build/python-deps`. The same PATH Python runs every tool.
+The bundled frontend needs no Node.js build.
 
-For a manual installation with the optional backend test dependencies:
+Alternatively, `ose-editor setup` prepares just the editor dependencies, and
+`ose-editor` does this automatically if they are missing. Initial setup needs
+pip/network access. Sourcing `setenv.sh`, `ose-editor --help`, and
+`ose-editor --check` never install dependencies. All editor options are forwarded:
 
 ```sh
-python3 -m venv ose-editor/.venv
-ose-editor/.venv/bin/python -m pip install -c ose-editor/requirements.lock ./ose './ose-editor[test]'
-ose-editor/.venv/bin/ose-editor --root ./vibration-watch --sdl-root ./sdl
+ose-editor --port 8083
+ose-editor --root /path/to/application
 ```
-
-In later Bash terminals, source the application environment and use the same command:
-
-```bash
-cd vibration-watch
-source ./setenv.sh
-ose-editor
-```
-
-It opens the selected `OSE_APP_ROOT` without changing the application interpreter.
-Set `OSE_EDITOR_PYTHON` to override the editor's Python environment. That interpreter
-is used unchanged during launch; `ose-editor setup` explicitly installs dependencies
-into it. Setup and launch preserve the application's Python environment and the
-calling directory.
 
 Open `http://127.0.0.1:8082` and enter the access token from the file printed
 by the command, normally `<application>/.ose-editor/access.token`. The token
@@ -80,7 +67,7 @@ explicit deployment options the editor reopens registered profiles or discovers
 existing directory. Missing schema inputs remain visible as draft errors.
 
 The existing compiled frontend is included. To rebuild it, use Node.js 22.12+
-or 24 and `make frontend-editor`. Runtime use needs no Node.js or network.
+or 24 and `make frontend-editor`.
 
 ## Editing workflow
 

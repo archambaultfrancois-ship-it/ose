@@ -83,7 +83,7 @@ printf '%s\\n' "${COMPREPLY[@]}"
     def test_setenv_activates_completion_for_alias_and_can_be_sourced_again(self):
         with tempfile.TemporaryDirectory() as temporary:
             env = dict(self.environment, FRAMEWORK_ENV=str(FRAMEWORK / 'setenv.sh'),
-                       OSE_PYTHON=sys.executable, OSE_APP_ROOT=temporary,
+                       PATH=str(Path(sys.executable).parent) + os.pathsep + os.environ['PATH'], OSE_APP_ROOT=temporary,
                        OSE_PARAMETER_TOKEN='test-only-explicit-token', PS1='', PS2='')
             script = '''
 set -eu
@@ -92,7 +92,8 @@ source "$FRAMEWORK_ENV" >/dev/null
 complete -p ose
 alias ose
 # Completion uses the generated script even with Python unavailable afterwards.
-OSE_PYTHON=/missing/python
+PATH=/missing/commands
+PYTHON=/missing/interpreter
 COMP_WORDS=(ose parameter get --ex)
 COMP_CWORD=3
 _ose_complete

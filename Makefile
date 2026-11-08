@@ -1,6 +1,15 @@
 # Repository entry points; each project keeps its own build and dependencies.
 .DEFAULT_GOAL := all
 SDL_ROOT ?= $(abspath $(CURDIR)/sdl)
+include tools/python.mk
+
+.PHONY: setup
+setup:
+	"$(PYTHON)" tools/python_env.py
+
+.PHONY: python-info
+python-info:
+	@"$(PYTHON)" -c 'import sys; print(sys.executable); print("Python " + sys.version.split()[0])'
 
 .PHONY: all check test check-sdl check-ose test-sdl test-ose check-ws test-ws frontend-ws check-editor test-editor frontend-editor clean help release test-release
 all:
@@ -24,12 +33,14 @@ check-editor test-editor:
 frontend-editor:
 	+$(MAKE) -C ose-editor frontend
 release:
-	python3 tools/release/build.py $(RELEASE_OPTIONS)
+	"$(PYTHON)" tools/release/build.py $(RELEASE_OPTIONS)
 test-release:
-	python3 -m unittest discover -s tools/release/tests -v
+	"$(PYTHON)" -m unittest discover -s tools/release/tests -v
 clean:
 	+$(MAKE) -C sdl clean
 help:
+	@echo 'make setup       Install checkout dependencies with the detected PATH Python (3.10+)'
+	@echo 'make python-info Show the detected Python interpreter and version'
 	@echo 'make check       Run SDL and OSE checks'
 	@echo 'make check-sdl   Run SDL backend checks'
 	@echo 'make check-ose   Run OSE checks'

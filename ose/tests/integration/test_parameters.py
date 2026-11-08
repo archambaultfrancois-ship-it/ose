@@ -451,7 +451,7 @@ def on_tick(ctx):
         broker = Broker(self.plan)
         port = await broker.start()
         try:
-            env = dict(os.environ, OSE_APP_ROOT=str(self.root), OSE_PYTHON=os.sys.executable,
+            env = dict(os.environ, OSE_APP_ROOT=str(self.root),
                        FRAMEWORK_ENV=str(Path(__file__).resolve().parents[3] / 'setenv.sh'))
             env.pop('OSE_PARAMETER_TOKEN', None)
             env.pop('OSE_PARAMETER_CLIENT', None)

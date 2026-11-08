@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # From the application root: source /path/to/ose/setenv.sh
-# Optional settings before sourcing: OSE_APP_ROOT and OSE_PYTHON.
+# Optional setting before sourcing: OSE_APP_ROOT.
 
 if [ -z "${BASH_VERSION:-}" ]; then
     printf '%s\n' 'setenv.sh requires Bash: source it from a Bash terminal.' >&2
@@ -12,10 +12,14 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 fi
 
 export FRAMEWORK_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+if ! PYTHON="$(sh "$FRAMEWORK_ROOT/tools/find-python.sh")"; then
+    return 1
+fi
+export PYTHON
+
 export SDL_ROOT="$FRAMEWORK_ROOT/sdl"
 export OSE_ROOT="$FRAMEWORK_ROOT/ose"
 export OSE_APP_ROOT="${OSE_APP_ROOT:-$PWD}"
-export OSE_PYTHON="${OSE_PYTHON:-python3}"
 
 if [[ ! -f "$OSE_ROOT/src/ose/cli.py" || ! -f "$SDL_ROOT/runtime/python/sdl_runtime.py" ]]; then
     printf 'Invalid framework checkout: %s\n' "$FRAMEWORK_ROOT" >&2
@@ -48,6 +52,7 @@ _ose_env_prepend_path() {
 }
 
 for _ose_env_path in \
+    "$FRAMEWORK_ROOT/build/python-deps" \
     "$SDL_ROOT/build/recording-deps" \
     "$SDL_ROOT/build/filter/release" \
     "$SDL_ROOT/runtime/filter/python" \
@@ -60,16 +65,16 @@ unset _ose_env_path
 unset -f _ose_env_prepend_path
 
 _ose_env_cli() {
-    "$OSE_PYTHON" -m ose.cli "$@"
+    "$PYTHON" -m ose.cli "$@"
 }
 
 _ose_env_app_cd() {
     cd -- "$OSE_APP_ROOT"
 }
 
-# Keep the editor's optional dependencies separate from the application Python.
+# Every checkout command uses the same detected PATH Python.
 ose-editor() {
-    "$OSE_PYTHON" "$FRAMEWORK_ROOT/ose-editor/tools/editor.py" "$@"
+    "$PYTHON" "$FRAMEWORK_ROOT/ose-editor/tools/editor.py" "$@"
 }
 
 # Application commands resolve credentials afresh on every invocation.

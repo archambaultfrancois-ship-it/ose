@@ -101,7 +101,7 @@ def command(variable, default):
 def prerequisites(profile, languages, features):
     warnings = []
     if sys.version_info < (3, 10):
-        warnings.append('Python 3.10+ is needed by the web console; the current interpreter is ' + platform.python_version())
+        warnings.append('Python 3.10+ is required by OSE; the current interpreter is ' + platform.python_version())
     tools = []
     if profile == 'sdk':
         tools.append(('MAKE', 'make'))

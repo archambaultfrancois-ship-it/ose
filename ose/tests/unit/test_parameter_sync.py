@@ -156,6 +156,17 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 self.sync.safe_file(path)
 
+    async def test_replaced_file_with_identical_mtime_is_imported(self):
+        self.sync.write(self.path, self.block.value)
+        replacement = self.root / 'replacement.json'
+        replacement.write_text(json.dumps({self.path: {'threshold': 50.}}))
+        stamp = self.entry.mtime
+        os.utime(replacement, ns=(stamp, stamp))
+        os.replace(replacement, self.entry.file)
+        await self.sync.local(self.path)
+        self.assertEqual(self.block.writes, 1)
+        self.assertEqual(self.block.value['threshold'], 50.)
+
     async def test_initial_app_retries_export_without_importing_old_file(self):
         self.edit({'threshold': 5.})
         client = AsyncMock()

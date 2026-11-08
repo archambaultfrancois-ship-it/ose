@@ -1,9 +1,9 @@
 name: SDL codecs and services
 on:
   push:
-    paths: ['sdl/**', 'Makefile', '.github/workflows/sdl.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'sdl/**', 'Makefile', '.github/workflows/sdl.yml']
   pull_request:
-    paths: ['sdl/**', 'Makefile', '.github/workflows/sdl.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'sdl/**', 'Makefile', '.github/workflows/sdl.yml']
 jobs:
   test:
     runs-on: ubuntu-22.04
