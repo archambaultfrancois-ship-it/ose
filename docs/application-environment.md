@@ -36,12 +36,21 @@ other repository, and source the script again.
 ```sh
 ose-editor
 ose-editor --port 8083
+# Optional: prepare or repair dependencies without starting the editor.
+ose-editor setup
 ```
 
-It uses `OSE_EDITOR_PYTHON` when set, otherwise the framework's
-`ose-editor/.venv/bin/python` when available, then `OSE_PYTHON`. Install the
-[editor dependencies](../ose-editor/README.md#run-from-the-checkout) first.
-Editor options are forwarded unchanged; `ose-editor --help` lists them.
+On first launch, it creates the framework's `ose-editor/.venv` with `OSE_PYTHON`
+(Python 3.10+) and installs the editor's constrained runtime dependencies. Later
+launches reuse that environment, preparing it again only if dependencies are
+missing. `ose-editor setup` prepares or repairs it explicitly and needs network
+access. Sourcing the environment, `ose-editor --help` and `ose-editor --check`
+never install dependencies. The bundled frontend needs no Node.js build.
+
+`OSE_EDITOR_PYTHON` selects an existing interpreter instead of the managed
+environment. Launch never installs into that override automatically; run
+`ose-editor setup` explicitly to install its dependencies. Editor options and the
+calling directory are preserved; `ose-editor --help` lists the options.
 
 ## Recording commands
 

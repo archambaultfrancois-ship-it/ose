@@ -2,9 +2,9 @@ name: OSE Model Editor
 on:
   workflow_dispatch:
   push:
-    paths: ['ose-editor/**', 'ose/**', 'sdl/sdlc/**', 'sdl/runtime/python/**', '.github/workflows/ose-editor.yml']
+    paths: ['ose-editor/**', 'ose/**', 'setenv.sh', 'sdl/sdlc/**', 'sdl/runtime/python/**', '.github/workflows/ose-editor.yml']
   pull_request:
-    paths: ['ose-editor/**', 'ose/**', 'sdl/sdlc/**', 'sdl/runtime/python/**', '.github/workflows/ose-editor.yml']
+    paths: ['ose-editor/**', 'ose/**', 'setenv.sh', 'sdl/sdlc/**', 'sdl/runtime/python/**', '.github/workflows/ose-editor.yml']
 jobs:
   editor:
     runs-on: ubuntu-22.04
@@ -29,5 +29,6 @@ jobs:
       - run: npm run build
         working-directory: ose-editor/frontend
       - run: make -C ose-editor test-python
+      - run: PYTHONPATH=ose/src python -m unittest discover -s ose/tests/unit -p test_environment.py -v
       - run: python -m build
         working-directory: ose-editor

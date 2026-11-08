@@ -106,3 +106,18 @@ printf '%s\n' "$PWD"
                 result = subprocess.run(['bash', '--noprofile', '--norc', '-c', script], env=env,
                                         text=True, capture_output=True, check=True)
                 self.assertEqual(result.stdout.strip(), expected)
+
+    def test_editor_passes_setup_and_options_to_the_checkout_launcher(self):
+        with tempfile.TemporaryDirectory(prefix='editor application ') as directory:
+            root = Path(directory)
+            probe = root / 'selected python'
+            probe.write_text('#!' + sys.executable + '\nimport json, sys\nprint(json.dumps(sys.argv[1:]))\n')
+            probe.chmod(0o755)
+            env = dict(os.environ, FRAMEWORK_ENV=str(FRAMEWORK / 'setenv.sh'),
+                       OSE_APP_ROOT=directory, OSE_PYTHON=str(probe))
+            script = 'set -eu\nsource "$FRAMEWORK_ENV"\nose-editor "$@"\n'
+            for arguments in (['setup'], ['--root', 'project with spaces', '--port', '8083']):
+                result = subprocess.run(['bash', '--noprofile', '--norc', '-c', script, 'test', *arguments],
+                                        env=env, text=True, capture_output=True, check=True)
+                self.assertEqual(json.loads(result.stdout),
+                                 [str(FRAMEWORK / 'ose-editor/tools/editor.py'), *arguments])

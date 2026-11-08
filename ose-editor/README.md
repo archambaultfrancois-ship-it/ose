@@ -32,8 +32,22 @@ specification are acceptance targets, not measured desktop results.
 
 ## Run from the checkout
 
-From the repository root, install the independent package and start it against
-an application source directory:
+From the repository root, select Python 3.10+ and start the editor against the
+application. The first launch creates `ose-editor/.venv` and installs its runtime
+dependencies using `requirements.lock`; subsequent launches reuse that environment:
+
+```bash
+export OSE_PYTHON=python3.12
+source vibration-watch/setenv.sh
+ose-editor
+```
+
+To prepare the environment separately, run `ose-editor setup` before launching.
+Initial setup needs pip/network access. The bundled frontend needs no Node.js
+build. `ose-editor --help` and `ose-editor --check` never install dependencies,
+and sourcing `setenv.sh` does not create an environment or install anything.
+
+For a manual installation with the optional backend test dependencies:
 
 ```sh
 python3 -m venv ose-editor/.venv
@@ -41,8 +55,7 @@ ose-editor/.venv/bin/python -m pip install -c ose-editor/requirements.lock ./ose
 ose-editor/.venv/bin/ose-editor --root ./vibration-watch --sdl-root ./sdl
 ```
 
-In a Bash terminal with the dependencies installed, the application environment
-also provides an `ose-editor` shortcut:
+In later Bash terminals, source the application environment and use the same command:
 
 ```bash
 cd vibration-watch
@@ -51,7 +64,10 @@ ose-editor
 ```
 
 It opens the selected `OSE_APP_ROOT` without changing the application interpreter.
-Set `OSE_EDITOR_PYTHON` to override the editor's Python environment.
+Set `OSE_EDITOR_PYTHON` to override the editor's Python environment. That interpreter
+is used unchanged during launch; `ose-editor setup` explicitly installs dependencies
+into it. Setup and launch preserve the application's Python environment and the
+calling directory.
 
 Open `http://127.0.0.1:8082` and enter the access token from the file printed
 by the command, normally `<application>/.ose-editor/access.token`. The token
