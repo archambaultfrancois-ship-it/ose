@@ -493,504 +493,160 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-node_modules/@primeicons/core 8.0.2
-License: SEE LICENSE IN LICENSE.md
+node_modules/@primeuix/styled 0.7.4
+License: MIT
 
-# PrimeUI License
+MIT License
 
-This package is part of **PrimeUI**, a family of commercial UI libraries by PrimeTek Informatics.
+Copyright (c) 2025 PrimeTek
 
-## How PrimeUI May Be Used
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-PrimeUI may be used under one of two licenses. You choose the one that applies to you based on eligibility.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-### Community License (Free)
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
-Free for organizations that meet all of the following criteria:
 
-- Less than $1,000,000 USD in annual gross revenue
-- Fewer than 5 developers
-- Fewer than 10 employees
-- Less than $3,000,000 USD in venture capital or outside funding
+node_modules/@primeuix/styles 2.0.3
+License: MIT
 
-Individuals, students, non-profits, and non-commercial open source projects also qualify.
+MIT License
 
-The Community License provides full access to the core libraries and supports up to 4 developers. It requires annual renewal by confirming continued eligibility.
+Copyright (c) 2025 PrimeTek
 
-### Commercial License (Paid)
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-For organizations that do not qualify for the Community License.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-Licensed per developer, perpetual, with one year of updates included. Renewal is optional and extends access to new versions. The Commercial Suite also includes PrimeBlocks, Theme Designer, all PrimeUI Pro components, and Premium Support.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
-## License Key
 
-A valid license key is required to use this software. License verification is performed offline, with no telemetry and no remote connection. A missing, invalid, or expired key may cause the software to display a license notice.
+node_modules/@primeuix/themes 1.2.5
+License: MIT
 
-## Full Terms
+MIT License
 
-The complete license terms, eligibility details, and renewal information are available at:
+Copyright (c) 2025 PrimeTek
 
-- Community License: <https://primeui.dev/licenses/community>
-- Commercial License: <https://primeui.dev/licenses/commercial>
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-## Restrictions
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-This software is distributed as a compiled package. You may not reverse-engineer, decompile, or extract its source code, redistribute it as a component library or development tool, or remove its license mechanisms. Redistributing the software so that third parties can develop with it requires a separate OEM License. See the full terms for details.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
----
 
-© 2026 PrimeTek Informatics. All rights reserved.
+node_modules/@primeuix/utils 0.6.4
+License: MIT
 
+MIT License
 
-node_modules/@primeicons/vue 8.0.2
-License: SEE LICENSE IN LICENSE.md
+Copyright (c) 2025 PrimeTek
 
-# PrimeUI License
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-This package is part of **PrimeUI**, a family of commercial UI libraries by PrimeTek Informatics.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-## How PrimeUI May Be Used
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
-PrimeUI may be used under one of two licenses. You choose the one that applies to you based on eligibility.
 
-### Community License (Free)
+node_modules/@primevue/core 4.5.5
+License: MIT
 
-Free for organizations that meet all of the following criteria:
+The MIT License (MIT)
 
-- Less than $1,000,000 USD in annual gross revenue
-- Fewer than 5 developers
-- Fewer than 10 employees
-- Less than $3,000,000 USD in venture capital or outside funding
+Copyright (c) 2018-2025 PrimeTek
 
-Individuals, students, non-profits, and non-commercial open source projects also qualify.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-The Community License provides full access to the core libraries and supports up to 4 developers. It requires annual renewal by confirming continued eligibility.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-### Commercial License (Paid)
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 
-For organizations that do not qualify for the Community License.
 
-Licensed per developer, perpetual, with one year of updates included. Renewal is optional and extends access to new versions. The Commercial Suite also includes PrimeBlocks, Theme Designer, all PrimeUI Pro components, and Premium Support.
+node_modules/@primevue/icons 4.5.5
+License: MIT
 
-## License Key
+The MIT License (MIT)
 
-A valid license key is required to use this software. License verification is performed offline, with no telemetry and no remote connection. A missing, invalid, or expired key may cause the software to display a license notice.
+Copyright (c) 2018-2025 PrimeTek
 
-## Full Terms
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-The complete license terms, eligibility details, and renewal information are available at:
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-- Community License: <https://primeui.dev/licenses/community>
-- Commercial License: <https://primeui.dev/licenses/commercial>
-
-## Restrictions
-
-This software is distributed as a compiled package. You may not reverse-engineer, decompile, or extract its source code, redistribute it as a component library or development tool, or remove its license mechanisms. Redistributing the software so that third parties can develop with it requires a separate OEM License. See the full terms for details.
-
----
-
-© 2026 PrimeTek Informatics. All rights reserved.
-
-
-node_modules/@primeui/license-manager 1.1.0
-License: SEE LICENSE IN LICENSE.md
-
-# PrimeUI License
-
-This package is part of **PrimeUI**, a family of commercial UI libraries by PrimeTek Informatics.
-
-## How PrimeUI May Be Used
-
-PrimeUI may be used under one of two licenses. You choose the one that applies to you based on eligibility.
-
-### Community License (Free)
-
-Free for organizations that meet all of the following criteria:
-
-- Less than $1,000,000 USD in annual gross revenue
-- Fewer than 5 developers
-- Fewer than 10 employees
-- Less than $3,000,000 USD in venture capital or outside funding
-
-Individuals, students, non-profits, and non-commercial open source projects also qualify.
-
-The Community License provides full access to the core libraries and supports up to 4 developers. It requires annual renewal by confirming continued eligibility.
-
-### Commercial License (Paid)
-
-For organizations that do not qualify for the Community License.
-
-Licensed per developer, perpetual, with one year of updates included. Renewal is optional and extends access to new versions. The Commercial Suite also includes PrimeBlocks, Theme Designer, all PrimeUI Pro components, and Premium Support.
-
-## License Key
-
-A valid license key is required to use this software. License verification is performed offline, with no telemetry and no remote connection. A missing, invalid, or expired key may cause the software to display a license notice.
-
-## Full Terms
-
-The complete license terms, eligibility details, and renewal information are available at:
-
-- Community License: <https://primeui.dev/licenses/community>
-- Commercial License: <https://primeui.dev/licenses/commercial>
-
-## Restrictions
-
-This software is distributed as a compiled package. You may not reverse-engineer, decompile, or extract its source code, redistribute it as a component library or development tool, or remove its license mechanisms. Redistributing the software so that third parties can develop with it requires a separate OEM License. See the full terms for details.
-
----
-
-© 2026 PrimeTek Informatics. All rights reserved.
-
-
-node_modules/@primeuix/motion 1.0.0
-License: SEE LICENSE IN LICENSE.md
-
-# PrimeUI License
-
-This package is part of **PrimeUI**, a family of commercial UI libraries by PrimeTek Informatics.
-
-## How PrimeUI May Be Used
-
-PrimeUI may be used under one of two licenses. You choose the one that applies to you based on eligibility.
-
-### Community License (Free)
-
-Free for organizations that meet all of the following criteria:
-
-- Less than $1,000,000 USD in annual gross revenue
-- Fewer than 5 developers
-- Fewer than 10 employees
-- Less than $3,000,000 USD in venture capital or outside funding
-
-Individuals, students, non-profits, and non-commercial open source projects also qualify.
-
-The Community License provides full access to the core libraries and supports up to 4 developers. It requires annual renewal by confirming continued eligibility.
-
-### Commercial License (Paid)
-
-For organizations that do not qualify for the Community License.
-
-Licensed per developer, perpetual, with one year of updates included. Renewal is optional and extends access to new versions. The Commercial Suite also includes PrimeBlocks, Theme Designer, all PrimeUI Pro components, and Premium Support.
-
-## License Key
-
-A valid license key is required to use this software. License verification is performed offline, with no telemetry and no remote connection. A missing, invalid, or expired key may cause the software to display a license notice.
-
-## Full Terms
-
-The complete license terms, eligibility details, and renewal information are available at:
-
-- Community License: <https://primeui.dev/licenses/community>
-- Commercial License: <https://primeui.dev/licenses/commercial>
-
-## Restrictions
-
-This software is distributed as a compiled package. You may not reverse-engineer, decompile, or extract its source code, redistribute it as a component library or development tool, or remove its license mechanisms. Redistributing the software so that third parties can develop with it requires a separate OEM License. See the full terms for details.
-
----
-
-© 2026 PrimeTek Informatics. All rights reserved.
-
-
-node_modules/@primeuix/styled 1.2.0
-License: SEE LICENSE IN LICENSE.md
-
-# PrimeUI License
-
-This package is part of **PrimeUI**, a family of commercial UI libraries by PrimeTek Informatics.
-
-## How PrimeUI May Be Used
-
-PrimeUI may be used under one of two licenses. You choose the one that applies to you based on eligibility.
-
-### Community License (Free)
-
-Free for organizations that meet all of the following criteria:
-
-- Less than $1,000,000 USD in annual gross revenue
-- Fewer than 5 developers
-- Fewer than 10 employees
-- Less than $3,000,000 USD in venture capital or outside funding
-
-Individuals, students, non-profits, and non-commercial open source projects also qualify.
-
-The Community License provides full access to the core libraries and supports up to 4 developers. It requires annual renewal by confirming continued eligibility.
-
-### Commercial License (Paid)
-
-For organizations that do not qualify for the Community License.
-
-Licensed per developer, perpetual, with one year of updates included. Renewal is optional and extends access to new versions. The Commercial Suite also includes PrimeBlocks, Theme Designer, all PrimeUI Pro components, and Premium Support.
-
-## License Key
-
-A valid license key is required to use this software. License verification is performed offline, with no telemetry and no remote connection. A missing, invalid, or expired key may cause the software to display a license notice.
-
-## Full Terms
-
-The complete license terms, eligibility details, and renewal information are available at:
-
-- Community License: <https://primeui.dev/licenses/community>
-- Commercial License: <https://primeui.dev/licenses/commercial>
-
-## Restrictions
-
-This software is distributed as a compiled package. You may not reverse-engineer, decompile, or extract its source code, redistribute it as a component library or development tool, or remove its license mechanisms. Redistributing the software so that third parties can develop with it requires a separate OEM License. See the full terms for details.
-
----
-
-© 2026 PrimeTek Informatics. All rights reserved.
-
-
-node_modules/@primeuix/styles 3.1.0
-License: SEE LICENSE IN LICENSE.md
-
-# PrimeUI License
-
-This package is part of **PrimeUI**, a family of commercial UI libraries by PrimeTek Informatics.
-
-## How PrimeUI May Be Used
-
-PrimeUI may be used under one of two licenses. You choose the one that applies to you based on eligibility.
-
-### Community License (Free)
-
-Free for organizations that meet all of the following criteria:
-
-- Less than $1,000,000 USD in annual gross revenue
-- Fewer than 5 developers
-- Fewer than 10 employees
-- Less than $3,000,000 USD in venture capital or outside funding
-
-Individuals, students, non-profits, and non-commercial open source projects also qualify.
-
-The Community License provides full access to the core libraries and supports up to 4 developers. It requires annual renewal by confirming continued eligibility.
-
-### Commercial License (Paid)
-
-For organizations that do not qualify for the Community License.
-
-Licensed per developer, perpetual, with one year of updates included. Renewal is optional and extends access to new versions. The Commercial Suite also includes PrimeBlocks, Theme Designer, all PrimeUI Pro components, and Premium Support.
-
-## License Key
-
-A valid license key is required to use this software. License verification is performed offline, with no telemetry and no remote connection. A missing, invalid, or expired key may cause the software to display a license notice.
-
-## Full Terms
-
-The complete license terms, eligibility details, and renewal information are available at:
-
-- Community License: <https://primeui.dev/licenses/community>
-- Commercial License: <https://primeui.dev/licenses/commercial>
-
-## Restrictions
-
-This software is distributed as a compiled package. You may not reverse-engineer, decompile, or extract its source code, redistribute it as a component library or development tool, or remove its license mechanisms. Redistributing the software so that third parties can develop with it requires a separate OEM License. See the full terms for details.
-
----
-
-© 2026 PrimeTek Informatics. All rights reserved.
-
-
-node_modules/@primeuix/themes 3.1.0
-License: SEE LICENSE IN LICENSE.md
-
-# PrimeUI License
-
-This package is part of **PrimeUI**, a family of commercial UI libraries by PrimeTek Informatics.
-
-## How PrimeUI May Be Used
-
-PrimeUI may be used under one of two licenses. You choose the one that applies to you based on eligibility.
-
-### Community License (Free)
-
-Free for organizations that meet all of the following criteria:
-
-- Less than $1,000,000 USD in annual gross revenue
-- Fewer than 5 developers
-- Fewer than 10 employees
-- Less than $3,000,000 USD in venture capital or outside funding
-
-Individuals, students, non-profits, and non-commercial open source projects also qualify.
-
-The Community License provides full access to the core libraries and supports up to 4 developers. It requires annual renewal by confirming continued eligibility.
-
-### Commercial License (Paid)
-
-For organizations that do not qualify for the Community License.
-
-Licensed per developer, perpetual, with one year of updates included. Renewal is optional and extends access to new versions. The Commercial Suite also includes PrimeBlocks, Theme Designer, all PrimeUI Pro components, and Premium Support.
-
-## License Key
-
-A valid license key is required to use this software. License verification is performed offline, with no telemetry and no remote connection. A missing, invalid, or expired key may cause the software to display a license notice.
-
-## Full Terms
-
-The complete license terms, eligibility details, and renewal information are available at:
-
-- Community License: <https://primeui.dev/licenses/community>
-- Commercial License: <https://primeui.dev/licenses/commercial>
-
-## Restrictions
-
-This software is distributed as a compiled package. You may not reverse-engineer, decompile, or extract its source code, redistribute it as a component library or development tool, or remove its license mechanisms. Redistributing the software so that third parties can develop with it requires a separate OEM License. See the full terms for details.
-
----
-
-© 2026 PrimeTek Informatics. All rights reserved.
-
-
-node_modules/@primeuix/utils 0.8.3
-License: SEE LICENSE IN LICENSE.md
-
-# PrimeUI License
-
-This package is part of **PrimeUI**, a family of commercial UI libraries by PrimeTek Informatics.
-
-## How PrimeUI May Be Used
-
-PrimeUI may be used under one of two licenses. You choose the one that applies to you based on eligibility.
-
-### Community License (Free)
-
-Free for organizations that meet all of the following criteria:
-
-- Less than $1,000,000 USD in annual gross revenue
-- Fewer than 5 developers
-- Fewer than 10 employees
-- Less than $3,000,000 USD in venture capital or outside funding
-
-Individuals, students, non-profits, and non-commercial open source projects also qualify.
-
-The Community License provides full access to the core libraries and supports up to 4 developers. It requires annual renewal by confirming continued eligibility.
-
-### Commercial License (Paid)
-
-For organizations that do not qualify for the Community License.
-
-Licensed per developer, perpetual, with one year of updates included. Renewal is optional and extends access to new versions. The Commercial Suite also includes PrimeBlocks, Theme Designer, all PrimeUI Pro components, and Premium Support.
-
-## License Key
-
-A valid license key is required to use this software. License verification is performed offline, with no telemetry and no remote connection. A missing, invalid, or expired key may cause the software to display a license notice.
-
-## Full Terms
-
-The complete license terms, eligibility details, and renewal information are available at:
-
-- Community License: <https://primeui.dev/licenses/community>
-- Commercial License: <https://primeui.dev/licenses/commercial>
-
-## Restrictions
-
-This software is distributed as a compiled package. You may not reverse-engineer, decompile, or extract its source code, redistribute it as a component library or development tool, or remove its license mechanisms. Redistributing the software so that third parties can develop with it requires a separate OEM License. See the full terms for details.
-
----
-
-© 2026 PrimeTek Informatics. All rights reserved.
-
-
-node_modules/@primevue/core 5.0.4
-License: SEE LICENSE IN LICENSE.md
-
-# PrimeUI License
-
-This package is part of **PrimeUI**, a family of commercial UI libraries by PrimeTek Informatics.
-
-## How PrimeUI May Be Used
-
-PrimeUI may be used under one of two licenses. You choose the one that applies to you based on eligibility.
-
-### Community License (Free)
-
-Free for organizations that meet all of the following criteria:
-
-- Less than $1,000,000 USD in annual gross revenue
-- Fewer than 5 developers
-- Fewer than 10 employees
-- Less than $3,000,000 USD in venture capital or outside funding
-
-Individuals, students, non-profits, and non-commercial open source projects also qualify.
-
-The Community License provides full access to the core libraries and supports up to 4 developers. It requires annual renewal by confirming continued eligibility.
-
-### Commercial License (Paid)
-
-For organizations that do not qualify for the Community License.
-
-Licensed per developer, perpetual, with one year of updates included. Renewal is optional and extends access to new versions. The Commercial Suite also includes PrimeBlocks, Theme Designer, all PrimeUI Pro components, and Premium Support.
-
-## License Key
-
-A valid license key is required to use this software. License verification is performed offline, with no telemetry and no remote connection. A missing, invalid, or expired key may cause the software to display a license notice.
-
-## Full Terms
-
-The complete license terms, eligibility details, and renewal information are available at:
-
-- Community License: https://primeui.dev/licenses/community
-- Commercial License: https://primeui.dev/licenses/commercial
-
-## Restrictions
-
-This software is distributed as a compiled package. You may not reverse-engineer, decompile, or extract its source code, redistribute it as a component library or development tool, or remove its license mechanisms. Redistributing the software so that third parties can develop with it requires a separate OEM License. See the full terms for details.
-
----
-
-© 2026 PrimeTek Informatics. All rights reserved.
-
-
-node_modules/@primevue/icons 5.0.4
-License: SEE LICENSE IN LICENSE.md
-
-# PrimeUI License
-
-This package is part of **PrimeUI**, a family of commercial UI libraries by PrimeTek Informatics.
-
-## How PrimeUI May Be Used
-
-PrimeUI may be used under one of two licenses. You choose the one that applies to you based on eligibility.
-
-### Community License (Free)
-
-Free for organizations that meet all of the following criteria:
-
-- Less than $1,000,000 USD in annual gross revenue
-- Fewer than 5 developers
-- Fewer than 10 employees
-- Less than $3,000,000 USD in venture capital or outside funding
-
-Individuals, students, non-profits, and non-commercial open source projects also qualify.
-
-The Community License provides full access to the core libraries and supports up to 4 developers. It requires annual renewal by confirming continued eligibility.
-
-### Commercial License (Paid)
-
-For organizations that do not qualify for the Community License.
-
-Licensed per developer, perpetual, with one year of updates included. Renewal is optional and extends access to new versions. The Commercial Suite also includes PrimeBlocks, Theme Designer, all PrimeUI Pro components, and Premium Support.
-
-## License Key
-
-A valid license key is required to use this software. License verification is performed offline, with no telemetry and no remote connection. A missing, invalid, or expired key may cause the software to display a license notice.
-
-## Full Terms
-
-The complete license terms, eligibility details, and renewal information are available at:
-
-- Community License: https://primeui.dev/licenses/community
-- Commercial License: https://primeui.dev/licenses/commercial
-
-## Restrictions
-
-This software is distributed as a compiled package. You may not reverse-engineer, decompile, or extract its source code, redistribute it as a component library or development tool, or remove its license mechanisms. Redistributing the software so that third parties can develop with it requires a separate OEM License. See the full terms for details.
-
----
-
-© 2026 PrimeTek Informatics. All rights reserved.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 
 
 node_modules/@types/web-bluetooth 0.0.20
@@ -2333,54 +1989,30 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-node_modules/primevue 5.0.4
-License: SEE LICENSE IN LICENSE.md
+node_modules/primevue 4.5.5
+License: MIT
 
-# PrimeUI License
+The MIT License (MIT)
 
-This package is part of **PrimeUI**, a family of commercial UI libraries by PrimeTek Informatics.
+Copyright (c) 2018-2025 PrimeTek
 
-## How PrimeUI May Be Used
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-PrimeUI may be used under one of two licenses. You choose the one that applies to you based on eligibility.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-### Community License (Free)
-
-Free for organizations that meet all of the following criteria:
-
-- Less than $1,000,000 USD in annual gross revenue
-- Fewer than 5 developers
-- Fewer than 10 employees
-- Less than $3,000,000 USD in venture capital or outside funding
-
-Individuals, students, non-profits, and non-commercial open source projects also qualify.
-
-The Community License provides full access to the core libraries and supports up to 4 developers. It requires annual renewal by confirming continued eligibility.
-
-### Commercial License (Paid)
-
-For organizations that do not qualify for the Community License.
-
-Licensed per developer, perpetual, with one year of updates included. Renewal is optional and extends access to new versions. The Commercial Suite also includes PrimeBlocks, Theme Designer, all PrimeUI Pro components, and Premium Support.
-
-## License Key
-
-A valid license key is required to use this software. License verification is performed offline, with no telemetry and no remote connection. A missing, invalid, or expired key may cause the software to display a license notice.
-
-## Full Terms
-
-The complete license terms, eligibility details, and renewal information are available at:
-
-- Community License: https://primeui.dev/licenses/community
-- Commercial License: https://primeui.dev/licenses/commercial
-
-## Restrictions
-
-This software is distributed as a compiled package. You may not reverse-engineer, decompile, or extract its source code, redistribute it as a component library or development tool, or remove its license mechanisms. Redistributing the software so that third parties can develop with it requires a separate OEM License. See the full terms for details.
-
----
-
-© 2026 PrimeTek Informatics. All rights reserved.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 
 
 node_modules/source-map-js 1.2.2

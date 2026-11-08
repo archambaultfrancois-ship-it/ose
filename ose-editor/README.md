@@ -74,6 +74,10 @@ or 24 and `make frontend-editor`.
 Select a component/link in Graph, an object in Tables or a declaration in the
 explorer. Use the inspector to edit its properties, including explicit defaults,
 SDL IDs/cardinalities, expressions, aliases, dimensions and wire clauses.
+In Graph, use **Shift**, **Ctrl**, or **Cmd + click** to add or remove components
+from the selection, or **Shift + drag** on the canvas to select an area. The
+caption shows the selected component count. Choose **Group selection** to
+prepare a named visual group containing those components.
 Every semantic change opens a concrete diff before application. Rename
 references and compound component operations update indexed model/deployment
 references together. Application handler code is listed for review and is never
@@ -113,6 +117,10 @@ make release
 release qualification.
 
 ## Selected software stack
+
+The UI uses PrimeVue 4.5.5 and compatible PrimeUIX themes under the MIT license.
+The lockfile and frontend tests keep this dependency family on MIT packages;
+the editor requires no PrimeUI license key.
 
 | Responsibility | Technology |
 | --- | --- |
