@@ -17,14 +17,12 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 REQUIREMENTS = {
-    'base': ['pip', 'setuptools==84.2.1', 'wheel==0.48.0'],
+    'base': ['pip', 'setuptools==84.2.1', 'wheel==0.48.0', 'mcap==1.5.0'],
     'sdk': ['PyYAML==6.0.3'],
     # The lock selects Python-compatible versions, including websockets 16 on
     # Python 3.10 and 17 on Python 3.11+.
     'web': ['fastapi==0.162.0', 'uvicorn==0.54.0', 'websockets>=14,<18'],
     'editor': ['fastapi==0.162.0', 'uvicorn==0.54.0', 'PyYAML==6.0.3'],
-    'recording': ['mcap==1.5.0'],
-    'filter': [],
     'sync': ['inotify-simple>=1.3.5,<3'],
 }
 
@@ -122,22 +120,25 @@ def prepare_native(stage, offline=False):
     env = dict(os.environ, CARGO_HOME=str(cargo_home))
     env.setdefault('RUSTUP_HOME', str(Path.home() / '.rustup'))
     run([sys.executable, sdl / 'tools/filter/build_native.py', '--python'], env=env)
-    # Retain only the loadable filter and Python extension, not compiler output.
-    release = sdl / 'build/filter/release'
-    for path in list(release.iterdir()):
-        if path.is_file() and (path.name.startswith('_sdl_filter_native') or
-                              path.name in ('libsdl_filter.so', 'libsdl_filter.dylib', 'sdl_filter.dll')):
-            continue
-        if path.is_dir():
-            shutil.rmtree(path)
-        else:
-            path.unlink()
-    for path in list((sdl / 'build/filter').iterdir()):
-        if path != release:
+    run([sys.executable, sdl / 'tools/recording/build_native.py'], env=env)
+    # Retain both loadable services and the Python extension, not compiler output.
+    for service in ('filter', 'recording'):
+        directory = sdl / 'build' / service
+        release = directory / 'release'
+        for path in list(release.iterdir()):
+            if path.is_file() and (path.name.startswith('_sdl_filter_native') or
+                                  path.name in (f'libsdl_{service}.so', f'libsdl_{service}.dylib', f'sdl_{service}.dll')):
+                continue
             if path.is_dir():
                 shutil.rmtree(path)
             else:
                 path.unlink()
+        for path in list(directory.iterdir()):
+            if path != release:
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
     shutil.rmtree(cargo_home)
 
 

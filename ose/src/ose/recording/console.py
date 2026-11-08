@@ -262,7 +262,7 @@ async def run(args):
                 raise ValueError("make the SDL Python runtime importable or pass --sdl-root")
     if sdl_root:
         root = SDL2(sdl_root).root
-        # Discover optional services built in this checkout without importing them.
+        # Discover services built in this checkout without importing them.
         # Recording without filters still works when the filter library is absent.
         for relative in ("build/recording-deps", "runtime/filter/python", "build/filter/release"):
             directory = root / relative

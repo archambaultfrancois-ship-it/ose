@@ -1,4 +1,4 @@
-"""Lazy loading of the optional SDL predicate service at either recording endpoint."""
+"""Lazy loading of the SDL predicate service at either recording endpoint."""
 import importlib
 from pathlib import Path
 import sys

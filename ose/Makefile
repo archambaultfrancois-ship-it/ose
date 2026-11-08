@@ -32,7 +32,7 @@ test-parameters:
 test-simulated:
 	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest discover -s tests/simulation -v
 
-# Recording and content filters are optional; install/build SDL services first.
+# Recording and content filtering use the required SDL services.
 .PHONY: test-recording
 test-recording:
 	PYTHONPATH="$(CURDIR)/src:$(SDL_ROOT)/runtime/python:$(SDL_ROOT)/runtime/filter/python:$(SDL_ROOT)/build/filter/release:$(SDL_ROOT)/build/recording-deps" "$(PYTHON)" -c 'import mcap, sdl_filter'
@@ -62,3 +62,6 @@ client-ada:
 .PHONY: test-mixed
 test-mixed:
 	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest discover -s tests/managed -p 'test_mixed.py' -v
+
+include ../tools/sdl-services.mk
+build check test-unit test-integration test-distributed test-parameters test-simulated test-recording test-java test-ada test-mixed: sdl-services

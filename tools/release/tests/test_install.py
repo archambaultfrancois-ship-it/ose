@@ -48,6 +48,8 @@ class InstallTests(unittest.TestCase):
         self.addCleanup(self.environment.stop)
 
     def seal(self):
+        for name in ('manifest.json', 'SHA256SUMS'):
+            (self.release / name).unlink(missing_ok=True)
         manifest = builder.manifest(self.release, ROOT)
         # Tests intentionally omit third-party wheels and assert the warning.
         manifest['requirements'] = {key: [] for key in builder.REQUIREMENTS}
@@ -109,6 +111,34 @@ class InstallTests(unittest.TestCase):
         self.assertFalse((self.bin / 'sdlc').exists())
         result = self.invoke('ose', '--help')
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_services_are_retained_without_optional_features_in_both_profiles(self):
+        native = ('framework/sdl/build/filter/release/libsdl_filter.so',
+                  'framework/sdl/build/filter/release/_sdl_filter_native.so',
+                  'framework/sdl/build/recording/release/libsdl_recording.so')
+        for name in native:
+            path = self.release / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'native service fixture')
+        self.seal()
+        for profile in ('sdk', 'runtime'):
+            with self.subTest(profile=profile):
+                self.assertEqual(self.install('--profile', profile, '--languages', 'python',
+                                              '--features', 'none'), 0, self.errors)
+                report = json.loads((self.prefix / 'install-report.json').read_text())
+                self.assertEqual(report['features'], [])
+                self.assertEqual(set(report['services']), {'recording', 'filter'})
+                self.assertTrue({'recording', 'filter'} <= report['capabilities'].keys())
+                for name in (*native, 'framework/sdl/runtime/python/sdl_recording.py',
+                             'framework/sdl/runtime/filter/python/sdl_filter.py'):
+                    self.assertTrue((self.prefix / name).is_file(), name)
+                self.assertTrue((self.bin / 'sdl-recording').is_symlink())
+
+    def test_legacy_service_feature_names_are_accepted_as_mandatory_services(self):
+        self.assertEqual(self.install('--languages', 'python', '--features', 'recording,filter'), 0, self.errors)
+        report = json.loads((self.prefix / 'install-report.json').read_text())
+        self.assertEqual(report['features'], [])
+        self.assertEqual(set(report['services']), {'recording', 'filter'})
 
     def test_java_selection_retains_shared_native_client_dependencies(self):
         self.assertEqual(self.install('--languages', 'java', '--features', 'none'), 0, self.errors)

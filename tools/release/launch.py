@@ -13,13 +13,12 @@ def main():
     action = sys.argv.pop(1)
     if action == 'sdlc' and report['profile'] != 'sdk':
         raise SystemExit('SDL compilation requires the sdk installation profile.')
-    paths = [framework / 'ose/src', framework / 'sdl/runtime/python']
+    paths = [framework / 'ose/src', framework / 'sdl/runtime/python',
+             framework / 'sdl/runtime/filter/python', framework / 'sdl/build/filter/release']
     if 'web' in report['features']:
         paths.append(framework / 'ose-ws/src')
     if 'editor' in report['features']:
         paths.append(framework / 'ose-editor/src')
-    if 'filter' in report['features']:
-        paths += [framework / 'sdl/runtime/filter/python', framework / 'sdl/build/filter/release']
     sys.path[:0] = list(map(str, paths))
     inherited = os.environ.get('PYTHONPATH', '').split(os.pathsep)
     os.environ['PYTHONPATH'] = os.pathsep.join(dict.fromkeys([*map(str, paths), *filter(None, inherited)]))

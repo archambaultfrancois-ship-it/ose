@@ -8,11 +8,12 @@ import sys
 
 FRAMEWORK = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(FRAMEWORK / 'tools'))
-from python_env import dependencies_ready, dependency_path, install_dependencies, require_python
+from python_env import build_services, dependencies_ready, dependency_path, install_dependencies, require_python
 
 
 def setup():
     install_dependencies(FRAMEWORK, ['ose', 'ose-editor'], ['ose-editor/requirements.lock'])
+    build_services(FRAMEWORK)
     print('OSE Model Editor dependencies are ready.', flush=True)
 
 

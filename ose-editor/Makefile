@@ -15,3 +15,6 @@ wheel:
 	"$(PYTHON)" -m build
 serve:
 	"$(PYTHON)" -m ose_editor.cli --root ../vibration-watch
+
+include ../tools/sdl-services.mk
+test-python serve: sdl-services

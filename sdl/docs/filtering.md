@@ -1,6 +1,6 @@
 # Catalogue predicates
 
-The optional filter service prepares an expression from a runtime **SDL2 catalogue**
+The filter service prepares an expression from a runtime **SDL2 catalogue**
 and a fully qualified root type. Reuse the prepared predicate: parsing, type checks,
 name resolution and field binding happen once.
 
@@ -62,7 +62,9 @@ Limits: 64 KiB expression, 2,048 nodes, 64 nesting levels, 128 distinct loads an
 
 Rust calls the implementation in `runtime/rust/src/filter` directly. Other
 backends use the ABI in `runtime/filter/include/sdl_filter.h` and `libsdl_filter`.
-Ordinary generated codecs work without this optional shared library.
+`make` builds the shared library and Python gateway systematically, alongside
+the recording engine. Source builds require Rust/Cargo, a C compiler and Python
+development headers. Language-specific JNI and MEX gateways have dedicated targets.
 
 | Backend | Prepare / object / buffer | Build and deployment |
 | --- | --- | --- |

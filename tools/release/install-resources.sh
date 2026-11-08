@@ -65,7 +65,7 @@ fi
 if [ -d "$release/cargo-vendor" ]; then cp -R "$release/cargo-vendor" "$prefix/"; fi
 cp "$release/launch.py" "$prefix/launch.py"
 cp "$release/manifest.json" "$prefix/release-manifest.json"
-printf '%s\n' '{"format":1,"profile":"sdk","languages":["python","c","rust","java","ada"],"features":["web","editor","recording","filter","sync"],"python_dependencies":false,"warnings":["Python unavailable; rerun the installer after installing Python."]}' > "$prefix/install-report.json"
+printf '%s\n' '{"format":1,"profile":"sdk","languages":["python","c","rust","java","ada"],"features":["web","editor","sync"],"services":["recording","filter"],"python_dependencies":false,"warnings":["Python unavailable; rerun the installer after installing Python."]}' > "$prefix/install-report.json"
 for name in ose ose-ws ose-editor sdlc sdl-recording; do
     case "$name" in ose) action=ose ;; ose-ws) action=web ;; ose-editor) action=editor ;; sdlc) action=sdlc ;; *) action=recording ;; esac
     # Resolve links when invoked from the user's command directory.

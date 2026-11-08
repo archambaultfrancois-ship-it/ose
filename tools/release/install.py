@@ -15,7 +15,8 @@ import tempfile
 
 
 LANGUAGES = ('python', 'c', 'rust', 'java', 'ada')
-FEATURES = ('web', 'editor', 'recording', 'filter', 'sync')
+FEATURES = ('web', 'editor', 'sync')
+SERVICES = ('recording', 'filter')
 
 
 def selection(value, allowed):
@@ -51,7 +52,7 @@ def included(name, profile, languages, features):
     if parts[0] in ('packages', 'python'):
         return True  # Keep the offline repository for later repairs and SDK builds.
     if parts[0] == 'cargo-vendor':
-        return profile == 'sdk' and bool({'recording', 'filter'} & set(features))
+        return profile == 'sdk'
     if parts[0] != 'framework':
         return False
     path = '/'.join(parts[1:])
@@ -78,14 +79,10 @@ def included(name, profile, languages, features):
         if path.startswith('sdl/runtime/' + language + '/'):
             return language in languages
     if path.startswith(('sdl/runtime/filter/', 'sdl/tools/filter/', 'sdl/build/filter/')):
-        if 'filter' not in features:
-            return False
         if profile == 'runtime':
             return path.startswith(('sdl/runtime/filter/python/sdl_filter.py', 'sdl/build/filter/'))
     if path.startswith(('sdl/runtime/recording/', 'sdl/tools/recording/')):
-        return 'recording' in features and (profile == 'sdk' or path.startswith('sdl/tools/recording/'))
-    if path.startswith(('sdl/runtime/python/sdl_recording', 'sdl/runtime/python/sdl_pcapng')):
-        return 'recording' in features
+        return profile == 'sdk' or path.startswith('sdl/tools/recording/')
     return True
 
 
@@ -105,10 +102,7 @@ def prerequisites(profile, languages, features):
     tools = []
     if profile == 'sdk':
         tools.append(('MAKE', 'make'))
-        if {'c', 'ada'} & set(languages):
-            tools.append(('CC', 'cc'))
-        if {'rust', 'c', 'ada'} & set(languages) or {'filter', 'recording'} & set(features):
-            tools.append(('CARGO', 'cargo'))
+        tools.extend((('CC', 'cc'), ('CARGO', 'cargo')))
         if 'rust' in languages:
             tools.append(('RUSTC', 'rustc'))
         if 'java' in languages:
@@ -191,15 +185,13 @@ def environment(prefix, packages, requirements, warnings):
 def write_commands(prefix, bin_dir, python, features, warnings):
     own_bin = prefix / 'bin'
     own_bin.mkdir(exist_ok=True)
-    commands = {'ose': 'ose'}
+    commands = {'ose': 'ose', 'sdl-recording': 'recording'}
     if (prefix / 'framework/sdl/sdlc/generator.py').is_file():
         commands['sdlc'] = 'sdlc'
     if 'web' in features:
         commands['ose-ws'] = 'web'
     if 'editor' in features:
         commands['ose-editor'] = 'editor'
-    if 'recording' in features:
-        commands['sdl-recording'] = 'recording'
     # Use a real shell on the target; /bin/sh does not exist on every Android host.
     shell = str(Path(shutil.which('sh') or '/bin/sh').resolve())
     for name in ('ose', 'ose-ws', 'ose-editor', 'sdlc', 'sdl-recording'):
@@ -288,6 +280,8 @@ def install(args, source):
             if (staged / name).exists():
                 shutil.move(str(staged / name), old)
     requirements = list(manifest['requirements']['base'])
+    # Older archives stored mandatory dependencies in a selectable group.
+    requirements += manifest['requirements'].get('recording', [])
     if args.profile == 'sdk':
         requirements += manifest['requirements'].get('sdk', [])
     for feature in args.features:
@@ -300,13 +294,12 @@ def install(args, source):
         result = subprocess.run([str(python), '-c', 'import sysconfig; print(sysconfig.get_path("purelib"))'],
                                 capture_output=True, text=True)
         if result.returncode == 0:
-            paths = [prefix / 'framework/ose/src', prefix / 'framework/sdl/runtime/python']
+            paths = [prefix / 'framework/ose/src', prefix / 'framework/sdl/runtime/python',
+                     prefix / 'framework/sdl/runtime/filter/python', prefix / 'framework/sdl/build/filter/release']
             if 'web' in args.features:
                 paths.append(prefix / 'framework/ose-ws/src')
             if 'editor' in args.features:
                 paths.append(prefix / 'framework/ose-editor/src')
-            if 'filter' in args.features:
-                paths += [prefix / 'framework/sdl/runtime/filter/python', prefix / 'framework/sdl/build/filter/release']
             site_packages = Path(result.stdout.strip())
             site_packages.mkdir(parents=True, exist_ok=True)
             (site_packages / 'ose-framework.pth').write_text(''.join(str(p) + '\n' for p in paths))
@@ -314,7 +307,7 @@ def install(args, source):
     imports = {'engine': ['ose', 'sdl_runtime'], 'web': ['ose_ws', 'fastapi', 'uvicorn', 'websockets'],
                'editor': ['ose_editor', 'ose_editor.api', 'fastapi', 'uvicorn', 'yaml'],
                'recording': ['sdl_recording'], 'filter': ['sdl_filter'], 'sync': ['inotify_simple']}
-    for feature in ['engine', *args.features]:
+    for feature in ['engine', *SERVICES, *args.features]:
         if python:
             probe = subprocess.run([str(python), '-c', ';'.join('import ' + name for name in imports[feature])],
                                    capture_output=True, text=True)
@@ -331,7 +324,7 @@ def install(args, source):
         (cargo / 'config.toml').write_text('[source.crates-io]\nreplace-with="ose-vendored"\n'
             '[source.ose-vendored]\ndirectory=' + json.dumps(str(prefix / 'cargo-vendor')) + '\n[net]\noffline=true\n')
     report = {'format': 1, 'release': manifest['revision'], 'profile': args.profile,
-              'languages': args.languages, 'features': args.features, 'python_dependencies': dependencies,
+              'languages': args.languages, 'features': args.features, 'services': list(SERVICES), 'python_dependencies': dependencies,
               'capabilities': capabilities, 'warnings': warnings, 'files': names}
     report['python_runtime'] = {'bundled': 'python_runtime' in manifest,
                                 'version': manifest.get('python_runtime', {}).get('version', platform.python_version()),
@@ -351,7 +344,7 @@ def main(argv=None, source=None):
     parser.add_argument('--bin-dir', default=str(Path.home() / '.local/bin'))
     parser.add_argument('--profile', choices=('sdk', 'runtime'), default='sdk')
     parser.add_argument('--languages', type=lambda v: selection(v, LANGUAGES), default='all')
-    parser.add_argument('--features', default='all')
+    parser.add_argument('--features', default='all', help='all, none or web,editor,sync; recording and filtering are always installed')
     parser.add_argument('--packages-dir', help='additional local wheel repository instead of the bundled packages')
     parser.add_argument('--offline', action='store_true', help='accepted explicitly; installation always stays offline')
     parser.add_argument('--check-only', action='store_true')
@@ -359,7 +352,9 @@ def main(argv=None, source=None):
     args = parser.parse_args(argv)
     try:
         args.all_features = args.features == 'all'
-        args.features = selection(args.features, FEATURES)
+        # Accept legacy service names without allowing their removal.
+        args.features = [feature for feature in selection(args.features, (*FEATURES, *SERVICES))
+                         if feature in FEATURES]
         return install(args, Path(source).resolve() if source else Path(__file__).resolve().parent)
     except (OSError, ValueError, KeyError, TypeError, argparse.ArgumentTypeError, subprocess.SubprocessError) as error:
         print('Installation failed: ' + str(error), file=sys.stderr)

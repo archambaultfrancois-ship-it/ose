@@ -22,7 +22,7 @@ make release
 The builder needs shared CPython 3.10+, pip, a C compiler, Python development
 headers, `readelf` (binutils) and Rust/Cargo. Private interpreter packaging
 currently supports Linux and Android/Termux. It collects runtime Python wheels,
-vendors the Rust recording dependencies and builds the native Python filter for
+vendors the Rust recording dependencies and builds both native services and the Python filter gateway for
 this host. It also packages this CPython version, its standard library, headers
 and linked libraries such as OpenSSL, SQLite, libffi and compression libraries,
 including external native dependencies of the bundled Python wheels.
@@ -96,11 +96,15 @@ startup files. Add the command directory to PATH when it is not already there.
 | `--bin-dir PATH` | `~/.local/bin` | Links to the installed commands. Existing unrelated commands are kept with a warning. |
 | `--profile sdk\|runtime` | `sdk` | SDK includes compilation and execution resources. Runtime omits the SDL generator and SDK sources. |
 | `--languages all\|LIST` | `all` | Python, C, Rust, Java, Ada. LIST is comma-separated. The engine always needs Python. |
-| `--features all\|none\|LIST` | `all` | `web`, `editor`, `recording`, `filter`, `sync`. LIST is comma-separated. Editor requires SDK. |
+| `--features all\|none\|LIST` | `all` | `web`, `editor`, `sync`. LIST is comma-separated. Editor requires SDK. Recording and filtering are always installed, including with `none`. |
 | `--packages-dir PATH` | Bundled `packages/` | Alternate local wheel repository. No network fallback. |
 | `--offline` | Always offline | Accepted for explicit invocation. |
 | `--check-only` | Off | Verify the package and report prerequisites without writing the installation. |
 | `--dry-run` | Off | Show the selection and diagnostics without installing. |
+
+The old `recording` and `filter` feature names remain accepted for compatibility;
+they no longer control service installation. The installation report lists both
+under `services`, separately from selectable `features`.
 
 The checkout's Python 3.10+ PATH requirement does not apply to the target machine:
 the offline bundle includes its own compatible interpreter. Its installed
@@ -129,13 +133,13 @@ The installed layout is:
 
 ```text
 <prefix>/
-  bin/                       # ose, ose-ws, ose-editor, sdlc, sdl-recording as selected
+  bin/                       # ose, sdl-recording; ose-ws, ose-editor, sdlc as selected
   .venv/                     # private Python executable, stdlib, native libraries and dependencies
     bin/python               # stable application entry point; also python3 and python3.x
     runtime.json             # bundled interpreter version and native library list
     licenses/                # distribution notices for copied native libraries
   framework/ose/             # engine and selected SDK files
-  framework/sdl/             # generator, runtimes and native filter
+  framework/sdl/             # generator, runtimes, native filtering and recording
   framework/ose-ws/          # optional server and embedded frontend
   framework/ose-editor/      # optional source editor and embedded frontend (SDK)
   packages/                  # offline wheel repository retained for repairs
@@ -177,7 +181,7 @@ it does not make an arbitrary developer build relocatable.
 
 Missing or unusable compilers, missing Java runtime, an incompatible Java 7
 compiler baseline, unsupported inotify synchronization or a different target
-platform are warnings. A failed optional dependency installation is also
+platform are warnings. A failed dependency installation is also
 a warning: sources, SDKs and wheels remain installed, the report records the
 incomplete capability, and installation returns success. An attempt to use that
 capability can fail until the prerequisite is supplied. Native filter and Python

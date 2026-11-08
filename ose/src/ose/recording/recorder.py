@@ -146,7 +146,7 @@ class Capture:
         try:
             from sdl_recording import RecordingWriter
         except ImportError as error:
-            raise ValueError("install the optional recording dependency: pip install 'ose[recording]'; "
+            raise ValueError("prepare the required SDL services with make -C <SDL_ROOT> services; "
                              "make the SDL Python runtime (including sdl_recording) available") from error
         self.runtime = Runtime()
         stream = self.files.open_next()

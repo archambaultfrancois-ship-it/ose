@@ -50,7 +50,7 @@ Paths below are relative to this repository root. The engine project is in
 ```text
 sdl/                    SDL project root
   sdlc/                 SDL compiler and binding generators
-  runtime/              Language runtimes and optional services
+  runtime/              Language runtimes, filtering and recording services
   schemas/              Shared source schemas
   tests/                Tests, fixtures, and benchmarks
   examples/             Runnable SDL examples
@@ -90,6 +90,11 @@ make setup
 Dependencies are stored in `build/python-deps`; the application, console, editor
 and Make commands all run with that same Python. Checkout commands do not create
 or select virtual environments. See the [application environment reference](docs/application-environment.md).
+
+Filtering (`sdl_filter`) and recording (`sdl_recording`) are required services.
+`make`, `make setup` and backend test targets build them with the selected Python.
+Source builds require Rust/Cargo 1.83+, a C compiler and Python development headers;
+framework releases include the compiled services.
 
 The [offline installation bundle](docs/release.md) carries its own compatible
 Python runtime. Installing and running that bundle does not require Python on

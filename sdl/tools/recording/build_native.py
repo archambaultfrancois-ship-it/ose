@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the optional Rust engine and selected C ABI gateways."""
+"""Build the recording engine and selected C ABI gateways."""
 import argparse
 import os
 from pathlib import Path

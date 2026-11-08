@@ -45,6 +45,11 @@ def install_dependencies(framework, projects, constraints):
     subprocess.run(command, check=True, env=environment)
 
 
+def build_services(framework):
+    subprocess.run(['make', '-C', str(Path(framework) / 'sdl'), 'services',
+                    'PYTHON=' + sys.executable], check=True)
+
+
 def main():
     try:
         require_python()
@@ -52,9 +57,10 @@ def main():
             return 0
         if sys.argv[1:]:
             raise ValueError('Usage: python3 tools/python_env.py [--check]')
-        install_dependencies(ROOT, ['ose[recording,sync]', 'ose-ws[test]', 'ose-editor[test]'],
+        install_dependencies(ROOT, ['ose[sync]', 'ose-ws[test]', 'ose-editor[test]'],
                              ['ose-ws/requirements.lock', 'ose-editor/requirements.lock'])
-        print('Checkout Python dependencies are ready in build/python-deps.')
+        build_services(ROOT)
+        print('Checkout Python dependencies and SDL services are ready.')
         return 0
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(str(error), file=sys.stderr)

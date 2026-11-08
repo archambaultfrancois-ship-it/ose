@@ -42,12 +42,15 @@ matlab_run = $(OCTAVE) --quiet --no-gui --eval "addpath('$(matlab_generated_dir)
 matlab_bench_run = $(OCTAVE) --quiet --no-gui --eval "addpath('$(matlab_generated_dir)'); addpath('tests/matlab'); bench"
 endif
 
-all: $(BUILD_DIR)/sdl_utest
+all: services $(BUILD_DIR)/sdl_utest
 
-check:
+.PHONY: services
+services: filter-python recording-native recording-deps
+
+check: services
 	@"$(PYTHON)" tests/run_check.py make
 
-test:
+test: services
 	@$(MAKE) --no-print-directory CHECK_SILENT= test-c
 	@$(MAKE) --no-print-directory CHECK_SILENT= test-rust
 	@$(MAKE) --no-print-directory CHECK_SILENT= test-python
@@ -79,7 +82,7 @@ test-schema-formats:
 
 .PHONY: schema-deps test-schema-formats
 
-# Optional catalogue predicate service and native language gateways.
+# Catalogue predicate service and native language gateways.
 filter-native:
 	CARGO="$(CARGO)" CC="$(CC)" "$(PYTHON)" tools/filter/build_native.py
 
@@ -108,12 +111,12 @@ bench-filter: filter-bindings
 
 .PHONY: filter-native filter-python filter-jni filter-mex filter-matlab-mex filter-bindings test-filter bench-filter
 
-# Optional recording tools do not add dependencies to the core runtime tests.
+# Required recording service dependencies; reuse the selected Python's packages.
 RECORDING_DEPS ?= build/recording-deps
 recording-deps:
-	"$(PYTHON)" -m pip --disable-pip-version-check install --upgrade --target "$(RECORDING_DEPS)" --no-deps -r tools/recording/requirements.txt
+	@PYTHONPATH="$(abspath $(RECORDING_DEPS))" "$(PYTHON)" -c 'import mcap; assert mcap.__version__ == "1.5.0"' 2>/dev/null || "$(PYTHON)" -m pip --disable-pip-version-check install --upgrade --target "$(RECORDING_DEPS)" --no-deps -r tools/recording/requirements.txt
 
-test-recording:
+test-recording: services
 	PYTHONPATH=$(RECORDING_DEPS):runtime/python "$(PYTHON)" -m unittest discover -s tests/recording -v
 
 test-wireshark-adapter:

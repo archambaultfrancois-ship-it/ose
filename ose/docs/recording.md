@@ -14,38 +14,36 @@ Rebuild/restart the application with the updated framework. Vibration Watch in
 checkout, run `FRAMEWORK_ROOT=/path/to/ose make run DURATION=60` from the
 application directory. Cluster deployments need updated worker images.
 
-## Optional services and installation
+## Services and installation
 
 Recording uses SDL's `sdl_recording.RecordingWriter`, defaulting to PCAPNG.
 MCAP is an explicit alternative; both formats include the original catalogue
-and encoded payloads. Both require the optional MCAP Python package. The OSE
-broker and workers do not need MCAP. Sources serving filtered captures need the
-SDL native filter service; unfiltered capture does not load it.
+and encoded payloads. MCAP is a required OSE dependency. SDL's recording engine
+and native filter service are built systematically by `make`, `make setup` and
+the OSE/backend test targets. Source builds need Rust/Cargo, a C compiler and
+development headers for the selected Python interpreter.
 
-For an installed OSE package, install `ose[recording]` and make the SDL
-Python modules importable. For a source checkout, from the OSE root:
+Framework releases include both services. For a source checkout, rebuild them
+with the Python interpreter used by the console and recording sources (local
+broker or distributed workers):
 
 ```sh
 export SDL_ROOT=/absolute/path/to/ose/sdl
-make -C "$SDL_ROOT" recording-deps
+make -C "$SDL_ROOT" services
 export PYTHONPATH="$PWD/src:$SDL_ROOT/runtime/python:$SDL_ROOT/build/recording-deps"
 ```
 
-Content filters additionally use SDL's optional native filter service. Build it
-with the Python interpreter used by each recording source (the local broker or
-distributed producer workers), and by the console for expression validation:
+Launch the recorder with the prepared SDL root:
 
 ```sh
-make -C "$SDL_ROOT" filter-python
 python3 -m ose.cli record --sdl-root "$SDL_ROOT" --endpoint /path/to/application/build/endpoint.json
 ```
 
-No filter dependency is loaded when recording without filters. Missing optional
-services produce installation guidance. `--sdl-root` selects a source runtime;
+The filter service is loaded when a predicate is used. `--sdl-root` selects a source runtime;
 it also discovers `build/recording-deps`, `runtime/filter/python` and
 `build/filter/release` in that checkout when present. Restart the console after
-building optional services. An installed/importable SDL runtime also works
-without a checkout; in that case, make the optional modules importable through
+rebuilding services. An installed/importable SDL runtime also works
+without a checkout; in that case, make the service modules importable through
 installation or `PYTHONPATH`.
 Broker/workers automatically discover `runtime/filter/python` and
 `build/filter/release` under their plan's SDL root when needed. Container images
@@ -522,4 +520,4 @@ ose app record inspect capture.pcapng -cs -b +1s -d 4s -f table
 
 From the OSE root, `make test-recording` checks both formats, unchanged payload
 bytes, filters, bounded overflow, failure cleanup, scripted CLI shutdown and
-authenticated distributed capture. Install/build the optional SDL services first.
+authenticated distributed capture. Required SDL services are prepared by the target.

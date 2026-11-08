@@ -117,7 +117,7 @@ range checks enabled. Override `GNAT_HOME`, `GNATMAKE` or `ADA_RTS` as needed.
 With a standard system GNAT installation, use `GNAT_HOME=/usr GNATMAKE=gnatmake
 ADA_RTS=` to select its default runtime without a `--RTS` flag.
 
-The optional catalogue filter service evaluates arithmetic and logical predicates
+The catalogue filter service evaluates arithmetic and logical predicates
 on message objects or selected wire values, including nested fields and arrays.
 `make test-filter` validates the six adapters; `make bench-filter` reports filter
 cost relative to encoding/decoding. See [filter expressions, APIs and deployment](docs/filtering.md).
@@ -137,14 +137,14 @@ On the Termux development environment, source `~/.bashrc` before using the JDK.
 - [Radio capture](examples/radio_capture/README.md) checks all six C/Rust/Python
   encoder/decoder pairings using separate catalogue files.
 - [Record and replay](examples/record_replay/README.md) records autonomous SDL2
-  PCAPNG files by default (or explicitly selected MCAP) and compares live radio analysis with replay. The optional Python
+  PCAPNG files by default (or explicitly selected MCAP) and compares live radio analysis with replay. The Python
   module and CLI support inspection, validation and timed replay; see the
-  [recording reference](docs/recording.md) and the optional
+  [recording reference](docs/recording.md) and the
   [native services](docs/recording_native.md) for C, Rust, Java JNI, Ada and C MEX.
   The [PCAPNG profile](docs/recording_pcapng.md) adds USER0 captures and MCAP conversion.
   [`sdl-recording transform`](docs/recording_transform.md) combines filtering,
   concatenation/rebasing and splitting of recording series in their original format.
-  Run `make recording-deps test-recording` to install the optional dependency and test it.
+  `make` builds both services and prepares the pinned MCAP dependency; `make test-recording` tests recording.
 - [Wireshark](tools/wireshark/README.md) decodes catalogue announcements and
   subsequent UDP messages, and inspects SDL USER0 recordings.
 

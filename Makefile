@@ -39,7 +39,7 @@ test-release:
 clean:
 	+$(MAKE) -C sdl clean
 help:
-	@echo 'make setup       Install checkout dependencies with the detected PATH Python (3.10+)'
+	@echo 'make setup       Install checkout dependencies and build the required SDL services (Python 3.10+)'
 	@echo 'make python-info Show the detected Python interpreter and version'
 	@echo 'make check       Run SDL and OSE checks'
 	@echo 'make check-sdl   Run SDL backend checks'

@@ -1,9 +1,9 @@
 name: OSE language SDKs
 on:
   push:
-    paths: ['tools/python*', 'tools/find-python.sh', 'ose/**', 'sdl/**', 'Makefile', '.github/workflows/ose.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'tools/sdl-services.mk', 'ose/**', 'sdl/**', 'Makefile', '.github/workflows/ose.yml']
   pull_request:
-    paths: ['tools/python*', 'tools/find-python.sh', 'ose/**', 'sdl/**', 'Makefile', '.github/workflows/ose.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'tools/sdl-services.mk', 'ose/**', 'sdl/**', 'Makefile', '.github/workflows/ose.yml']
 jobs:
   full:
     env:
@@ -27,13 +27,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gnat
       - name: Install package
         run: python -m pip install ./ose
-      - name: Prepare recording dependencies for replay tests
-        run: make -C sdl recording-deps
+      - name: Build required SDL services
+        run: make -C sdl services
       - name: Verify all languages and execution modes
         timeout-minutes: 10
         run: make -C ose test
-      - name: Prepare optional filtering service
-        run: make -C sdl filter-python
       - name: Verify interactive recording
         run: make -C ose test-recording
       - name: Installed SDK smoke test
@@ -52,8 +50,8 @@ jobs:
         with:
           distribution: zulu
           java-version: '7'
-      - name: Prepare recording dependencies for replay tests
-        run: make -C sdl recording-deps
+      - name: Build required SDL services
+        run: make -C sdl services
       - name: Verify actual Java 7 compilation and execution
         run: make -C ose test-java
       - name: Verify shared parameters on Java 7

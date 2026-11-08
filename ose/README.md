@@ -83,7 +83,7 @@ For multi-machine real-time execution, see [distributed deployment](docs/distrib
 OSE provides authenticated `serve`/`worker` processes, direct or broker routes,
 cold component replacement and Kubernetes manifest export.
 
-The optional [interactive recorder](docs/recording.md), `ose record`, discovers
+The [interactive recorder](docs/recording.md), `ose record`, discovers
 live outputs without a model, selects points and SDL filters, and starts/stops
 local PCAPNG or MCAP files. It supports the local broker and distributed workers.
 Use [`ose replay`](docs/replay.md) to feed captured topics into a model's

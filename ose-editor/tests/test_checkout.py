@@ -88,11 +88,14 @@ class CheckoutTests(unittest.TestCase):
         inherited = dict(os.environ)
         with patch.object(python_env.subprocess, 'run') as run:
             self.assertEqual(self.invoke(['setup']), 0)
-        command = run.call_args.args[0]
+        installation, build = run.call_args_list
+        command = installation.args[0]
         self.assertEqual(command[:4], [sys.executable, '-m', 'pip', 'install'])
         self.assertEqual(command[command.index('--target') + 1], str(self.root / 'build/python-deps'))
         self.assertIn(str(self.root / 'ose-editor/requirements.lock'), command)
-        self.assertNotIn('PYTHONPATH', run.call_args.kwargs['env'])
+        self.assertNotIn('PYTHONPATH', installation.kwargs['env'])
+        self.assertEqual(build.args[0], ['make', '-C', str(self.root / 'sdl'), 'services',
+                                        'PYTHON=' + sys.executable])
         self.assertEqual(dict(os.environ), inherited)
 
     def test_python_39_is_rejected_before_installation_or_launch(self):

@@ -2,9 +2,9 @@ name: OSE Model Editor
 on:
   workflow_dispatch:
   push:
-    paths: ['tools/python*', 'tools/find-python.sh', 'ose-editor/**', 'ose/**', 'setenv.sh', 'sdl/sdlc/**', 'sdl/runtime/python/**', '.github/workflows/ose-editor.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'tools/sdl-services.mk', 'ose-editor/**', 'ose/**', 'setenv.sh', 'sdl/**', '.github/workflows/ose-editor.yml']
   pull_request:
-    paths: ['tools/python*', 'tools/find-python.sh', 'ose-editor/**', 'ose/**', 'setenv.sh', 'sdl/sdlc/**', 'sdl/runtime/python/**', '.github/workflows/ose-editor.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'tools/sdl-services.mk', 'ose-editor/**', 'ose/**', 'setenv.sh', 'sdl/**', '.github/workflows/ose-editor.yml']
 jobs:
   editor:
     runs-on: ubuntu-22.04
@@ -22,6 +22,8 @@ jobs:
           cache: npm
           cache-dependency-path: ose-editor/frontend/package-lock.json
       - run: python -m pip install -c ose-editor/requirements.lock ./ose './ose-editor[test]'
+      - name: Build required SDL services
+        run: make -C sdl services
       - run: npm ci --no-audit --no-fund
         working-directory: ose-editor/frontend
       - run: npm test

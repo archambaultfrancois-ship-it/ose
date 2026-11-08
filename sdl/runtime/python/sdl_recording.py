@@ -1,4 +1,4 @@
-"""Optional SDL2 MCAP/PCAPNG recording profiles (require the Python mcap package)."""
+"""SDL2 MCAP/PCAPNG recording profiles (require the Python mcap package)."""
 
 import io
 import math

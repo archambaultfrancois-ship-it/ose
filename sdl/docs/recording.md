@@ -99,15 +99,16 @@ recorded state if their output must be reproducible.
 
 ## Installation and recording API
 
-The core runtime remains dependency free. Optional native recording services for
+Native recording services for
 C, Rust, Java JNI, Ada and MATLAB/Octave C MEX are described in the
 [native recording reference](recording_native.md).
-The Python implementation requires Python 3.8 or newer
-and is an optional module with
-a pinned Python MCAP SDK; this version does not need compression plugins:
+The project builds both native services and the Python filter gateway by default,
+and prepares the pinned Python MCAP SDK. Source builds require Python 3.10+,
+its development headers, a C compiler and Rust/Cargo. Compression plugins are
+not required:
 
 ```sh
-make recording-deps
+make services
 export PYTHONPATH="build/recording-deps:runtime/python:$PYTHONPATH"
 make test-recording
 ```
@@ -116,8 +117,8 @@ Alternatively install `tools/recording/requirements.txt` in your Python environm
 with `python3 -m pip install --no-deps -r tools/recording/requirements.txt`. The
 [MCAP Python writer](https://mcap.dev/docs/python/mcap-apidoc/mcap.writer) supplies
 the MCAP container implementation. PCAPNG uses a separate transport module
-and reuses MCAP primitive record body layouts. The optional SDK is required for
-both formats; the core runtime remains independent.
+and reuses MCAP primitive record body layouts. The MCAP SDK is required for
+both formats.
 
 ```python
 from sdl_runtime import description, encode, prepare

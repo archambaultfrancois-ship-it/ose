@@ -1,6 +1,6 @@
 # Native recording services
 
-The optional `runtime/recording` crate implements the
+The `runtime/recording` crate implements the
 [SDL2 MCAP profile](recording.md) with the Rust MCAP SDK and the
 [SDL PCAPNG profile](recording_pcapng.md) with a separate transport module.
 It builds an `rlib`,
@@ -27,7 +27,8 @@ make recording-mex              # additionally C MEX, built with mkoctfile
 Rust 1.83 or newer is required. Rust dependencies are pinned by `runtime/recording/Cargo.lock`. Compression features
 are disabled. Native libraries go to `build/recording/release`; Java classes go to
 `build/recording/java`; the Octave MEX goes to `build/recording/mex`.
-These targets are independent of generation and of the core runtime's build.
+`make` builds the recording library and filtering service systematically.
+JNI and MEX gateways remain separate targets.
 
 The automatic gateway builder supports Linux/Android and macOS. `CARGO`, `CC`,
 `JAVAC`, `JAVA_HOME` and `MKOCTFILE` can select tools. JNI uses the JDK containing

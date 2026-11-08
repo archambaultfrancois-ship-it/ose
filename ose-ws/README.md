@@ -28,12 +28,13 @@ source vibration-watch/setenv.sh
 
 The checked-in frontend is included in the wheel. Installed users do not need
 Node.js, a CDN, a model checkout or generated application classes. The SDL runtime
-must remain importable; optional recording uses `sdl_recording` and MCAP 1.5.0.
-For filters, prepare the native SDL filter service in the console **and** the
-broker/workers before starting them:
+must remain importable. Recording and filtering are required framework services,
+prepared by `make setup` and backend test targets and included in framework
+releases. Build them for the Python version and platform of the console **and**
+the broker/workers before starting them:
 
 ```sh
-make -C sdl filter-python
+make -C sdl services
 export PYTHONPATH="$PWD/sdl/runtime/filter/python:$PWD/sdl/build/filter/release:$PYTHONPATH"
 ```
 
@@ -269,7 +270,7 @@ npm ci
 npm run build
 npm test
 cd ../..
-python -m pip install './ose-ws[test,recording]'
+python -m pip install './ose-ws[test]'
 make -C ose-ws test
 cd ose-ws
 python -m build

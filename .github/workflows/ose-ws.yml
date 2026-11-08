@@ -1,9 +1,9 @@
 name: OSE Web Console
 on:
   push:
-    paths: ['tools/python*', 'tools/find-python.sh', 'ose-ws/**', 'ose/**', 'sdl/runtime/python/**', '.github/workflows/ose-ws.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'tools/sdl-services.mk', 'ose-ws/**', 'ose/**', 'sdl/**', '.github/workflows/ose-ws.yml']
   pull_request:
-    paths: ['tools/python*', 'tools/find-python.sh', 'ose-ws/**', 'ose/**', 'sdl/runtime/python/**', '.github/workflows/ose-ws.yml']
+    paths: ['tools/python*', 'tools/find-python.sh', 'tools/sdl-services.mk', 'ose-ws/**', 'ose/**', 'sdl/**', '.github/workflows/ose-ws.yml']
 jobs:
   console:
     runs-on: ubuntu-22.04
@@ -21,7 +21,9 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: ose-ws/frontend/package-lock.json
-      - run: python -m pip install ./ose './ose-ws[test,recording]'
+      - run: python -m pip install ./ose './ose-ws[test]'
+      - name: Build required SDL services
+        run: make -C sdl services
       - name: Build and test the frontend
         working-directory: ose-ws/frontend
         run: npm ci && npm run build && npm test
