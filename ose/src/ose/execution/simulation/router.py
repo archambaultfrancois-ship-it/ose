@@ -1,9 +1,7 @@
 """Deterministic direct admission, with independent bounded virtual waits."""
 from dataclasses import dataclass
 import hashlib
-from ose.delivery.buffers import Buffer
-from ose.delivery.policies import SubscriptionPolicy
-from ose.delivery.stores import MemoryStore
+from ose.delivery.buffers import input_buffers
 from ose.execution.ipc import MAX_SIZE
 
 
@@ -21,12 +19,12 @@ class Router:
         self.by_topic, self.by_id = {}, {}
         self.topics = dict(plan.get("external_topics", {}))
         self.sequence = 0
+        inboxes = input_buffers(self.subscriptions.values(), clock=clock.seconds)
         for name, node in plan["components"].items():
             self.topics.update({f"{name}.{port}": desc for port, desc in node["outputs"].items()})
         for identity, sub in self.subscriptions.items():
             name, port = sub["to"].split(".")
-            policy = SubscriptionPolicy.from_dict(sub["policy"])
-            buffer = Buffer(policy, MemoryStore(policy.capacity), clock.seconds)
+            buffer = inboxes[sub["to"]]
             self.buffers[name][port] = self.by_id[identity] = buffer
             self.by_topic.setdefault(sub["from"], []).append(identity)
             publisher, consumer = self.topics[sub["from"]], plan["components"][name]["inputs"][port]
@@ -62,5 +60,6 @@ class Router:
         return changed
 
     def close(self):
-        for buffer in self.by_id.values():
-            buffer.store.close()
+        for ports in self.buffers.values():
+            for buffer in ports.values():
+                buffer.store.close()

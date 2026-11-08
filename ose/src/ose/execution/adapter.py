@@ -4,9 +4,8 @@ import json
 import sys
 import time
 from ose.codec.sdl2 import SDL2
-from ose.delivery.buffers import Buffer
+from ose.delivery.buffers import input_buffers
 from ose.delivery.policies import SubscriptionPolicy
-from ose.delivery.stores import MemoryStore
 from ose.parameters.bindings import RemoteBindings, updates
 from ose.execution.process import start_component, tick_events, stop_component
 from ose.execution.scheduler import Scheduler, reserve_snapshot
@@ -25,7 +24,9 @@ class Adapter:
         self.component_logs = ComponentLogs(on_change=self.reports.wake)
         self.codec = SDL2(plan["sdl_root"])
         self.subscriptions = {s["id"]: s for s in plan["subscriptions"] if s["to"].split(".")[0] == name}
-        self.buffers, self.catalogues, self.metrics = {}, {}, {}
+        self.policies = {identity: SubscriptionPolicy.from_dict(sub["policy"])
+                         for identity, sub in self.subscriptions.items()}
+        self.catalogues, self.metrics = {}, {}
         self.compatibility = set()
         self.network_queues = {identity: asyncio.Queue(maxsize=1024) for identity in self.subscriptions}
         self.data_clients = {}
@@ -33,11 +34,8 @@ class Adapter:
         max_wait = max((sub["policy"]["wait_timeout_ms"] for sub in plan["subscriptions"]
                         if sub["from"].split(".")[0] == name and sub["policy"]["overflow"] == "wait"), default=0)
         self.request_timeout = 15 + max_wait / 1000
-        for identity, sub in self.subscriptions.items():
-            policy = SubscriptionPolicy.from_dict(sub["policy"])
-            store = MemoryStore(policy.capacity)
-            store.on_change = self._changed
-            self.buffers[sub["to"].split(".")[1]] = Buffer(policy, store)
+        self.buffers = {target.split(".")[1]: buffer for target, buffer in
+                        input_buffers(self.subscriptions.values(), self._changed).items()}
         self.scheduler = Scheduler(self.node, self.buffers)
         self.timings = TickTimings()
         self.started_at = time.monotonic()
@@ -69,11 +67,12 @@ class Adapter:
                 if header["subscription"] != subscription:
                     raise ValueError("wrong subscription")
                 sub = self.subscriptions[subscription]
+                policy = self.policies[subscription]
                 if header["topic"] != sub["from"]:
                     raise ValueError("wrong topic")
                 port = sub["to"].split(".")[1]
                 buffer = self.buffers[port]
-                if (address is not None) != (buffer.policy.transport == "udp"):
+                if (address is not None) != (policy.transport == "udp"):
                     raise ValueError("wrong data transport")
                 if buffer.policy.buffer == "latest" and header["epoch"] != self.broker_epoch:
                     raise ValueError("obsolete broker epoch")
@@ -95,6 +94,7 @@ class Adapter:
                     self.compatibility.add(key)
                 self.codec.validate_only(text, self.node["inputs"][port]["root"], body)
                 record = {"id": header["id"], "epoch": header["epoch"], "sequence": header["sequence"],
+                          "topic": header["topic"],
                           "body": body, "payload": memoryview(body)[self.codec.api.ENVELOPE_HEADER_SIZE:], "catalogue": text}
                 deadline = time.monotonic() + buffer.policy.wait_timeout_ms / 1000
                 while True:
@@ -106,7 +106,7 @@ class Adapter:
                         await asyncio.wait_for(buffer.store.changed.wait(), max(0, deadline - time.monotonic()))
                     except asyncio.TimeoutError:
                         break
-                if result in ("accepted", "duplicate", "stale") and buffer.policy.ack == "received":
+                if result in ("accepted", "duplicate", "stale") and policy.ack == "received":
                     ack = {"op": "ack", "subscription": sub["id"], "id": record["id"]}
                     if address is None:
                         await self.client.tcp.send(ack)

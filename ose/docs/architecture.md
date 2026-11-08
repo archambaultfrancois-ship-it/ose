@@ -35,9 +35,12 @@ finite positive number of seconds, accepts fractional values and is supported
 only on required inputs. Omitting it preserves an unbounded wait. Names cannot
 contain dots; an endpoint is `component.port`. Each output endpoint is a separate topic.
 
-`subscriptions` is a list of `{id, from, to, qos?}`. IDs are unique. Each input
-has at most one producer; required inputs must be connected. Connected roots
-have the same logical name. All connections undergo publisher-to-consumer
+`subscriptions` is a list of `{id, from, to, qos?}`. IDs are unique. Outputs can
+feed several inputs, and inputs can merge several producers into one shared
+FIFO or latest value. Required inputs need at least one connection; data from
+any connected producer satisfies that input. Subscriptions to the same input
+must share their [reception settings](delivery.md#shared-input-reception).
+Connected roots have the same logical name. All connections undergo publisher-to-consumer
 compatibility checking with `require_required=True`; nested declarations are
 allowed. Cycles are rejected.
 

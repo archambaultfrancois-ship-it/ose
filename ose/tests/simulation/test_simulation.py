@@ -261,6 +261,29 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
                 reference = events
             self.assertEqual(events, reference)
 
+    async def test_multiple_sources_share_fifo_or_latest_deterministically(self):
+        cases = [({}, ["a:1:1", "a:1:2", "b:1:1", "b:1:2"]),
+                 ({"capacity": 3}, ["a:1:1", "a:1:2", "b:1:1"]),
+                 ({"capacity": 3, "overflow": "drop_oldest"}, ["a:1:2", "b:1:1", "b:1:2"]),
+                 ({"capacity": 1, "overflow": "wait"}, ["a:1:1", "a:1:2", "b:1:1", "b:1:2"]),
+                 ({"buffer": "latest"}, ["b:1:2"])]
+        for qos, expected in cases:
+            reference = None
+            for workers in (1, 4):
+                with self.subTest(qos=qos, workers=workers):
+                    plan = self.plan({"a": self.node(source=True, parameters=dict(values=[1, 2])),
+                                      "b": self.node(source=True, parameters=dict(values=[3, 4])),
+                                      "sink": self.node(["input"])},
+                                     [("a.out", "sink.input", qos), ("b.out", "sink.input", qos)])
+                    summary, events = await self.simulate(plan, workers=workers)
+                    selected = [e["inputs"]["input"] for e in events
+                                if e["event"] == "tick" and e["component"] == "sink"]
+                    self.assertEqual(selected, expected)
+                    self.assertEqual(list(summary["inputs"]["sink"]), ["input"])
+                    if reference is None:
+                        reference = events
+                    self.assertEqual(events, reference)
+
     async def test_wait_fanout_does_not_block_fast_branch(self):
         plan = self.plan({"source": self.node(source=True, parameters=dict(values=[1, 2])), "slow": self.node(["a", "b"]), "fast": self.node(["input"])},
             [("source.out", "slow.a", dict(capacity=1, overflow="wait", wait_timeout_ms=100)),

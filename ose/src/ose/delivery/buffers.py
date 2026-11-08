@@ -1,6 +1,18 @@
 """Bounded buffers; FIFO order is admission order, never publication order."""
 from collections import Counter
 import time
+from ose.delivery.policies import reception_policies
+from ose.delivery.stores import MemoryStore
+
+
+def input_buffers(subscriptions, on_change=None, clock=time.monotonic):
+    """One shared inbox per qualified input; sender outboxes remain per link."""
+    result = {}
+    for target, policy in reception_policies(subscriptions).items():
+        store = MemoryStore(policy.capacity)
+        store.on_change = on_change
+        result[target] = Buffer(policy, store, clock)
+    return result
 
 
 class Buffer:
@@ -17,12 +29,13 @@ class Buffer:
             self.metrics["duplicates"] += 1
             return "duplicate"
         if self.policy.buffer == "latest":
-            last_epoch = self.store.meta.get("epoch")
-            last_sequence = int(self.store.meta.get("sequence", -1))
+            # Source streams have independent sequences (and generations in
+            # distributed runs). A different stream must not erase this history.
+            source = record.get("topic", "")
+            last_epoch, last_sequence = self.store.meta.get(source, (None, -1))
             if record["epoch"] == last_epoch and record["sequence"] <= last_sequence:
                 self.metrics["stale"] += 1
                 return "stale"
-            self.store.meta.update(epoch=record["epoch"], sequence=record["sequence"])
         if self.store.size() >= self.policy.capacity:
             if self.policy.overflow in ("reject_new", "wait"):
                 self.metrics["refused"] += 1
@@ -34,6 +47,8 @@ class Buffer:
             self.store.remove(victim["id"])
             self.metrics["replaced" if self.policy.buffer == "latest" else "dropped_oldest"] += 1
         record = dict(record, admitted_at=self.clock())
+        if self.policy.buffer == "latest":
+            self.store.meta[source] = (record["epoch"], record["sequence"])
         self.store.put(record)
         if deduplicate:
             self.store.remember(record["id"])

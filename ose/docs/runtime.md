@@ -97,6 +97,10 @@ the destination adapter's input buffer. A bounded staging queue also separates
 network reception from input admission. Each input subscription has its own
 admission worker.
 
+Several subscriptions can feed the same input buffer. Its capacity and reception
+policy are shared; see [shared input reception](delivery.md#shared-input-reception).
+Data from any connected source can satisfy that required input.
+
 Admission and sending run independently across subscriptions. Their progress
 can overlap with the publication reply; the reply and all recipients' processing
 do not form a single synchronized operation.

@@ -1,7 +1,8 @@
 # Delivery and quality of service
 
-Each subscription has an independent broker outbox and consumer inbox. Fan-out
-copies publications to every matching subscription. Worker groups are absent.
+Each subscription has an independent broker outbox; each input port has one
+consumer inbox shared by its subscriptions. Fan-out copies publications to every
+matching subscription. Worker groups are absent.
 Messages are identified by broker incarnation plus publication number; retries
 retain that ID. Consumer FIFO order is admission order, not publication order.
 
@@ -29,7 +30,8 @@ outside that window can be admitted again. There is no exactly-once guarantee.
 All queues are memory-only. `latest` has capacity one and uses `drop_oldest`. It retains the
 current value in the consumer and the last publication per topic in the broker.
 New subscribers receive the broker's current state. Older publication numbers
-cannot overwrite newer state, and obsolete broker incarnations are rejected.
+from the same source cannot overwrite newer state, and obsolete broker
+incarnations are rejected.
 Replacing an unsent state cancels its retries. No state TTL is applied.
 
 `reject_new` leaves existing entries intact. `drop_oldest` removes the oldest
@@ -52,6 +54,30 @@ There are no commits, journals or persistent queues. A restart loses pending
 messages, latest states and deduplication history. Catalogues are immutable in
 RAM for the lifetime of a broker. Legacy `durability: "memory"` is normalized
 away; disk declarations are rejected in models and resolved plans.
+
+## Shared input reception
+
+Several subscriptions may target the same input. Their resolved `buffer`,
+`capacity`, `overflow` and `wait_timeout_ms` settings must match; conflicting
+settings are rejected during validation. These settings remain in subscription
+`qos`, including defaults. Transport, ACK and retry settings remain independent
+per subscription, as do sender outboxes and network staging queues.
+
+- **FIFO:** all sources share one bounded queue, consumed in receiver admission
+  order, one message per port per tick. Capacity and overflow apply to the whole
+  port, including any reserved in-flight message. There are no per-source quotas
+  or fairness guarantees; a busy source can fill the queue.
+- **Latest:** the port retains one value across all sources. The last valid
+  admission replaces it, without comparing sender timestamps. Sequence history
+  is kept separately per source topic and generation, so a delayed old value or
+  retry cannot replace another source's newer admission. A new source generation
+  may restart its sequence. Retained values do not expire.
+
+Any source can satisfy a required input or its timeout wait; reception does not
+wait for every source. Each connection must satisfy the input's SDL contract.
+Callbacks and SDK protocols are unchanged: a tick supplies at most one message
+per input, without source metadata. These rules apply to local, distributed and
+simulated execution; simulation retains its deterministic admission order.
 
 ## Network protocol CENV/1
 

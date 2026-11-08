@@ -17,7 +17,7 @@ from ose.codec.sdl2 import SDL2
 from ose.parameters.service import ParameterEndpoint, OPERATIONS as PARAMETER_OPERATIONS
 from ose.parameters.bindings import RemoteBindings, updates
 from ose.config import EXTERNAL_LIMITS
-from ose.delivery.buffers import Buffer
+from ose.delivery.buffers import Buffer, input_buffers
 from ose.delivery.engine import DeliveryEngine
 from ose.delivery.policies import SubscriptionPolicy
 from ose.delivery.stores import MemoryStore
@@ -487,14 +487,10 @@ class Worker:
         self.outgoing = {key: s for key, s in self.subscriptions.items()
                          if s["from"].split(".")[0] == name and s.get("routing", "broker") == "direct"}
         self.activity = asyncio.Event()
-        self.buffers, self.locks = {}, {}
         self.reports = ReportSchedule()
-        for key, sub in self.incoming.items():
-            policy = SubscriptionPolicy.from_dict(sub["policy"])
-            store = MemoryStore(policy.capacity)
-            store.on_change = self._changed
-            self.buffers[sub["to"].split(".")[1]] = Buffer(policy, store)
-            self.locks[key] = asyncio.Lock()
+        self.buffers = {target.split(".")[1]: buffer for target, buffer in
+                        input_buffers(self.incoming.values(), self._changed).items()}
+        self.locks = {key: asyncio.Lock() for key in self.incoming}
         self.engines = {key: engine(sub) for key, sub in self.outgoing.items()}
         for delivery in self.engines.values():
             delivery.store.on_change = self.reports.mark

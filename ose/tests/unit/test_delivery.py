@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from unittest.mock import patch
 from ose.delivery.policies import SubscriptionPolicy as Policy
-from ose.delivery.buffers import Buffer
+from ose.delivery.buffers import Buffer, input_buffers
 from ose.delivery.engine import DeliveryEngine
 from ose.delivery.stores import MemoryStore
 
@@ -52,6 +52,38 @@ class DeliveryTests(unittest.TestCase):
         buffer.consumed("session:6")
         self.assertEqual(buffer.admit(record(4)), "stale")
         self.assertIsNone(buffer.take())
+
+    def test_latest_merges_topics_and_keeps_each_source_sequence_history(self):
+        buffer = Buffer(Policy.resolve({"buffer": "latest"}), MemoryStore(seen_limit=1))
+        def publication(topic, sequence, epoch="session"):
+            return dict(record(sequence, epoch), topic=topic, id=f"{epoch}:{topic}:{sequence}")
+        for topic, sequence in (("a.out", 50), ("b.out", 1), ("a.out", 51)):
+            value = publication(topic, sequence)
+            self.assertEqual(buffer.admit(value), "accepted")
+            self.assertEqual(buffer.take()["id"], value["id"])
+        # The deduplication window no longer contains a:50 or b:1. Their
+        # per-topic sequences must still prevent retries from replacing a:51.
+        for topic, sequence in (("a.out", 50), ("b.out", 1)):
+            self.assertEqual(buffer.admit(publication(topic, sequence)), "stale")
+        self.assertEqual(buffer.take()["id"], "session:a.out:51")
+        self.assertEqual(buffer.admit(publication("b.out", 2)), "accepted")
+        self.assertEqual(buffer.admit(publication("a.out", 1, "replacement")), "accepted")
+        self.assertEqual(buffer.take()["id"], "replacement:a.out:1")
+        self.assertEqual(buffer.admit(publication("b.out", 1)), "stale")
+
+    def test_shared_input_buffers_validate_reception_and_merge_fifo_admissions(self):
+        subscriptions = [{"to": "sink.input", "policy": Policy(capacity=2).to_dict()},
+                         {"to": "sink.input", "policy": Policy(capacity=2, transport="udp", ack="received").to_dict()}]
+        buffers = input_buffers(subscriptions)
+        self.assertEqual(list(buffers), ["sink.input"])
+        buffer = buffers["sink.input"]
+        for number in (3, 1):
+            self.assertEqual(buffer.admit(record(number)), "accepted")
+        self.assertEqual(buffer.admit(record(2)), "full")
+        self.assertEqual([r["sequence"] for r in buffer.store.records()], [3, 1])
+        subscriptions[-1]["policy"]["capacity"] = 3
+        with self.assertRaisesRegex(ValueError, "sink.input.*reception"):
+            input_buffers(subscriptions)
 
     def test_saturation_is_explicit(self):
         for overflow, expected in (("reject_new", [1]), ("drop_oldest", [2]), ("wait", [1])):

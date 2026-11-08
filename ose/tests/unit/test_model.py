@@ -14,10 +14,6 @@ class ModelTests(unittest.TestCase):
     def test_example_and_graph_rejections(self):
         validate_graph(self.model, self.deployment)
         bad = copy.deepcopy(self.model)
-        bad["subscriptions"].append(dict(bad["subscriptions"][0], id="duplicate-input"))
-        with self.assertRaisesRegex(ValueError, "one producer"):
-            validate_graph(bad, self.deployment)
-        bad = copy.deepcopy(self.model)
         bad["components"]["acquisition"]["inputs"] = {"input": {"root": "Measurement"}}
         bad["subscriptions"].append({"id": "cycle", "from": "analyse.result", "to": "acquisition.input"})
         with self.assertRaisesRegex(ValueError, "cycle"):
@@ -26,6 +22,18 @@ class ModelTests(unittest.TestCase):
         bad["components"]["analyse"]["inputs"]["extra"] = {"root": "Measurement"}
         with self.assertRaisesRegex(ValueError, "unconnected"):
             validate_graph(bad, self.deployment)
+
+    def test_multiple_producers_share_reception_but_not_delivery_settings(self):
+        self.model["subscriptions"].append({"id": "raw-observation", "from": "acquisition.measure",
+                                            "to": "observation.input"})
+        self.deployment.setdefault("subscriptions", {})["raw-observation"] = {"transport": "udp"}
+        validate_graph(self.model, self.deployment)
+        for qos in ({"buffer": "latest"}, {"capacity": 2}, {"overflow": "drop_oldest"},
+                    {"wait_timeout_ms": 200}):
+            with self.subTest(qos=qos), self.assertRaisesRegex(ValueError, "observation.input.*reception"):
+                model = copy.deepcopy(self.model)
+                model["subscriptions"][-1]["qos"] = qos
+                validate_graph(model, self.deployment)
 
     def test_generated_container_validation(self):
         for container, message in (({"language": "go", "handler": "logic.go"}, "language must"),

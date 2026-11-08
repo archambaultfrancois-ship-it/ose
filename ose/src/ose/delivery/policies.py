@@ -65,3 +65,18 @@ class SubscriptionPolicy:
 
     def to_dict(self):
         return asdict(self)
+
+    def reception(self):
+        """Settings shared by all subscriptions feeding the same input."""
+        return {name: getattr(self, name) for name in ("buffer", "capacity", "overflow", "wait_timeout_ms")}
+
+
+def reception_policies(subscriptions):
+    policies = {}
+    for sub in subscriptions:
+        policy = SubscriptionPolicy.from_dict(sub["policy"])
+        previous = policies.setdefault(sub["to"], policy)
+        if previous.reception() != policy.reception():
+            raise ValueError(f"subscriptions targeting {sub['to']} must share reception settings: "
+                             "buffer, capacity, overflow, wait_timeout_ms")
+    return policies

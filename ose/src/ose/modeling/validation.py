@@ -2,6 +2,7 @@
 import math
 import re
 from ose.modeling.model import fields
+from ose.delivery.policies import SubscriptionPolicy, reception_policies
 
 
 def validate_graph(model, deployment):
@@ -147,7 +148,7 @@ def validate_graph(model, deployment):
     if set(external) & {f"{name}.{port}" for name, node in components.items() for port in node["outputs"]}:
         raise ValueError("external topic conflicts with an internal output")
     edges = {name: set() for name in components}
-    targets, ids = set(), set()
+    targets, ids, subscriptions = set(), set(), []
     if not isinstance(model["subscriptions"], list):
         raise ValueError("subscriptions must be a list")
     for sub in model["subscriptions"]:
@@ -162,13 +163,16 @@ def validate_graph(model, deployment):
         elif sub["from_topic"] not in external:
             raise ValueError("unknown external topic")
         target, input_port = endpoint(sub["to"], components, "inputs")
-        if sub["to"] in targets:
-            raise ValueError("each input must have exactly one producer")
         targets.add(sub["to"])
+        binding = deployment.get("subscriptions", {}).get(sub["id"], {})
+        fields(binding, ("transport", "routing"))
+        policy = SubscriptionPolicy.resolve(sub.get("qos"), binding.get("transport", "tcp"))
+        subscriptions.append({"to": sub["to"], "policy": policy.to_dict()})
         if "from" in sub:
             edges[source].add(target)
     if set(deployment.get("subscriptions", {})) - ids:
         raise ValueError("unknown subscription in deployment")
+    reception_policies(subscriptions)
     for name, node in components.items():
         for port, desc in node["inputs"].items():
             if desc.get("required", True) and f"{name}.{port}" not in targets:
