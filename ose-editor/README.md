@@ -74,10 +74,31 @@ or 24 and `make frontend-editor`.
 Select a component/link in Graph, an object in Tables or a declaration in the
 explorer. Use the inspector to edit its properties, including explicit defaults,
 SDL IDs/cardinalities, expressions, aliases, dimensions and wire clauses.
+Subscriptions appear under their `id` in the explorer and inspector; the model
+keeps its existing array format, with numeric paths used internally for edits.
+New JSON objects and arrays are expanded across indented lines, following the
+file's indentation and line endings while preserving exact scalar literals.
+To duplicate a subscription, select it and choose **Duplicate**, then enter a
+new ID and an unused destination input (`component.port`). The copy preserves
+its source, QoS and explicit deployment settings. Review the diff before
+applying; the operation is undoable.
 In Graph, use **Shift**, **Ctrl**, or **Cmd + click** to add or remove components
-from the selection, or **Shift + drag** on the canvas to select an area. The
-caption shows the selected component count. Choose **Group selection** to
-prepare a named visual group containing those components.
+from the selection, or **Shift**, **Ctrl**, or **Cmd + drag** on the empty canvas
+to select an area. A plain drag on the canvas moves the view. The
+caption shows the selected component and group counts. Choose **Group selection**
+to create a named visual group containing the selected components and/or groups.
+Select existing groups with **Shift**, **Ctrl**, or **Cmd + click** to combine
+them into a parent group; multiple levels of grouping are supported. Group names
+must be unique. Regrouping moves selected items out of their previous parent.
+A collapsed group hides ports used only by internal links, while retaining
+crossing connections and unused ports. **Double-click** a group to expand one
+level: its subgroups keep their own collapsed state. **Collapse all groups**
+restores the folded hierarchy. These groups are visual metadata; they do not
+change the model's components or subscriptions.
+Links are curved by default. Use **Link style** in the graph toolbar to switch
+between curved, straight and right-angle links for the current view.
+Presentation changes (groups, positions and auto layout) apply immediately
+without a review dialog and remain undoable with **Undo**.
 Every semantic change opens a concrete diff before application. Rename
 references and compound component operations update indexed model/deployment
 references together. Application handler code is listed for review and is never

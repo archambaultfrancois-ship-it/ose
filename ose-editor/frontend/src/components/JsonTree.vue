@@ -4,7 +4,7 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import { useProject } from '../store'
-import { keysFor, choices } from '../hints'
+import { keysFor, choices, nodeLabel } from '../hints'
 import { parameterShape } from '../schema'
 const props = defineProps<{ node: any; file: string; role: string; depth?: number; readonly?: boolean }>()
 const store = useProject(), page = ref(0), key = ref(''), literal = ref('null'), showAdd = ref(false), rename = ref(false), newName = ref('')
@@ -40,7 +40,7 @@ function add() { store.command({ action: 'set', file: props.file, path: [...prop
         <Button label="Preview addition" :disabled="node.kind === 'object' && !key" @click="add" />
       </div>
       <details v-for="child in children" :key="child.name" :open="expanded.has(child.name)" class="property-branch" @toggle="event => { if ((event.target as HTMLDetailsElement).open) expanded.add(child.name); else expanded.delete(child.name) }">
-        <summary><span>{{ child.name }}</span><small>{{ child.kind }}</small>
+        <summary><span>{{ nodeLabel(child) }}</span><small>{{ child.kind }}</small>
           <button v-if="!readonly" title="Select this property" aria-label="Inspect property" @click.stop.prevent="store.select(file, child.path)">↗</button>
         </summary>
         <JsonTree v-if="expanded.has(child.name)" :node="child" :file="file" :role="role" :depth="(depth || 0) + 1" :readonly="readonly" />

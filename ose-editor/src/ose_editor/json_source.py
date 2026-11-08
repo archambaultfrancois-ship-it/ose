@@ -105,8 +105,29 @@ class JsonSource:
     def patch(self, start, end, value):
         return self.text[:start] + value + self.text[end:]
 
+    def formatted(self, indent='  ', prefix='', newline='\n'):
+        """Expand collections without reserializing scalar literals."""
+        def render(node, padding):
+            if not node.children:
+                return self.text[node.start:node.end]
+            child_padding = padding + indent
+            entries = []
+            for key, child in node.children.items():
+                label = self.text[slice(*node.keys[key])] + ': ' if node.keys else ''
+                entries.append(child_padding + label + render(child, child_padding))
+            return self.text[node.start] + newline + (',' + newline).join(entries) + newline + padding + self.text[node.end - 1]
+        return render(self.root, prefix)
+
     def set(self, path, literal):
-        loads(literal)
+        value = JsonSource(literal)
+        newline = '\r\n' if '\r\n' in self.text else '\n'
+        indents = re.findall(r'(?m)^([ \t]+)\S', self.text)
+        unit = min(indents, key=len) if indents else '  '
+
+        def line_indent(position):
+            line = self.text.rfind('\n', 0, position) + 1
+            return re.match(r'[ \t]*', self.text[line:])[0]
+
         try:
             node = self.node(path)
         except KeyError:
@@ -116,24 +137,31 @@ class JsonSource:
             key = str(path[-1])
             if isinstance(parent.value, list) and key not in ('-', str(len(parent.children))):
                 raise ValueError('Array insertion must append or use a valid existing index')
-            insertion = (json.dumps(key, ensure_ascii=False) + ': ' if isinstance(parent.value, dict) else '') + literal
-            newline = '\r\n' if '\r\n' in self.text else '\n'
+            indent = line_indent(parent.start)
+            child_indent = indent + unit
+            if parent.children:
+                first = next(iter(parent.children))
+                child_start = parent.keys[first][0] if parent.keys else parent.children[first].start
+                child_line = self.text.rfind('\n', 0, child_start) + 1
+                existing_indent = self.text[child_line:child_start]
+                if existing_indent and not existing_indent.strip():
+                    child_indent = existing_indent
+            rendered = value.formatted(unit, child_indent, newline) if isinstance(value.root.value, (dict, list)) else literal
+            insertion = (json.dumps(key, ensure_ascii=False) + ': ' if isinstance(parent.value, dict) else '') + rendered
             multiline = '\n' in self.text[parent.start:parent.end]
             if multiline:
-                line = self.text.rfind('\n', 0, parent.start) + 1
-                indent = re.match(r'[ \t]*', self.text[line:])[0]
-                child_indent = indent + '  '
-                if parent.children:
-                    first = next(iter(parent.children))
-                    child_start = parent.keys[first][0] if parent.keys else parent.children[first].start
-                    child_line = self.text.rfind('\n', 0, child_start) + 1
-                    child_indent = self.text[child_line:child_start]
                 position = parent.end - 1
                 while position > parent.start + 1 and self.text[position - 1].isspace():
                     position -= 1
-                return self.patch(position, position, (',' if parent.children else '') + newline + child_indent + insertion)
-            return self.patch(parent.end - 1, parent.end - 1, (', ' if parent.children else '') + insertion)
-        return self.patch(node.start, node.end, literal)
+                trailing = self.text[position:parent.end - 1]
+                if '\n' not in trailing:
+                    trailing = newline + indent
+                return self.patch(position, parent.end - 1, (',' if parent.children else '') + newline + child_indent + insertion + trailing)
+            existing = self.text[parent.start + 1:parent.end - 1].strip()
+            body = (existing + ',' + newline + child_indent if existing else '') + insertion
+            return self.patch(parent.start + 1, parent.end - 1, newline + child_indent + body + newline + indent)
+        rendered = value.formatted(unit, line_indent(node.start), newline) if isinstance(value.root.value, (dict, list)) else literal
+        return self.patch(node.start, node.end, rendered)
 
     def delete(self, path):
         if not path:

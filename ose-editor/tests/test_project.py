@@ -56,6 +56,93 @@ class ProjectTests(unittest.TestCase):
         text = self.project.document('deployment.local.json').text
         self.assertNotIn('machines/1/sensor', text)
 
+    def test_duplicate_subscription_copies_qos_and_deployments_and_is_undoable(self):
+        self.command({'action': 'set', 'file': self.project.model,
+                      'path': ['components', 'analyzer_2', 'inputs', 'copy'],
+                      'literal': '{"root":"SignalBlock"}'})
+        before = self.project.snapshot()
+        disk = {key: doc.path.read_bytes() for key, doc in self.project.documents.items()}
+        prepared = self.command({'action': 'duplicate_subscription', 'copy': 'signal_1',
+                                 'name': 'signal_copy', 'to': 'analyzer_2.copy'})
+        subs = self.model()['subscriptions']
+        self.assertEqual(subs[-1], {**subs[0], 'id': 'signal_copy', 'to': 'analyzer_2.copy'})
+        cluster = loads(self.project.document('deployment.cluster.json').text)
+        self.assertEqual(cluster['subscriptions']['signal_copy'], cluster['subscriptions']['signal_1'])
+        self.assertNotIn('subscriptions', loads(self.project.document('deployment.local.json').text))
+        self.assertEqual({change['file'] for change in prepared['changes']}, {self.project.model, 'deployment.cluster.json'})
+        self.assertEqual(disk, {key: doc.path.read_bytes() for key, doc in self.project.documents.items()})
+        self.project.undo(self.project.revision)
+        self.assertEqual(self.project.snapshot(), before)
+        self.project.undo(self.project.revision, redo=True)
+        self.assertEqual(self.model()['subscriptions'][-1]['id'], 'signal_copy')
+
+    def test_duplicate_subscription_rejects_invalid_destinations_without_partial_changes(self):
+        cases = [
+            ({'name': ''}, 'nonempty'),
+            ({'name': 'signal_2'}, 'already exists'),
+            ({'copy': 'missing'}, 'Unknown subscription'),
+            ({'to': 'bad'}, 'component.port'),
+            ({'to': 'analyzer_2.missing'}, 'Unknown destination'),
+            ({'to': 'analyzer_2.input'}, 'already has a producer'),
+            ({'to': 'alarm.machine_1'}, 'already has a producer'),
+        ]
+        self.command({'action': 'set', 'file': self.project.model,
+                      'path': ['components', 'alarm', 'inputs', 'free'],
+                      'literal': '{"root":"Analysis"}'})
+        self.command({'action': 'set', 'file': self.project.model,
+                      'path': ['components', 'sensor_1', 'inputs', 'loop'],
+                      'literal': '{"root":"SignalBlock"}'})
+        cases.extend([({'to': 'alarm.free'}, 'same logical name'),
+                      ({'to': 'sensor_1.loop'}, 'cycle')])
+        for overrides, message in cases:
+            with self.subTest(overrides=overrides):
+                before = self.project.snapshot()
+                command = {'action': 'duplicate_subscription', 'copy': 'signal_1',
+                           'name': 'copy', 'to': 'analyzer_2.input', **overrides}
+                with self.assertRaisesRegex(ValueError, message):
+                    self.project.prepare(command, self.project.revision)
+                self.assertEqual(self.project.snapshot(), before)
+
+    def test_duplicate_external_subscription_keeps_topic_and_qos(self):
+        self.command({'action': 'set', 'file': self.project.model,
+                      'path': ['external_topics'], 'literal': '{"outside":{"root":"SignalBlock"}}'})
+        self.command({'action': 'set', 'file': self.project.model,
+                      'path': ['subscriptions', '0'],
+                      'literal': '{"id":"signal_1","from_topic":"outside","to":"analyzer_1.input","qos":{"capacity":8}}'})
+        self.command({'action': 'set', 'file': self.project.model,
+                      'path': ['components', 'analyzer_2', 'inputs', 'copy'],
+                      'literal': '{"root":"SignalBlock"}'})
+        self.command({'action': 'duplicate_subscription', 'copy': 'signal_1',
+                      'name': 'outside_copy', 'to': 'analyzer_2.copy'})
+        sub = self.model()['subscriptions'][-1]
+        self.assertEqual(sub, {'id': 'outside_copy', 'from_topic': 'outside',
+                               'to': 'analyzer_2.copy', 'qos': {'capacity': 8}})
+
+    def test_nested_visual_groups_survive_undo_rename_save_and_reopen(self):
+        original = (self.root / 'model.json').read_bytes()
+        groups = {
+            'branch_1': {'members': ['sensor_1', 'analyzer_1'], 'collapsed': True},
+            'branch_2': {'members': ['sensor_2', 'analyzer_2'], 'collapsed': True},
+            'pipeline': {'members': [], 'groups': ['branch_1', 'branch_2'], 'collapsed': True},
+        }
+        self.command({'action': 'workspace', 'groups': groups})
+        self.assertEqual(self.project.workspace['groups'], groups)
+        self.assertEqual((self.root / 'model.json').read_bytes(), original)
+        self.project.undo(self.project.revision)
+        self.assertEqual(self.project.workspace['groups'], {})
+        self.project.undo(self.project.revision, redo=True)
+        self.assertEqual(self.project.workspace['groups'], groups)
+        self.command({'action': 'rename', 'kind': 'component', 'old': 'sensor_1', 'name': 'renamed'})
+        self.assertEqual(self.project.workspace['groups']['branch_1']['members'], ['renamed', 'analyzer_1'])
+        self.assertEqual(self.project.workspace['groups']['pipeline']['groups'], ['branch_1', 'branch_2'])
+        self.project.undo(self.project.revision)
+        self.project.save(self.project.revision)
+        self.project.close()
+        self.project = Project(self.root)
+        self.addCleanup(self.project.close)
+        self.assertEqual(self.project.workspace['groups'], groups)
+        self.assertEqual((self.root / 'model.json').read_bytes(), original)
+
     def test_port_and_subscription_renames(self):
         self.command({'action': 'rename', 'kind': 'port', 'direction': 'outputs', 'old': 'sensor_1.signal', 'name': 'samples'})
         self.assertEqual(self.model()['subscriptions'][0]['from'], 'sensor_1.samples')
@@ -69,8 +156,14 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(self.project.snapshot(), before)
 
     def test_add_duplicate_remove_component(self):
-        self.command({'action': 'add_component', 'name': 'sensor_3', 'copy': 'sensor_1'})
-        self.assertEqual(self.model()['components']['sensor_3'], self.model()['components']['sensor_1'])
+        name = 'sensor_3'
+        while name in self.model()['components']:
+            name += '_copy'
+        self.command({'action': 'add_component', 'name': name, 'copy': 'sensor_1'})
+        self.assertEqual(self.model()['components'][name], self.model()['components']['sensor_1'])
+        self.assertIn('    "' + name + '": {\n      "inputs": {},\n      "outputs": {\n', self.project.document(self.project.model).text)
+        for key in self.project.deployments:
+            self.assertIn('    "' + name + '": {\n      "container": {\n', self.project.document(key).text)
         self.command({'action': 'remove_component', 'name': 'sensor_1'})
         self.assertNotIn('sensor_1', self.model()['components'])
         self.assertFalse(any(sub.get('from', '').startswith('sensor_1.') for sub in self.model()['subscriptions']))

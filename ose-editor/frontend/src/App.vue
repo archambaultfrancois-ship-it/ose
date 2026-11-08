@@ -5,7 +5,7 @@ import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import Dialog from 'primevue/dialog'
 import { useProject } from './store'
-import { atPath } from './hints'
+import { atPath, nodeLabel } from './hints'
 import GraphView from './components/GraphView.vue'
 import JsonTree from './components/JsonTree.vue'
 import SdlTree from './components/SdlTree.vue'
@@ -22,7 +22,20 @@ const validationState = computed(() => store.job ? store.job.revision !== store.
 watch(() => store.project?.selected_deployment, value => { if (!deployment.value) deployment.value = value || '' })
 watch(deployment, value => { if (value && store.project && store.project.selected_deployment !== value) store.command({ action: 'select_deployment', file: value }, false) })
 function addComponent() { const name = window.prompt('New component name'); if (name) store.command({ action: 'add_component', name }) }
-function duplicate() { const path = store.selection?.path; if (path?.[0] === 'components' && path.length === 2 && store.selection?.file === store.project.model) { const name = window.prompt('New component name (handler and parameter references are shared)'); if (name) store.command({ action: 'add_component', name, copy: path[1] }) } }
+function duplicate() {
+  const selection = store.selection, path = selection?.path
+  if (selection?.file !== store.project.model || path?.length !== 2) return
+  if (path[0] === 'components') {
+    const name = window.prompt('New component name (handler and parameter references are shared)')
+    if (name) store.command({ action: 'add_component', name, copy: path[1] })
+  } else if (path[0] === 'subscriptions') {
+    const subscription = atPath(selected.value.value, path)
+    const name = window.prompt('New subscription ID')?.trim()
+    if (!name) return
+    const to = window.prompt('Destination input (component.port; must be unused)', subscription.to)?.trim()
+    if (to) store.command({ action: 'duplicate_subscription', copy: subscription.id, name, to })
+  }
+}
 function rename() {
   const selection = store.selection; if (!selection) return
   const name = window.prompt('New name; indexed references will be included in the preview'); if (!name) return
@@ -58,7 +71,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', unload))
     <div class="workspace-grid">
       <aside class="explorer"><div class="panel-heading"><h2>PROJECT</h2><span>{{ documents.length }} files</span></div><InputText v-model="filter" placeholder="Filter files…" aria-label="Filter files" /><div class="explorer-actions"><Button label="+ Component" size="small" severity="secondary" @click="addComponent" /><Button label="+ Schema" size="small" severity="secondary" @click="addSchema" /></div>
         <div class="file-list"><details v-for="doc in documents" :key="doc.id" open><summary @click.stop="store.select(doc.id, [])"><span>{{ doc.format === 'sdl' ? '◈' : '▤' }}</span><button @click.stop="store.select(doc.id, [])">{{ doc.id }}</button><span v-if="doc.dirty" class="dirty-dot">●</span></summary>
-          <template v-if="doc.tree"><div v-for="child in doc.tree.children" :key="child.name" class="explorer-section"><button @click="store.select(doc.id, child.path)">{{ child.name }} <small>{{ child.children.length || '' }}</small></button><button v-for="item in child.children.slice(0, 80)" :key="item.name" class="explorer-object" @click="store.select(doc.id, item.path)">{{ item.name }}<small>{{ item.kind }}</small></button></div></template>
+          <template v-if="doc.tree"><div v-for="child in doc.tree.children" :key="child.name" class="explorer-section"><button @click="store.select(doc.id, child.path)">{{ child.name }} <small>{{ child.children.length || '' }}</small></button><button v-for="item in child.children.slice(0, 80)" :key="item.name" class="explorer-object" @click="store.select(doc.id, item.path)">{{ nodeLabel(item) }}<small>{{ item.kind }}</small></button></div></template>
           <button v-for="item in doc.nodes || []" :key="item.path" class="explorer-object" @click="store.select(doc.id, undefined, item.path)">{{ item.name }} <small>{{ item.kind }}</small></button>
           <small v-if="doc.stale" class="error">Source has syntax errors</small>
         </details></div>
@@ -70,7 +83,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', unload))
           <div class="diagnostics-content"><template v-if="bottom === 'Diagnostics'"><p v-if="!errors.length" class="empty-state">{{ validationState === 'passed' ? 'Validation passed for this revision.' : 'No source syntax errors. Validate to check OSE and SDL semantics.' }}</p><button v-for="(diagnostic, index) in errors" :key="index" class="diagnostic-row" @click="diagnostic.file && store.select(diagnostic.file, [])"><strong>{{ diagnostic.origin }}</strong><span>{{ diagnostic.message }}</span><code>{{ diagnostic.file }}</code></button></template><template v-else-if="bottom === 'Changes'"><article v-for="change in changes" :key="change.file"><strong>{{ change.file }}</strong><pre>{{ change.diff }}</pre></article><p v-if="!changes.length" class="empty-state">No changes to maintained source files.</p></template><template v-else><button v-for="(usage, index) in usages" :key="index" class="diagnostic-row" @click="store.select(usage.file, []); view = 'Sources'"><code>{{ usage.file }}:{{ usage.line }}</code><span>{{ usage.text }}</span></button><small>Source occurrences; external consumers are not assessed.</small></template></div>
         </section>
       </section>
-      <aside class="inspector"><div class="panel-heading"><h2>INSPECTOR</h2><button @click="view = 'Sources'" title="Show source">↗ Source</button></div><template v-if="selected"><p class="inspector-location">{{ store.selection?.file }}</p><h3>{{ store.selection?.path?.at(-1) || (store.selection?.sdl ? 'SDL declaration' : 'Document properties') }}</h3><div class="inspector-actions"><Button label="Rename references" size="small" severity="secondary" @click="rename" /><Button label="Duplicate" size="small" severity="secondary" @click="duplicate" /><Button label="Remove" size="small" severity="danger" @click="remove" /></div><p v-if="selected.stale" class="error">This projection is stale. Repair the source to resume structured edits.</p><JsonTree v-if="node" :key="store.selection?.file + JSON.stringify(store.selection?.path) + store.project.revision" :node="node" :file="selected.id" :role="selected.role" :readonly="selected.stale" /><SdlTree v-else-if="selected.nodes" :nodes="selected.nodes" :file="selected.id" :selected="store.selection?.sdl" :readonly="selected.stale" /><p v-else class="empty-state">Select an object to inspect.</p><Button v-if="selected.role === 'schema'" label="Export schema format" size="small" severity="secondary" @click="exportSchema" /><ContractView /><details v-if="selected.comments?.length" class="comments-panel"><summary>Source comments</summary><label v-for="(comment, index) in selected.comments" :key="index">Comment {{ Number(index) + 1 }}<textarea :value="comment.value" @change="event => store.command({ action: 'comment', file: selected.id, index, value: (event.target as HTMLTextAreaElement).value })" /></label></details></template></aside>
+      <aside class="inspector"><div class="panel-heading"><h2>INSPECTOR</h2><button @click="view = 'Sources'" title="Show source">↗ Source</button></div><template v-if="selected"><p class="inspector-location">{{ store.selection?.file }}</p><h3>{{ nodeLabel(node) || store.selection?.path?.at(-1) || (store.selection?.sdl ? 'SDL declaration' : 'Document properties') }}</h3><div class="inspector-actions"><Button label="Rename references" size="small" severity="secondary" @click="rename" /><Button label="Duplicate" size="small" severity="secondary" @click="duplicate" /><Button label="Remove" size="small" severity="danger" @click="remove" /></div><p v-if="selected.stale" class="error">This projection is stale. Repair the source to resume structured edits.</p><JsonTree v-if="node" :key="store.selection?.file + JSON.stringify(store.selection?.path) + store.project.revision" :node="node" :file="selected.id" :role="selected.role" :readonly="selected.stale" /><SdlTree v-else-if="selected.nodes" :nodes="selected.nodes" :file="selected.id" :selected="store.selection?.sdl" :readonly="selected.stale" /><p v-else class="empty-state">Select an object to inspect.</p><Button v-if="selected.role === 'schema'" label="Export schema format" size="small" severity="secondary" @click="exportSchema" /><ContractView /><details v-if="selected.comments?.length" class="comments-panel"><summary>Source comments</summary><label v-for="(comment, index) in selected.comments" :key="index">Comment {{ Number(index) + 1 }}<textarea :value="comment.value" @change="event => store.command({ action: 'comment', file: selected.id, index, value: (event.target as HTMLTextAreaElement).value })" /></label></details></template></aside>
     </div>
     <footer class="status-bar"><span>● Local authoring · OSE model v1 / SDL</span><span>{{ store.project.documents[store.project.model]?.stale ? 'Stale model projection' : 'Sources synchronized' }}</span><code>{{ store.project.revision.slice(0, 8) }}</code></footer>
   </div>

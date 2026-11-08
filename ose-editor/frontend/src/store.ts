@@ -22,7 +22,7 @@ export const useProject = defineStore('project', () => {
     try { return await action() } catch (e) { error.value = (e as Error).message; return undefined } finally { busy.value = false }
   }
   async function load() { return guard(async () => { project.value = await api('project'); if (!selection.value) selection.value = { file: project.value.model, path: [] } }) }
-  async function command(command: any, preview = true) {
+  async function command(command: any, preview = command.action !== 'workspace') {
     return guard(async () => {
       const prepared = await api('commands/prepare', { revision: project.value.revision, command })
       if (preview) { pending.value = prepared; return prepared }

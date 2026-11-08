@@ -362,6 +362,32 @@ class Project:
                         self.json_set(key, ['subscriptions', sub], remove=True)
                 if name in data.get('process_names', {}).get('components', {}):
                     self.json_set(key, ['process_names', 'components', name], remove=True)
+        elif action == 'duplicate_subscription':
+            model = loads(self.document(self.model).text)
+            subs = model.get('subscriptions', [])
+            name = command['name']
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError('Use a nonempty subscription ID')
+            if any(sub['id'] == name for sub in subs):
+                raise ValueError('Subscription ID already exists')
+            source = next((sub for sub in subs if sub['id'] == command['copy']), None)
+            if source is None:
+                raise ValueError('Unknown subscription to duplicate')
+            destination = command.get('to', '')
+            if not isinstance(destination, str) or destination.count('.') != 1:
+                raise ValueError('Use a destination input in component.port form')
+            component, port = destination.split('.')
+            if port not in model.get('components', {}).get(component, {}).get('inputs', {}):
+                raise ValueError('Unknown destination input')
+            if any(sub['to'] == destination for sub in subs):
+                raise ValueError('This input already has a producer')
+            subscription = {**deepcopy(source), 'id': name, 'to': destination}
+            self.json_set(self.model, ['subscriptions', '-'], subscription)
+            self._check_connection(subscription)
+            for key in self.deployments:
+                deployment = loads(self.document(key).text)
+                if source['id'] in deployment.get('subscriptions', {}):
+                    self.json_set(key, ['subscriptions', name], deepcopy(deployment['subscriptions'][source['id']]))
         elif action == 'connect':
             model = loads(self.document(self.model).text)
             subs = model.get('subscriptions', [])

@@ -12,6 +12,32 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class JsonTests(unittest.TestCase):
+    def test_inserted_objects_and_arrays_are_expanded_with_existing_indent_and_newlines(self):
+        for unit, newline in [('  ', '\n'), ('    ', '\n'), ('\t', '\r\n')]:
+            with self.subTest(unit=unit, newline=newline):
+                text = newline.join(['{', unit + '"components": {', unit * 2 + '"old": {"keep":1}', unit + '},', unit + '"untouched" : [1,2]', '}', ''])
+                literal = '{"inputs":{},"values":[18446744073709551615,0.1000000000000000001,1e-7],"label":"\\u00e9"}'
+                result = JsonSource(text).set(['components', 'new'], literal)
+                expected = newline.join([
+                    unit * 2 + '"new": {', unit * 3 + '"inputs": {},',
+                    unit * 3 + '"values": [', unit * 4 + '18446744073709551615,',
+                    unit * 4 + '0.1000000000000000001,', unit * 4 + '1e-7', unit * 3 + '],',
+                    unit * 3 + '"label": "\\u00e9"', unit * 2 + '}',
+                ])
+                self.assertEqual(result, text.replace('"old": {"keep":1}', '"old": {"keep":1},' + newline + expected))
+                self.assertEqual(loads(result)['components']['new'], loads(literal))
+
+    def test_empty_collections_expand_and_replaced_objects_keep_exact_literals(self):
+        text = '{\n  "items": [],\n  "object": {}\n}\n'
+        result = JsonSource(text).set(['items', '-'], '{"qos":{"capacity":8}}')
+        self.assertIn('"items": [\n    {\n      "qos": {\n        "capacity": 8\n      }\n    }\n  ]', result)
+        self.assertIn('"object": {}', result)
+        result = JsonSource(result).set(['object', 'new'], 'true')
+        self.assertIn('"object": {\n    "new": true\n  }', result)
+        result = JsonSource(result).set(['object'], '{"exact":1.00000000000000000000001}')
+        self.assertIn('"object": {\n    "exact": 1.00000000000000000000001\n  }', result)
+        loads(result)
+
     def test_exact_numbers_and_untouched_regions(self):
         text = '{\r\n "maximum" : 18446744073709551615, "q": 0.1000000000000000001, "name":"old"\r\n}\r\n'
         parsed = JsonSource(text)

@@ -41,4 +41,13 @@ export const choices: Record<string, string[]> = {
   transport: ['tcp', 'udp'], routing: ['broker', 'direct'], modifier: ['required', 'optional', 'repeated', 'packed'], encoding: ['varint', 'zigzag'],
 }
 export const scalarText = (value: any): string => value?.$number ?? String(value ?? '')
+export function nodeLabel(node: any): string {
+  const fallback = node?.name || ''
+  if (node?.path?.length !== 2 || node.path[0] !== 'subscriptions' || !/^\d+$/.test(node.path[1])) return fallback
+  const id = node.children?.find((child: any) => child.name === 'id' && child.kind === 'string')
+  if (id) {
+    try { const value = JSON.parse(id.literal); if (typeof value === 'string' && value) return value } catch { /* Keep the index for incomplete sources. */ }
+  }
+  return fallback
+}
 export function atPath(root: any, path: string[] = []) { return path.reduce((value, key) => value?.[key], root) }

@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import { topology, downstream } from '../src/graph'
-import { keysFor } from '../src/hints'
+import { keysFor, nodeLabel } from '../src/hints'
 import { useProject } from '../src/store'
 import JsonTree from '../src/components/JsonTree.vue'
 import App from '../src/App.vue'
@@ -31,6 +31,96 @@ describe('domain to graph projection', () => {
     expect(graph.nodes).toHaveLength(2)
     expect(graph.edges).toHaveLength(1)
     expect(graph.edges[0]).toMatchObject({ source: 'group:acquisition', sourceHandle: 'compute.result', targetHandle: 'view.input' })
+    const group = graph.nodes.find(node => node.id === 'group:acquisition')!
+    expect(group.data.inputs).toEqual([])
+    expect(group.data.outputs.map((port: any) => port.endpoint)).toEqual(['compute.result'])
+  })
+  it.each([false, true])('projects nested groups independently of their declaration order (parent first: %s)', parentFirst => {
+    const parent = { pipeline: { members: [], groups: ['acquisition', 'processing'], collapsed: true } }
+    const children = {
+      acquisition: { members: ['source'], collapsed: true },
+      processing: { members: ['compute'], collapsed: true },
+    }
+    const workspace = { groups: parentFirst ? { ...parent, ...children } : { ...children, ...parent } }
+    const before = JSON.stringify(workspace)
+    const closed = topology(model, workspace)
+    expect(closed.nodes.map(node => node.id)).toEqual(['component:view', 'group:pipeline'])
+    expect(closed.edges).toHaveLength(1)
+    expect(closed.edges[0]).toMatchObject({ source: 'group:pipeline', sourceHandle: 'compute.result', target: 'component:view' })
+    expect(closed.nodes[1].data.inputs).toEqual([])
+    expect(closed.nodes[1].data.outputs.map((port: any) => port.endpoint)).toEqual(['compute.result'])
+    expect(JSON.stringify(workspace)).toBe(before)
+    workspace.groups.pipeline.collapsed = false
+    const opened = topology(model, workspace)
+    expect(opened.nodes.map(node => node.id)).toEqual(['component:view', 'group:acquisition', 'group:processing'])
+    expect(opened.edges[0]).toMatchObject({ source: 'group:acquisition', target: 'group:processing' })
+    workspace.groups.acquisition.collapsed = false
+    expect(topology(model, workspace).nodes.map(node => node.id)).toEqual(['component:source', 'component:view', 'group:processing'])
+  })
+  it('supports a group containing both components and subgroups, including a third level', () => {
+    const workspace = { groups: {
+      acquisition: { members: ['source'], collapsed: true },
+      processing: { members: ['compute'], groups: ['acquisition'], collapsed: true },
+      pipeline: { members: ['view'], groups: ['processing'], collapsed: true },
+    } }
+    const closed = topology(model, workspace)
+    expect(closed.nodes.map(node => node.id)).toEqual(['group:pipeline'])
+    expect(closed.edges).toEqual([])
+    workspace.groups.pipeline.collapsed = false
+    expect(topology(model, workspace).nodes.map(node => node.id)).toEqual(['component:view', 'group:processing'])
+  })
+  it('ignores missing subgroup references and does not recurse indefinitely on cycles', () => {
+    const graph = topology(model, { groups: {
+      root: { members: ['source'], groups: ['missing', 'child'], collapsed: true },
+      child: { members: ['compute'], groups: ['child'], collapsed: true },
+    } })
+    expect(graph.nodes.map(node => node.id)).toEqual(['component:view', 'group:root'])
+    expect(graph.edges).toHaveLength(1)
+    expect(graph.edges[0].source).toBe('group:root')
+  })
+  it('keeps group ports that also have crossing links and leaves free ports available', () => {
+    const extended = { ...model, components: { ...model.components, spare: { inputs: { free: { root: 'Reading', required: false } }, outputs: {} } },
+      external_topics: { ambient: { root: 'Reading' } }, subscriptions: [...model.subscriptions,
+        { id: 'fanout', from: 'source.out', to: 'view.input' },
+        { id: 'external', from_topic: 'ambient', to: 'compute.input' },
+      ] }
+    const before = JSON.stringify(extended)
+    const graph = topology(extended, { groups: { acquisition: { members: ['source', 'compute', 'spare'], collapsed: true } } })
+    const group = graph.nodes.find(node => node.id === 'group:acquisition')!
+    expect(group.data.inputs.map((port: any) => port.endpoint)).toEqual(['compute.input', 'spare.free'])
+    expect(group.data.inputs[1].required).toBe(false)
+    expect(group.data.outputs.map((port: any) => port.endpoint)).toEqual(['source.out', 'compute.result'])
+    expect(graph.edges.map(edge => edge.id)).toEqual(['results', 'fanout', 'external'])
+    for (const edge of graph.edges) {
+      if (edge.source === group.id) expect(group.data.outputs.some((port: any) => port.endpoint === edge.sourceHandle)).toBe(true)
+      if (edge.target === group.id) expect(group.data.inputs.some((port: any) => port.endpoint === edge.targetHandle)).toBe(true)
+    }
+    expect(JSON.stringify(extended)).toBe(before)
+  })
+  it('keeps connections between collapsed groups and restores internal links when expanded', () => {
+    const workspace = { groups: {
+      acquisition: { members: ['source', 'compute'], collapsed: true },
+      display: { members: ['view'], collapsed: true },
+    } }
+    const collapsed = topology(model, workspace)
+    expect(collapsed.edges).toHaveLength(1)
+    expect(collapsed.edges[0]).toMatchObject({ source: 'group:acquisition', target: 'group:display', sourceHandle: 'compute.result', targetHandle: 'view.input' })
+    expect(collapsed.nodes.find(node => node.id === 'group:display')!.data.inputs[0].endpoint).toBe('view.input')
+    workspace.groups.acquisition.collapsed = false
+    const expanded = topology(model, workspace)
+    expect(expanded.edges).toHaveLength(2)
+    expect(expanded.edges[0]).toMatchObject({ source: 'component:source', target: 'component:compute', sourceHandle: 'source.out', targetHandle: 'compute.input' })
+    expect(expanded.nodes.find(node => node.id === 'component:source')!.data.outputs[0].endpoint).toBe('source.out')
+  })
+  it('treats input and output handles with the same name independently', () => {
+    const bidirectional = { components: {
+      a: { inputs: { port: { root: 'Reading' } }, outputs: { port: { root: 'Reading' } } },
+      b: { inputs: { port: { root: 'Reading' } }, outputs: {} },
+    }, subscriptions: [{ id: 'internal', from: 'a.port', to: 'b.port' }] }
+    const graph = topology(bidirectional, { groups: { pair: { members: ['a', 'b'], collapsed: true } } })
+    expect(graph.nodes[0].data.inputs.map((port: any) => port.endpoint)).toEqual(['a.port'])
+    expect(graph.nodes[0].data.outputs).toEqual([])
+    expect(graph.edges).toEqual([])
   })
   it('handles fan-out, external topics and dependency highlighting', () => {
     const external = { ...model, external_topics: { 'external.topic': { root: 'Reading' } }, subscriptions: [...model.subscriptions, { id: 'outside', from_topic: 'external.topic', to: 'compute.input' }] }
@@ -47,6 +137,29 @@ describe('domain to graph projection', () => {
 })
 
 describe('shared revisioned command store', () => {
+  it('applies visual grouping immediately and keeps it undoable', async () => {
+    setActivePinia(createPinia())
+    const store = useProject()
+    const original = { revision: 'r1', workspace: { groups: {} } }
+    const groups = { acquisition: { members: ['source', 'compute'], collapsed: true } }
+    store.project = original
+    const fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'group-change', revision: 'r1', changes: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ revision: 'r2', workspace: { groups }, can_undo: true }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ...original, revision: 'r3' }) })
+    vi.stubGlobal('fetch', fetch)
+    await store.command({ action: 'workspace', groups })
+    expect(store.pending).toBeNull()
+    expect(store.project.workspace.groups).toEqual(groups)
+    expect(store.project.can_undo).toBe(true)
+    expect(fetch.mock.calls[1][0]).toBe('/api/v1/commands/apply')
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ revision: 'r1', id: 'group-change' })
+    await store.history()
+    expect(fetch.mock.calls[2][0]).toBe('/api/v1/undo')
+    expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ revision: 'r2' })
+    expect(store.project.workspace.groups).toEqual({})
+  })
+
   it('prepares a concrete diff before changing the domain state', async () => {
     setActivePinia(createPinia())
     const store = useProject()
@@ -93,6 +206,61 @@ describe('structured property controls', () => {
 })
 
 describe('assembled workspace', () => {
+  it('shows subscription IDs while keeping numeric paths for selection, renaming and editing', async () => {
+    const tree = (value: any, path: string[] = []): any => ({
+      name: path.at(-1), path, kind: Array.isArray(value) ? 'array' : value !== null && typeof value === 'object' ? 'object' : typeof value,
+      literal: typeof value === 'object' && value !== null ? '' : JSON.stringify(value),
+      children: value !== null && typeof value === 'object' ? Object.entries(value).map(([key, child]) => tree(child, [...path, key])) : [],
+    })
+    const pinia = createPinia(); setActivePinia(pinia)
+    vi.stubGlobal('Worker', class { onmessage: any; postMessage() {} terminate() {} })
+    const store = useProject()
+    const before = JSON.stringify(model)
+    store.project = { name: 'Example', revision: 'revision', model: 'model.json', deployments: [], selected_deployment: null,
+      documents: { 'model.json': { id: 'model.json', role: 'model', format: 'json', value: model, tree: tree(model) } },
+      diagnostics: [], workspace: { positions: {}, groups: {}, pinned: [] }, validation: null }
+    store.selection = { file: 'model.json', path: [] }
+    const command = vi.spyOn(store, 'command').mockResolvedValue(undefined)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia, [PrimeVue, { unstyled: true }]] } })
+    try {
+      const section = wrapper.findAll('.explorer-section').find(section => section.get('button').text().startsWith('subscriptions'))!
+      const links = section.findAll('.explorer-object')
+      expect(links.map(link => link.text())).toEqual(['readingsobject', 'resultsobject'])
+      await links[0].trigger('click')
+      await flushPromises()
+      expect(store.selection?.path).toEqual(['subscriptions', '0'])
+      expect(wrapper.get('.inspector h3').text()).toBe('readings')
+      vi.stubGlobal('prompt', vi.fn().mockReturnValueOnce('readings_copy').mockReturnValueOnce('compute.second'))
+      const duplicate = wrapper.findAll('button').find(button => button.text() === 'Duplicate')!
+      await duplicate.trigger('click')
+      expect(command).toHaveBeenLastCalledWith({ action: 'duplicate_subscription', copy: 'readings', name: 'readings_copy', to: 'compute.second' })
+      const calls = command.mock.calls.length
+      vi.stubGlobal('prompt', vi.fn().mockReturnValueOnce('cancelled').mockReturnValueOnce(null))
+      await duplicate.trigger('click')
+      expect(command).toHaveBeenCalledTimes(calls)
+      vi.stubGlobal('prompt', vi.fn(() => 'renamed_readings'))
+      await wrapper.findAll('button').find(button => button.text() === 'Rename references')!.trigger('click')
+      expect(command).toHaveBeenLastCalledWith({ action: 'rename', kind: 'subscription', old: 'readings', name: 'renamed_readings' })
+      await wrapper.get('.inspector input[aria-label="id"]').setValue('edited_readings')
+      await wrapper.findAll('.inspector .scalar-editor').find(editor => editor.find('input[aria-label="id"]').exists())!.get('button').trigger('click')
+      expect(command).toHaveBeenLastCalledWith({ action: 'set', file: 'model.json', path: ['subscriptions', '0', 'id'], literal: '"edited_readings"' })
+      await section.get('button').trigger('click')
+      await flushPromises()
+      expect(wrapper.findAll('.inspector .property-branch > summary > span').map(label => label.text())).toContain('readings')
+      expect(JSON.stringify(model)).toBe(before)
+    } finally { wrapper.unmount() }
+  })
+
+  it('keeps numeric labels when subscription IDs are missing and for unrelated arrays', () => {
+    const node = { name: '0', path: ['subscriptions', '0'], children: [] as any[] }
+    expect(nodeLabel(node)).toBe('0')
+    node.children = [{ name: 'id', kind: 'string', literal: '"readings"' }]
+    expect(nodeLabel(node)).toBe('readings')
+    expect(nodeLabel({ ...node, path: ['values', '0'] })).toBe('0')
+    node.children[0].literal = 'unfinished'
+    expect(nodeLabel(node)).toBe('0')
+  })
+
   it('renders the real Vue Flow nodes and authoring controls', async () => {
     const pinia = createPinia(); setActivePinia(pinia)
     vi.stubGlobal('Worker', class { onmessage: any; postMessage() {} terminate() {} })
