@@ -73,6 +73,22 @@ visual groups, fifty shared blocks, a 2,048-element sequence, fixed 3×4 arrays,
 separate schema overrides and more than 2,000 SDL fields. OSE validates the
 complete workload using the same compiler path as application projects.
 
+## Assisted connection coverage
+
+`frontend/tests/connections.test.ts` covers root and cycle rejection, multiple
+producers, dotted external topics, scoped directional reports, stale revisions,
+shared reception conflicts, drag feedback, reverse gestures, collapsed-group
+endpoints and the native publisher/destination form. The HTTP integration case
+`test_connection_guidance_checks_unconnected_scoped_contracts` validates real SDL
+catalogues for an unconnected incompatible pair, confirms that valid application
+validation still passes, rejects its connection preview without partial changes,
+and verifies that an edit invalidates the report. These component checks do not
+qualify actual desktop pointer/keyboard interaction or graph frame rates.
+
+Automated checks for this change passed on Termux ARM64: 64 Python integration
+tests and 54 frontend tests, including the representative thirty-component
+workload. Frontend checks ran after reinstalling the exact lockfile dependencies.
+
 ## Remaining full-release qualification
 
 - Full row-specific creation/modification/boundary evidence is not complete.

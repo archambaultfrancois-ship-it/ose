@@ -68,6 +68,16 @@ input name checks that source set independently. The response contains a job ID.
 diagnostics, resolved descriptors, SDL catalogues, directional subscription
 reports and initial-value codec previews. `DELETE /validation/ID` cancels it.
 
+Full-application results also include `connection_contracts`: directional SDL
+reports for distinct publisher/consumer schema-input pairs sharing a logical
+root, including unconnected ports and external topics. Each item contains
+`publisher_schema`, `consumer_schema`, `root`, `compatible`, `code`, `path` and
+`message`. Candidate incompatibility does not itself fail application validation;
+existing subscriptions are still checked independently. These reports apply only
+to their exact project revision. The graph marks candidates unchecked when a
+current report is unavailable. Preparing a connection rejects a known incompatible
+pair from the current validation; it never reuses a stale report.
+
 Jobs are serialized per project; a newer request cancels pending/active older
 work. Subprocesses have bounded duration and cancellation terminates their
 process group. Results for an older project revision are marked stale.

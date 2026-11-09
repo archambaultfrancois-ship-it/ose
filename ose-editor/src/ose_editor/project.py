@@ -486,6 +486,15 @@ class Project:
             publisher = model['external_topics'][subscription['from_topic']]
         if publisher['root'] != consumer['root']:
             raise ValueError('Connected roots must have the same logical name')
+        validation = self.last_validation
+        if validation and validation['revision'] == self.revision:
+            for report in validation.get('connection_contracts', []):
+                if (report['root'] == publisher['root']
+                        and report['publisher_schema'] == publisher.get('schema', model['schemas'])
+                        and report['consumer_schema'] == consumer.get('schema', model['schemas'])
+                        and not report['compatible']):
+                    raise ValueError('Incompatible SDL contract: ' + report['code']
+                                     + (' at ' + report['path'] if report.get('path') else ''))
         self._check_reception(subscription['to'])
 
     def rename(self, command):

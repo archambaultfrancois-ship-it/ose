@@ -101,6 +101,19 @@ restores the folded hierarchy. These groups are visual metadata; they do not
 change the model's components or subscriptions.
 Links are curved by default. Use **Link style** in the graph toolbar to switch
 between curved, straight and right-angle links for the current view.
+Dragging from an output or an input marks the opposite ports with **✓ Compatible**,
+**? Contract unchecked** or **× Unavailable**. Hover a marked port for the reason:
+different logical roots, a component cycle, conflicting shared reception settings,
+or a directional SDL contract mismatch. Full **Validate** resolves candidate
+contracts, including ports not yet connected, for the current applied revision.
+Before validation, or after an edit, structural checks remain available and SDL
+compatibility is explicitly unchecked. Unknown contracts may be connected and
+checked later; known incompatible connections are blocked.
+Use **Connect ports** for a keyboard-accessible publisher/destination selector,
+including ports hidden inside groups and external topics. A completed drag opens
+the same form. Enter a subscription ID and choose **Preview connection** to review
+the source diff before applying the undoable change. Existing incoming connections
+do not prevent another producer; the destination's shared reception is inherited.
 Presentation changes (groups, positions and auto layout) apply immediately
 without a review dialog and remain undoable with **Undo**.
 Every semantic change opens a concrete diff before application. Rename

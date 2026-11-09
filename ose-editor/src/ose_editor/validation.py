@@ -49,7 +49,7 @@ class Validator:
             if job['status'] in ('queued', 'running'):
                 self.cancel(job['id'])
         job = {'id': secrets.token_hex(12), 'revision': revision, 'deployment': deployment or self.project.selected_deployment,
-               'schema': schema, 'status': 'queued', 'diagnostics': [], 'resolved': {}, 'contracts': {}, 'catalogues': {}, 'started': time.time()}
+               'schema': schema, 'status': 'queued', 'diagnostics': [], 'resolved': {}, 'contracts': {}, 'connection_contracts': [], 'catalogues': {}, 'started': time.time()}
         self.jobs[job['id']] = job
         while len(self.jobs) > 20:
             oldest = next(iter(self.jobs))
@@ -156,7 +156,33 @@ class Validator:
                     with self.guard:
                         job['catalogues'][source] = json.loads(inspected)
                 if not job['schema']:
-                    subscriptions = []
+                    # Compare distinct contract pairs, including ports which are
+                    # not connected yet. Reuse the public directional SDL check
+                    # rather than guessing compatibility from logical names.
+                    publishers = list(authored_model.get('external_topics', {}).values())
+                    consumers = []
+                    for component in authored_model.get('components', {}).values():
+                        publishers.extend(component.get('outputs', {}).values())
+                        consumers.extend(component.get('inputs', {}).values())
+                    pairs = sorted({(publisher.get('schema', authored_model['schemas']),
+                                     consumer.get('schema', authored_model['schemas']), publisher['root'])
+                                    for publisher in publishers for consumer in consumers
+                                    if publisher['root'] == consumer['root']})
+                    candidates = [{'id': str(i), 'root': root,
+                                   'publisher': job['catalogues'][publisher]['catalogue'],
+                                   'consumer': job['catalogues'][consumer]['catalogue']}
+                                  for i, (publisher, consumer, root) in enumerate(pairs)]
+                    request = stage / 'connection-contracts.json'
+                    request.write_text(json.dumps({'mode': 'compare', 'subscriptions': candidates}))
+                    compared = self.execute(job, [sys.executable, '-m', 'ose_editor.runtime_inspect', request], env)
+                    if compared is None:
+                        return
+                    reports = json.loads(compared)
+                    self.update(job, connection_contracts=[
+                        {**reports[str(i)], 'publisher_schema': publisher, 'consumer_schema': consumer}
+                        for i, (publisher, consumer, root) in enumerate(pairs)])
+                    pair_reports = {pair: reports[str(i)] for i, pair in enumerate(pairs)}
+                    contracts = {}
                     for sub in authored_model.get('subscriptions', []):
                         target, port = sub['to'].split('.')
                         consumer = authored_model['components'][target]['inputs'][port]
@@ -166,15 +192,10 @@ class Validator:
                         else:
                             publisher = authored_model['external_topics'][sub['from_topic']]
                         if publisher['root'] == consumer['root']:
-                            subscriptions.append({'id': sub['id'], 'root': publisher['root'],
-                                'publisher': job['catalogues'][publisher.get('schema', authored_model['schemas'])]['catalogue'],
-                                'consumer': job['catalogues'][consumer.get('schema', authored_model['schemas'])]['catalogue']})
-                    request = stage / 'compare.json'
-                    request.write_text(json.dumps({'mode': 'compare', 'subscriptions': subscriptions}))
-                    compared = self.execute(job, [sys.executable, '-m', 'ose_editor.runtime_inspect', request], env)
-                    if compared is None:
-                        return
-                    self.update(job, contracts=json.loads(compared))
+                            pair = (publisher.get('schema', authored_model['schemas']),
+                                    consumer.get('schema', authored_model['schemas']), publisher['root'])
+                            contracts[sub['id']] = pair_reports[pair]
+                    self.update(job, contracts=contracts)
                 if not job['schema']:
                     if not job['deployment']:
                         raise ValueError('Select a deployment to validate the complete application')

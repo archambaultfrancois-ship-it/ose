@@ -84,6 +84,37 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertIn('latest', result['diagnostics'][0]['message'])
 
+    def test_connection_guidance_checks_unconnected_scoped_contracts(self):
+        self.command({'action': 'create_document', 'name': 'overrides/strict.sdl',
+                      'text': 'message Alarm { 9: uint32 required_extra; }\n'})
+        self.command({'action': 'set', 'file': 'model.json',
+                      'path': ['components', 'observer', 'inputs', 'strict'],
+                      'literal': '{"root":"Alarm","schema":"overrides/strict.sdl","required":false}'})
+        # A command-based component may use distinct versions of one root;
+        # generated wrappers additionally constrain their combined type set.
+        self.command({'action': 'set', 'file': 'deployment.local.json', 'path': ['components', 'observer'],
+                      'literal': '{"command":["unused-handler"]}'})
+        state = self.command({'action': 'set', 'file': 'model.json', 'path': ['external_topics'],
+                              'literal': '{"ambient.topic":{"root":"Alarm"}}'})
+        result = self.wait(self.post('validation', {'revision': state['revision'], 'deployment': 'deployment.local.json'}).json())
+        self.assertEqual(result['status'], 'passed', result)
+        reports = {(item['publisher_schema'], item['consumer_schema'], item['root']): item
+                   for item in result['connection_contracts']}
+        self.assertTrue(reports['schemas', 'components/observer/observer_alarm.sdl', 'Alarm']['compatible'])
+        self.assertFalse(reports['schemas', 'overrides/strict.sdl', 'Alarm']['compatible'])
+        before = self.project.snapshot()
+        rejected = self.post('commands/prepare', {'revision': state['revision'], 'command': {
+            'action': 'connect', 'name': 'outside', 'from': 'ambient.topic', 'to': 'observer.strict', 'external': True}})
+        self.assertEqual(rejected.status_code, 422, rejected.text)
+        self.assertIn('Incompatible SDL contract', rejected.json()['message'])
+        self.assertEqual(self.project.snapshot(), before)
+        # A later revision must not reuse an old compatibility verdict.
+        state = self.command({'action': 'source', 'file': 'overrides/strict.sdl', 'text': 'message Alarm {}\n'})
+        self.assertIsNone(state['validation'])
+        accepted = self.post('commands/prepare', {'revision': state['revision'], 'command': {
+            'action': 'connect', 'name': 'outside', 'from': 'ambient.topic', 'to': 'observer.strict', 'external': True}})
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+
     def test_syntax_and_revision_errors_have_actionable_status_codes(self):
         response = self.post('commands/prepare', {'revision': 'stale', 'command': {'action': 'workspace'}})
         self.assertEqual(response.status_code, 409)
