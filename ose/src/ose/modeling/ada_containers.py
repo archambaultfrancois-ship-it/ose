@@ -179,7 +179,8 @@ def scaffold(node, container):
     if handler.exists() and spec.exists(): return
     if handler.exists() or spec.exists(): raise ValueError('Ada handler requires both .ads and .adb; refusing to overwrite a partial pair')
     name = Path(node['command'][0]).parent.name; api = 'Ose_' + name; unit = container['unit']
-    lines = [f'with {api};', f'package {unit} is', f'   type Object is new {api}.Handler with null record;']
+    lines = [f'with {api};', f'package {unit} is', '   pragma Elaborate_Body;',
+             f'   type Object is new {api}.Handler with null record;']
     bodies = [f'package body {unit} is']
     for port, desc in node['inputs'].items():
         if desc.get('mode', 'push') == 'pull':

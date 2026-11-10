@@ -84,6 +84,9 @@ class AdaInputGenerationTests(unittest.TestCase):
                 plan = self.compile(root, model)
                 component = plan['components']['probe']
                 scaffold_managed(component, component['container'])
+                handler = Path(component['container']['handler'])
+                self.assertIn('pragma Elaborate_Body;', handler.with_suffix('.ads').read_text())
+                self.assertIn('package body App.Handler is', handler.read_text())
                 spec = (root / 'build/components/probe/ose_probe.ads').read_text()
                 self.assertNotIn('On_Tick', spec)
                 self.assertNotIn('procedure On_feedback', spec)

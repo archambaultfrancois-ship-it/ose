@@ -284,7 +284,10 @@ class FlowAPITests(unittest.IsolatedAsyncioTestCase):
             await self.client.delete('/api/v1/flow-watches/' + watch)
             await self.until(lambda: not worker.recording.sessions)
         external = {'id': 'external', 'from': 'source.external', 'from_topic': 'source.external', 'to': 'source.input', 'policy': SubscriptionPolicy.resolve().to_dict()}
-        plan = dict(self.broker.plan, execution='distributed', external_topics={'source.external': self.broker.plan['components']['source']['outputs']['settings']}, subscriptions=[external])
+        source_node = copy.deepcopy(self.broker.plan['components']['source'])
+        source_node['inputs']['input'] = dict(source_node['outputs']['settings'])
+        plan = dict(self.broker.plan, execution='distributed', components={'source': source_node},
+                    external_topics={'source.external': source_node['outputs']['settings']}, subscriptions=[external])
         coordinator = Coordinator(plan)
         await coordinator.start(); self.addAsyncCleanup(coordinator.close)
         coordinator.activated = True

@@ -66,7 +66,7 @@ assert Path("/proc/self/comm").read_text().strip() == "vw-web"
                                                SDL_ROOT, root / 'build')
                 plan = json.loads(path.read_text())
                 self.assertEqual(plan['process_names']['components']['sensor_1'], 'sensor1')
-                process, _ = await ComponentDriver(plan['components']['sensor_1']).start()
+                process = await ComponentDriver(plan['components']['sensor_1']).start()
                 try:
                     self.assertEqual(Path(f'/proc/{process.pid}/comm').read_text().strip(), 'vw-c-sensor1')
                     self.assertIsNone(process.returncode)

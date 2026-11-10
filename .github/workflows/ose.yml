@@ -57,4 +57,4 @@ jobs:
       - name: Verify CH2 input callbacks on Java 7
         run: make -C ose test-java-inputs-v2
       - name: Verify shared parameters on Java 7
-        run: PYTHONPATH="$PWD/ose/src" TEST_LANGUAGES=java python -m unittest discover -s ose/tests/integration -p 'test_parameters.py' -k java -v
+        run: PYTHONPATH="$PWD/ose/src:$PWD/ose" TEST_LANGUAGES=java python -m unittest discover -s ose/tests/integration -p 'test_parameters.py' -k java -v
