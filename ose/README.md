@@ -174,7 +174,9 @@ On Linux/Termux, `pip install '.[sync]'` enables
 unit JSON files with the running application using inotify and OSE subscriptions.
 JSON imports allow 16 MiB per input and 64 MiB per directory by default.
 
-See [architecture](docs/architecture.md) for document fields and process layout,
+See the [model.json grammar reference](docs/model-json.md) for accepted fields,
+defaults and validation constraints, [architecture](docs/architecture.md) for
+document fields and process layout,
 [runtime execution](docs/runtime.md) for ticks, message flow and acknowledgements,
 [simulation](docs/simulation.md) for reproducible virtual-time execution and parallel workers,
 [delivery](docs/delivery.md) for FIFO/latest semantics and transport guarantees,
