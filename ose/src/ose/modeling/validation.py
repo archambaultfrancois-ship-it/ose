@@ -146,8 +146,8 @@ def validate_graph(model, deployment):
     if set(deployment.get("subscriptions", {})) - ids:
         raise ValueError("unknown subscription in deployment")
     reception_policies(subscriptions)
-    from ose.modeling.activation import activation_order
-    activation_order(model)
+    from ose.modeling.activation import activation_graph
+    activation_graph(model)
 
 
 def endpoint(value, components, direction):

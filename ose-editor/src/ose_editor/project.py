@@ -334,7 +334,7 @@ class Project:
         elif action == 'rename':
             self.rename(command)
         elif action == 'configure_input':
-            from ose.modeling.activation import component_inputs, activation_order
+            from ose.modeling.activation import component_inputs, activation_graph
             from ose.modeling.validation import validate_graph
             model = json.loads(self.document(self.model).text)
             name, port, description = command['component'], command['port'], command['description']
@@ -348,7 +348,7 @@ class Project:
             previous = node['inputs'].get(port)
             node['inputs'][port] = description
             component_inputs(node)
-            activation_order(model)
+            activation_graph(model)
             for key in self.deployments:
                 validate_graph(model, json.loads(self.document(key).text))
             path = ['components', name, 'inputs', port]
@@ -505,10 +505,10 @@ class Project:
         consumer = model['components'][target]['inputs'][input_name]
         if consumer.get('kind') == 'timer':
             raise ValueError('Timer inputs cannot receive a subscription')
-        from ose.modeling.activation import activation_order
+        from ose.modeling.activation import activation_graph
         # Match OSE's JSON number types; the editor's Decimal values are
         # retained for source edits, but timer validation expects int/float.
-        activation_order(json.loads(self.document(self.model).text))
+        activation_graph(json.loads(self.document(self.model).text))
         if 'from' in subscription:
             source, output = subscription['from'].split('.')
             publisher = model['components'][source]['outputs'][output]

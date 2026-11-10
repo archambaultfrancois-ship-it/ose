@@ -34,12 +34,12 @@ export function assessConnection(project: any, source: Publisher, target: string
   const subscription = source.external ? { from_topic: source.endpoint, to: target } : { from: source.endpoint, to: target }
   const candidate = { ...model, subscriptions: [...(model.subscriptions || []), subscription] }
   const cycle = activationCycle(candidate)
-  if (cycle) return reject('This connection would create an activation cycle: ' + cycle.join(' → '))
+  const executionNote = cycle ? ' Requires simulated execution with --microsteps for activation cycle: ' + cycle.join(' → ') : ''
   if (receptionFor(model, target).conflict) return reject('The destination has conflicting reception settings. Repair its shared reception policy first.')
   const validation = project.validation?.revision === project.revision ? project.validation : null
   const report = validation?.connection_contracts?.find((item: any) => item.root === publisher.root &&
     item.publisher_schema === (publisher.schema || model.schemas) && item.consumer_schema === (consumer.schema || model.schemas))
-  if (!report) return { status: 'unknown', message: 'Structure allows this connection. Validate the current revision to check publisher → consumer SDL compatibility.' }
+  if (!report) return { status: 'unknown', message: 'Structure allows this connection. Validate the current revision to check publisher → consumer SDL compatibility.' + executionNote }
   if (!report.compatible) {
     const reasons: Record<string, string> = {
       REQUIRED_FIELD_MISSING: 'The publisher is missing a field required by the consumer',
@@ -54,5 +54,5 @@ export function assessConnection(project: any, source: Publisher, target: string
     }
     return reject(`Incompatible SDL contract${report.path ? ' at ' + report.path : ''}: ${reasons[report.code] || report.message || report.code}.`)
   }
-  return { status: 'compatible', message: `Compatible publisher → consumer SDL contract (${publisher.root}). The destination's shared reception settings will be inherited.` }
+  return { status: 'compatible', message: `Compatible publisher → consumer SDL contract (${publisher.root}). The destination's shared reception settings will be inherited.` + executionNote }
 }

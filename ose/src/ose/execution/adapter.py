@@ -10,6 +10,7 @@ from ose.delivery.policies import SubscriptionPolicy
 from ose.parameters.bindings import RemoteBindings
 from ose.execution.process import start_component, input_events, stop_component
 from ose.execution.plan import require_v2
+from ose.modeling.activation import activation_order
 from ose.execution.observation import TickTimings, ReportSchedule
 from ose.transport.tcp import Client
 from ose.transport.udp import UDP
@@ -21,6 +22,7 @@ from ose.execution.logs import ComponentLogs
 class Adapter:
     def __init__(self, plan, name, *, working_directory=None):
         require_v2(plan)
+        activation_order(plan)
         self.plan, self.name, self.node = plan, name, plan["components"][name]
         self.working_directory = working_directory
         self.reports = ReportSchedule()

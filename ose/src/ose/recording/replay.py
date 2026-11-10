@@ -161,8 +161,10 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
 
 
 async def run(path, plan_path, duration, *, mappings, start_ns=None, end_ns=None,
-              workers=1, trace=None, loops=1, schema_policy='exact'):
+              workers=1, trace=None, loops=1, schema_policy='exact', microsteps=False, max_microsteps=None):
     from ose.execution.simulation import run as simulate
+    from ose.execution.simulation.options import microstep_limit
+    microstep_limit(microsteps, max_microsteps)
     horizon = seconds_ns(duration, positive=True)
     loop_count(loops)
     if type(workers) is not int or workers <= 0:
@@ -181,7 +183,9 @@ async def run(path, plan_path, duration, *, mappings, start_ns=None, end_ns=None
     with recording_events(path, topics, mapping, codec, start_ns=start_ns, end_ns=end_ns,
                           schema_policy=schema_policy) as (events, selection):
         repeated = RepeatedEvents(events, loops, horizon=horizon)
-        summary = await simulate(plan_path, duration, workers=workers, events=repeated, trace=trace)
+        summary = await simulate(plan_path, duration, workers=workers, events=repeated, trace=trace,
+            **({"microsteps": microsteps, "max_microsteps": max_microsteps}
+               if microsteps or max_microsteps is not None else {}))
         summary.update(loops=loops, completed_loops=summary["external_events"] // len(events))
         selection.update(loops=loops, loop_period_ns=repeated.period_ns)
     summary["replay"] = selection

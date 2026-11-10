@@ -85,11 +85,14 @@ def _contract(desc):
         raise ValueError("schema must be a nonempty path")
 
 
-def activation_graph(model):
+def activation_graph(model, *, microsteps=False):
     """Return dependencies between actual input events and output publications.
 
     Timeouts are autonomous events, not consequences of a received message.
     A Push callback with no declared outputs is a leaf, even in a data cycle.
+    With microsteps, publications cross a logical boundary, so their downstream
+    message activations are not instantaneous predecessors. Endpoints and
+    permissions are still validated.
     """
     from ose.modeling.validation import endpoint
     components = model["components"]
@@ -111,15 +114,17 @@ def activation_graph(model):
             raise ValueError(f"timer input {sub['to']} cannot receive a subscription")
         # Compiled external subscriptions also carry a normalized "from"
         # topic for routing; it does not name a component output.
-        if "from" in sub and "from_topic" not in sub and desc.mode == "push":
+        if "from" in sub and "from_topic" not in sub:
             source, output = endpoint(sub["from"], components, "outputs")
-            graph[f"{target}.{port}:message"].add(f"{source}.{output}:publish")
+            if desc.mode == "push" and not microsteps:
+                graph[f"{target}.{port}:message"].add(f"{source}.{output}:publish")
     return graph
 
 
-def activation_order(model):
-    graph = activation_graph(model)
+def activation_order(model, *, microsteps=False):
+    graph = activation_graph(model, microsteps=microsteps)
     try:
         return tuple(TopologicalSorter({key: sorted(graph[key]) for key in sorted(graph)}).static_order())
     except CycleError as error:
-        raise ValueError("activation graph contains a cycle: " + " -> ".join(error.args[1])) from None
+        raise ValueError("activation graph contains a cycle: " + " -> ".join(error.args[1]) +
+                         "; use simulated execution with --microsteps") from None

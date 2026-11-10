@@ -51,9 +51,11 @@ input activation. A compatible message may carry a different catalogue from
 earlier messages on the same route.
 
 Each Push message or expiration selects one callback. Its event-specific
-`activates` links enumerate the outputs it may publish. Validation rejects cycles
-in event-to-output-to-Push-message dependencies; data cycles through Pull inputs
-or silent Push receipts can be valid. No initial feedback message or latest-only
+`activates` links enumerate the outputs it may publish. Ordinary and real-time
+execution reject cycles in event-to-output-to-Push-message dependencies; data
+cycles through Pull inputs or silent Push receipts can be valid. Models with
+activation cycles can be edited and compiled, then launched with simulated
+[`--microsteps`](simulation.md#microsteps-and-activating-feedback). No initial feedback message or latest-only
 restriction is imposed.
 
 The shared scheduler drives real-time, distributed and simulated components.

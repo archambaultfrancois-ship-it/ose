@@ -5,6 +5,7 @@ from ose.timing import MAX_NS, seconds_ns
 class VirtualClock:
     def __init__(self):
         self.time_ns = 0
+        self.microstep = 0
 
     def seconds(self):
         return self.time_ns / 1_000_000_000

@@ -13,7 +13,7 @@ dynamic SDL contract exchange and S2PS/2 message bodies retain their behavior.
 | Required inputs and joint readiness | Independent Push callbacks; explicit business coordination |
 | Multi-input snapshot | Individual callbacks, component state or Pull access |
 | Periodic sampling of latest data | Timer callback and get on a passive Pull inbox |
-| Component data DAG | Acyclic input-event-to-output activation graph |
+| Component data DAG | Input-event-to-output activation graph; cycles require simulated `--microsteps` |
 
 ## Timers and output permissions
 

@@ -5,7 +5,7 @@ from ose.modeling.kubernetes import resources
 
 class KubernetesTests(unittest.TestCase):
     def setUp(self):
-        self.plan = {"version": 2, "execution": "distributed", "components": {"source_1": {"execution_model": 2}}, "subscriptions": []}
+        self.plan = {"version": 2, "execution": "distributed", "components": {"source_1": {"execution_model": 2, "inputs": {}, "outputs": {}}}, "subscriptions": []}
         self.images = dict(coordinator="registry.lan/app/coordinator@sha256:" + "a" * 64,
                            source_1="registry.lan/app/source@sha256:" + "b" * 64)
 

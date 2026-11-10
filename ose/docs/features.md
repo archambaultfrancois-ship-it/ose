@@ -4,7 +4,7 @@
 
 - **[Component graphs](architecture.md#documents)**: describe typed Push/Pull inputs, timers, activation links, subscriptions and parameters in JSON.
 - **[Separate deployments](architecture.md#documents)**: bind the same model to executable commands, generated containers and transport settings.
-- **[Contract validation](architecture.md#documents)**: check dynamic SDL publisher-to-consumer compatibility and reject activation cycles before execution.
+- **[Contract validation](architecture.md#documents)**: check dynamic SDL publisher-to-consumer compatibility and check activation cycles against the selected execution mode.
 - **[Multilanguage components](callbacks.md)**: connect Python, C, Rust, Java and Ada implementations in one application.
 - **[Generated containers](callbacks.md)**: generate typed bindings, wrappers and compilation commands while preserving existing user handlers.
 - **[Local application environment](../../README.md#local-application-environment)**: access application and recording commands with automatic setup of optional recording services.

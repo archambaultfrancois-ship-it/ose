@@ -35,7 +35,9 @@ Each Push message or timeout activates one callback with one input reference.
 Pull inboxes never activate or gate another input. FIFO/latest reception,
 `get`/`pull`/`remove` selectors, timer controls and event-specific output permissions
 have the same semantics. Data cycles through passive Pull inputs are accepted;
-the event-to-output activation graph must remain acyclic.
+the event-to-output activation graph must remain acyclic at execution.
+Models containing activation cycles can be compiled but require simulated
+[`--microsteps`](simulation.md#microsteps-and-activating-feedback) to run.
 
 Optional application IDs travel unchanged over broker and direct routes, including
 zero and the full uint64 range. Absence remains distinct from zero. Retry,

@@ -104,7 +104,7 @@ describe('assisted graph connections', () => {
     await flushPromises()
     flow.vm.$emit('connectStart', { nodeId: 'group:pair', handleId: 'source.feedback', handleType: 'target' })
     await flushPromises()
-    expect(wrapper!.get('[data-id="group:pair"] .node-port.output').attributes('data-connection-status')).toBe('incompatible')
+    expect(wrapper!.get('[data-id="group:pair"] .node-port.output').attributes('data-connection-status')).toBe('unknown')
     expect(wrapper!.get('[data-id="external:ambient.topic"] .node-port.output').attributes('data-connection-status')).toBe('unknown')
   })
   it('creates a preview from native keyboard-accessible controls and keeps existing fan-in', async () => {

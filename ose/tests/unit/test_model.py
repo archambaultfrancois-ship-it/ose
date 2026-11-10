@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import unittest
 from ose.modeling.validation import validate_graph
+from ose.modeling.activation import activation_order
 
 
 class ModelTests(unittest.TestCase):
@@ -16,8 +17,9 @@ class ModelTests(unittest.TestCase):
         bad = copy.deepcopy(self.model)
         bad["components"]["acquisition"]["inputs"]["input"] = {"root": "Measurement", "activates": {"message": ["measure"]}}
         bad["subscriptions"].append({"id": "cycle", "from": "analyse.result", "to": "acquisition.input"})
+        validate_graph(bad, self.deployment)
         with self.assertRaisesRegex(ValueError, "cycle"):
-            validate_graph(bad, self.deployment)
+            activation_order(bad)
         bad = copy.deepcopy(self.model)
         bad["components"]["analyse"]["inputs"]["extra"] = {"root": "Measurement"}
         validate_graph(bad, self.deployment)

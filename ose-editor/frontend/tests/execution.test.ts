@@ -38,7 +38,7 @@ async function setup(component: any = ExecutionView, port = 'feedback') {
 }
 
 describe('v2 activation graph guidance', () => {
-  it('accepts Pull feedback and silent Push calculations, and rejects only activating message cycles', () => {
+  it('accepts feedback and explains when activating message cycles require microsteps', () => {
     const state: any = { model: 'model.json', documents: { 'model.json': { value: model() } } }
     expect(activationCycle(state.documents['model.json'].value)).toBeNull()
     const source = { endpoint: 'b.out', external: false }
@@ -49,6 +49,8 @@ describe('v2 activation graph guidance', () => {
     feedback.timeout = .1; feedback.activates = { timeout: ['out'] }
     expect(assessConnection(state, source, 'a.feedback').status).toBe('unknown')
     feedback.activates.message = ['out']
+    expect(assessConnection(state, source, 'a.feedback').status).toBe('unknown')
+    expect(assessConnection(state, source, 'a.feedback').message).toContain('--microsteps')
     expect(assessConnection(state, source, 'a.feedback').message).toContain('a.feedback:message')
     expect(assessConnection(state, source, 'a.feedback').message).toContain('activation cycle')
   })

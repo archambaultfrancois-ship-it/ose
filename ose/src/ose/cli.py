@@ -114,6 +114,8 @@ For distributed execution, start serve and worker instead of run.""")
     command.add_argument("--port", type=int, help="local broker TCP port; real-time only (default: automatically assigned)")
     command.add_argument("--mode", choices=("realtime", "simulated"), default="realtime", help="execution clock (default: realtime)")
     command.add_argument("--workers", type=int, help="simulation worker count (default: 1; simulated mode only)")
+    command.add_argument("--microsteps", action="store_true", help="defer callback publications to the next logical stage (simulated mode only)")
+    command.add_argument("--max-microsteps", type=int, help="activation-stage limit per timestamp (default: 10000; requires --microsteps)")
     command.add_argument("--scenario", help="external-input scenario JSON file (simulated mode only)")
     command.add_argument("--trace", help="output deterministic trace file (simulated mode only)")
     command.add_argument("--max-tick-output-bytes", type=int, help="output byte limit per component tick (default: 16777216; simulated mode only)")
@@ -135,6 +137,8 @@ For distributed execution, start serve and worker instead of run.""")
     command.add_argument("--loops", type=int, default=1, help="total playback passes (default: 1; 0: infinite)")
     command.add_argument("--duration", type=float, help="recorded-time horizon in seconds; required for simulation")
     command.add_argument("--workers", type=int, help="simulation worker count (default: 1; simulated mode only)")
+    command.add_argument("--microsteps", action="store_true", help="use logical publication stages (simulated replay only)")
+    command.add_argument("--max-microsteps", type=int, help="activation-stage limit per timestamp (default: 10000; requires --microsteps)")
     command.add_argument("--start-ns", type=int, help="inclusive recorded log timestamp in nanoseconds")
     command.add_argument("--end-ns", type=int, help="exclusive recorded log timestamp in nanoseconds")
     command.add_argument("--trace", help="output deterministic trace file (simulated mode only)")
@@ -309,6 +313,12 @@ def execute(args, parser=None):
                 asyncio.run(status())
         elif args.action == "run":
             execution_options = {}
+            from ose.execution.simulation.options import microstep_limit
+            microstep_limit(args.microsteps, args.max_microsteps)
+            if args.microsteps and args.mode != "simulated":
+                raise ValueError("--microsteps requires simulated mode")
+            if args.microsteps:
+                execution_options.update(microsteps=True, max_microsteps=args.max_microsteps)
             if args.working_directory is not None:
                 directory = Path(args.working_directory).resolve()
                 if not directory.is_dir():
@@ -332,10 +342,12 @@ def execute(args, parser=None):
                 from ose.execution.supervisor import run
                 if read_plan(args.plan).get("execution") == "distributed":
                     raise ValueError("use serve and worker for a distributed plan")
-                if any(value is not None for value in (args.workers, args.scenario, args.trace, args.max_tick_output_bytes)):
-                    raise ValueError("--workers, --scenario, --trace and --max-tick-output-bytes require simulated mode")
+                if args.microsteps or any(value is not None for value in (args.workers, args.scenario, args.trace, args.max_tick_output_bytes)):
+                    raise ValueError("--workers, --scenario, --trace, --microsteps and --max-tick-output-bytes require simulated mode")
                 asyncio.run(run(args.plan, args.duration, args.port or 0, **execution_options))
         elif args.action == "replay":
+            from ose.execution.simulation.options import microstep_limit
+            microstep_limit(args.microsteps, args.max_microsteps)
             if args.mode == "simulated":
                 from ose.recording.replay import run
                 if args.duration is None:
@@ -346,11 +358,12 @@ def execute(args, parser=None):
                 summary = asyncio.run(run(args.recording, args.plan, args.duration, mappings=args.mappings,
                     start_ns=args.start_ns, end_ns=args.end_ns,
                     workers=1 if args.workers is None else args.workers, trace=args.trace, loops=args.loops,
-                    schema_policy=args.schema_policy))
+                    schema_policy=args.schema_policy,
+                    **({"microsteps": True, "max_microsteps": args.max_microsteps} if args.microsteps else {})))
             else:
                 from ose.recording.live_replay import run
-                if args.workers is not None or args.trace is not None:
-                    raise ValueError("--workers and --trace require simulated replay")
+                if args.microsteps or args.workers is not None or args.trace is not None:
+                    raise ValueError("--workers, --trace and --microsteps require simulated replay")
                 async def replay():
                     task = asyncio.create_task(run(args.recording, args.plan, args.duration, mappings=args.mappings,
                         start_ns=args.start_ns, end_ns=args.end_ns, speed=1 if args.speed is None else args.speed,

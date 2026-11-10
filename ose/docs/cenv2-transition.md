@@ -65,8 +65,8 @@ semantics from proposed API syntax and work that is not yet implemented.
   fail explicitly. This decision does not change dynamic contract behavior.
 - No mandatory initial value, latest-only policy, periodic-only execution or
   artificial physical delay is introduced to handle feedback.
-- Microsteps remain a possible later alternative; they are not the first solution.
-  The retained principles and open design choices are tracked in [TODO.md](../../TODO.md).
+- Microsteps extend simulation to activating cycles after the Push/Pull migration.
+  The resolved launch policy and qualification are tracked in [TODO.md](../../TODO.md).
 
 ## Implemented scope
 
@@ -202,7 +202,8 @@ Logs are `ose/build/retirement-runtime-{unit-final,integration,sdk,linux,editor}
 `ose/build/retirement-runtime-java-{component,client}-parameters.log` and
 `ose/build/retirement-runtime-{package,install}.log`. The SDK log also includes
 the corrected distributed-plan rejection test. Actual JVM 7 execution and
-microstep simulation remain deferred.
+microstep simulation were initially deferred; microsteps are now implemented
+as a [simulation launch policy](simulation.md#microsteps-and-activating-feedback).
 
 ### Release and installed-package qualification
 
@@ -255,9 +256,9 @@ Logs: `ose/build/cenv2-release-installer.log`,
 
 ### Managed SDK retirement and fixture migration
 
-- The deferred microstep alternative is recorded in repository [TODO.md](../../TODO.md),
-  including stage visibility, deterministic execution and unresolved model choices.
-  It remains outside the current retirement work.
+- The implemented microstep decisions are recorded in repository [TODO.md](../../TODO.md),
+  including stage visibility, deterministic execution and resolved launch-policy
+  choices. Implementation followed the initial retirement work.
 - Java no longer has a CH/1 runner, snapshot callback interface, legacy publication
   branch or required-input port flag. Generation and scaffolding require v2 and
   produce only input-reference callbacks.
@@ -579,8 +580,9 @@ Removing an edge from cycle validation alone is insufficient:
 5. Delivery waits remain separate from activation dependencies. A full inbox may
    still block publication until its admission timeout. Pull does not prove that
    a message will be available or that every queued message will be consumed.
-6. Require an acyclic activation graph, with a diagnostic showing the actual
-   activating path. Component data graphs may contain cycles through passive
+6. Ordinary and real-time execution require an acyclic activation graph, with
+   a diagnostic showing the activating path. Simulated `--microsteps` permits
+   activation cycles through a global logical publication boundary. Component data graphs may contain cycles through passive
    Pull inputs or Push events that cannot activate an output.
 
 The reference host, local Python/Rust/C/Java/Ada execution paths and distributed workers implement this visibility cut.
@@ -606,7 +608,7 @@ callback; there is no global wave transaction.
 | 9 | Port SDKs and external clients | C/Rust/Java/Ada and Python parity; local/distributed/direct routes; generations/ACK/retry tests |
 | 10 | Update editor, diagnostics and replay | Show activation dependencies and modes; preserve IDs where relevant; existing recordings remain readable |
 | 11 | Examples, packaging and release | Offline builds, compatibility matrix, all supported languages and migration instructions |
-| 12 | Reconsider microsteps separately | Only if activation cycles are needed; deterministic ordering and no-progress diagnostics |
+| 12 | Execute simulation by microsteps | Implemented as launch options; deterministic stages, bounded same-time loops and diagnostics |
 
 Steps 1–3 and 5 are implemented. Steps 4, 6 and 7 support all five languages in
 local execution and parallel simulation, plus the shared distributed runtime.
@@ -776,7 +778,8 @@ Vue/TypeScript build and a rebuilt-asset HTTP smoke check. Push/Pull and timer
 controls, independent per-event output lists, optional internal activation arrows,
 an activation table and v2 connection guidance are implemented. The compound
 input command validates with OSE, rejects connected timer conversions and
-activation cycles, preserves source context and supports undo/redo. Zero links
+invalid activation declarations, preserves source context and supports undo/redo.
+Activation cycles can now be authored for simulated `--microsteps`. Zero links
 still means no output authorization; no implicit permissions were introduced.
 The interface and its [qualification record](../../ose-editor/docs/validation.md)
 retain explicit real-browser/performance limits. Recording/replay application-ID
@@ -910,3 +913,33 @@ This measures the compact forms only. Generic binary control objects may have
 different costs. It does not measure end-to-end network throughput or latency.
 The complete local comparison is `ose/build/cenv2-comparison.json` from the
 repository root and includes the mutable-buffer decode samples and inbox costs.
+
+
+## Microstep execution follow-up
+
+Step 12 is implemented as `ose run --mode simulated --microsteps` (also supported
+by simulated replay), with `--max-microsteps` defaulting to 10,000 stages per
+physical timestamp. No model/plan field was added. Structural validation and
+compilation accept activation cycles; ordinary, local real-time and distributed
+execution reject them before component startup. Global stage boundaries retain
+parallel callbacks, deterministic publication order and per-callback consumption
+commit. Trace metadata and bounded-loop diagnostics expose the logical position;
+SDKs, CENV/2 and dynamic SDL exchange are unchanged. See
+[simulation semantics](simulation.md#microsteps-and-activating-feedback) and the
+[qualified decisions](../../TODO.md). Earlier deferred references describe the
+original migration scope.
+
+Qualification: 318 unit tests, 73 editor Python/API tests and 70 frontend tests
+pass, and production editor assets are rebuilt. Dedicated microstep cases cover
+workers 1/4, bounded and state-terminating cycles, queues, waits, timers,
+per-callback commit/cancellation and PCAPNG/MCAP replay. The ordinary feedback
+trace retains SHA-256
+`796b451975944f54c7b029e2f007806efae542fb6f4b029d39d099abd5e03002`.
+The new runnable example produces nine callbacks/eight publications and identical
+traces with one/four workers. Logs are `ose/build/microsteps-*.log`.
+
+The broader 74-case engine/replay batch has six distributed real-time failures
+(authorization expiration and exhausted retries). Authorization expiration also
+reproduces with the committed pre-change distributed/model-validation code;
+these checks are not claimed as passing. This does not affect the dedicated
+simulated microstep qualification.

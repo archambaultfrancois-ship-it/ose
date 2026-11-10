@@ -92,8 +92,7 @@ class ProjectTests(unittest.TestCase):
         self.command({'action': 'set', 'file': self.project.model,
                       'path': ['components', 'sensor_1', 'inputs', 'loop'],
                       'literal': '{"root":"SignalBlock","activates":{"message":["signal"]}}'})
-        cases.extend([({'to': 'alarm.free'}, 'same logical name'),
-                      ({'to': 'sensor_1.loop'}, 'cycle')])
+        cases.append(({'to': 'alarm.free'}, 'same logical name'))
         for overrides, message in cases:
             with self.subTest(overrides=overrides):
                 before = self.project.snapshot()
@@ -267,12 +266,10 @@ class ProjectTests(unittest.TestCase):
         self.command({'action': 'configure_input', 'component': 'sensor_1', 'port': 'feedback',
                       'description': {'root': 'Analysis', 'mode': 'pull'}})
         self.command({'action': 'connect', 'name': 'feedback', 'from': 'analyzer_1.result', 'to': 'sensor_1.feedback'})
-        before = self.project.snapshot()
-        with self.assertRaisesRegex(ValueError, 'activation graph contains a cycle'):
-            self.project.prepare({'action': 'configure_input', 'component': 'sensor_1', 'port': 'feedback',
-                                  'description': {'root': 'Analysis', 'mode': 'push', 'activates': {'message': ['signal']}}},
-                                 self.project.revision)
-        self.assertEqual(before, self.project.snapshot())
+        self.command({'action': 'configure_input', 'component': 'sensor_1', 'port': 'feedback',
+                      'description': {'root': 'Analysis', 'mode': 'push', 'activates': {'message': ['signal']}}})
+        self.assertEqual(self.model()['components']['sensor_1']['inputs']['feedback']['activates'],
+                         {'message': ['signal']})
         self.command({'action': 'configure_input', 'component': 'sensor_1', 'port': 'feedback',
                       'description': {'root': 'Analysis', 'mode': 'push', 'timeout': .2, 'activates': {'timeout': ['signal']}}})
         desc = self.model()['components']['sensor_1']['inputs']['feedback']
@@ -280,14 +277,15 @@ class ProjectTests(unittest.TestCase):
         self.command({'action': 'configure_input', 'component': 'sensor_1', 'port': 'feedback', 'description': {'root': 'Analysis'}})
         self.assertNotIn('activates', self.model()['components']['sensor_1']['inputs']['feedback'])
 
-    def test_v2_connections_accept_passive_feedback_and_reject_activation_cycles_and_timers(self):
+    def test_v2_connections_accept_feedback_cycles_and_reject_timers(self):
         for port, desc in (('feedback', '{"root":"SignalBlock","mode":"pull"}'),
                            ('activating', '{"root":"SignalBlock","activates":{"message":["signal"]}}')):
             self.command({'action': 'set', 'file': self.project.model,
                           'path': ['components', 'sensor_1', 'inputs', port], 'literal': desc})
         self.command({'action': 'duplicate_subscription', 'copy': 'signal_1', 'name': 'feedback', 'to': 'sensor_1.feedback'})
-        for name, destination, message in (('bad_cycle', 'sensor_1.activating', 'cycle'),
-                                            ('bad_timer', 'sensor_1.clock', 'Timer inputs')):
+        self.command({'action': 'duplicate_subscription', 'copy': 'signal_1',
+                      'name': 'activating_return', 'to': 'sensor_1.activating'})
+        for name, destination, message in (('bad_timer', 'sensor_1.clock', 'Timer inputs'),):
             before = self.project.snapshot()
             with self.assertRaisesRegex(ValueError, message):
                 self.project.prepare({'action': 'duplicate_subscription', 'copy': 'signal_1',

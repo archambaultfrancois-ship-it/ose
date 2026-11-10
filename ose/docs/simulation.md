@@ -16,8 +16,8 @@ can reset an inactivity deadline at that timestamp. A publication computed by
 another callback becomes visible after its wave completes. It cannot cancel a
 timeout already selected in the same wave; the timeout and subsequent message
 callback may therefore both run at that timestamp. This ordering is independent
-of worker count. The deferred [microstep design](../../TODO.md) does not change
-the current execution rules.
+of worker count. Optional microsteps extend these wave rules to activating
+feedback cycles without changing the model or protocols.
 Ada v2 wrappers pass their [qualification suite](ada-inputs.md) with GNAT 12.
 The full five-language example produces identical traces with 1/2/8 workers;
 the all-Ada feedback example matches the other SDKs with 1/4 workers.
@@ -51,7 +51,7 @@ component calculations, using the separate Python, C, Rust, Java and Ada process
 provided by the framework. It does not allocate CPU affinity or parallelize a
 single callback. A sequential graph offers little parallel speedup.
 
-`--scenario`, `--trace`, `--workers` and `--max-tick-output-bytes` are specific to
+`--scenario`, `--trace`, `--workers`, `--microsteps`, `--max-microsteps` and `--max-tick-output-bytes` are specific to
 simulated execution. `--port` is rejected in simulated mode. No network broker,
 adapter subprocesses or live external clients participate in this engine.
 Only `inspect --last` is available after a simulation; live network inspection
@@ -87,6 +87,53 @@ increase physical runtime without advancing virtual time. Periodic timers retain
 their phase; Push timeouts measure inactivity since reception. A timeout invokes
 the input callback with an explicit expiration reference, even if a latest value
 remains retained. Pull inputs never gate readiness.
+
+## Microsteps and activating feedback
+
+Enable the launch option for models with an activating cycle:
+
+```sh
+ose run --plan build/plan.json --mode simulated --microsteps \
+  --duration .1 --workers 4 --max-microsteps 10000 --trace build/microsteps.jsonl
+```
+
+The boundary applies to all callback publications. Execution positions are
+`(time_ns, microstep)`: callbacks selected in stage `k` see the messages admitted
+before that stage; their publications become visible at boundary `k+1`. At most
+one callback per component runs in each stage. Distinct ready components still
+run concurrently, bounded by `--workers`; all calculations finish before outputs
+are released in stable component/emission order. A component can activate again
+at the same physical timestamp. A new stage never adds a physical delay.
+
+Scenario messages and pending admissions settle before callback selection at
+that timestamp. Receipt can cancel an inactivity timeout, while an independent
+timer remains due. Inbox snapshots, FIFO/latest, IDs, deferred withdrawals and
+per-callback failure cancellation retain their existing semantics. A successful
+peer's committed consumption survives another callback's failure; a stage is
+not a global transaction. Admission waits can advance to a future physical
+virtual deadline when no callback is ready. Advancing time resets the step to
+zero. The simulation horizon remains exclusive.
+
+`--max-microsteps` requires `--microsteps` and must be a positive integer; its
+default is 10,000 activation stages per timestamp. For a limit of `N`, stages
+`0` through `N-1` may calculate. Their last publications can settle at boundary
+`N`; failure occurs only if another callback is ready there. The bound also
+applies to finite bursts of queued activations, not just feedback cycles. On
+failure, the trace and `last-status.json` contain `stop_reason: "microstep_limit"`,
+the position, a model activation cycle when present, recent activations, pending
+callbacks and pending deliveries. The engine neither drops messages nor advances
+time to escape the limit. Equal successive payloads do not imply convergence.
+
+Models can be edited, validated and compiled with activation cycles. Without
+`--microsteps`, simulated execution rejects these cycles before starting
+components; real-time local and distributed execution also rejects them. The
+option is available on `ose replay` in simulated mode and is rejected for
+real-time execution/replay. There is no simulation field in the model or plan.
+
+Only trace events and diagnostics expose `microstep`; CH/2 input references and
+all SDKs remain unchanged. CENV/2 and dynamic per-message SDL contract exchange
+are unchanged. Without the option, ordinary v2 trace bytes are preserved.
+See the [activating feedback example](../examples/feedback-microsteps/README.md).
 
 ## Time in callbacks and protocol compatibility
 

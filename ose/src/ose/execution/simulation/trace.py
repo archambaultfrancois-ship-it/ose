@@ -4,12 +4,14 @@ import json
 
 
 class Trace:
-    def __init__(self, clock, path=None):
+    def __init__(self, clock, path=None, *, microsteps=False):
         self.clock, self.digest = clock, hashlib.sha256()
+        self.microsteps = microsteps
         self.stream = open(path, "w", encoding="utf-8") if path is not None else None
 
     def emit(self, event, **fields):
-        line = json.dumps(dict(event=event, time_ns=self.clock.time_ns, **fields),
+        position = {"microstep": self.clock.microstep} if self.microsteps else {}
+        line = json.dumps(dict(event=event, time_ns=self.clock.time_ns, **position, **fields),
                           sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
         self.digest.update(line.encode())
         if self.stream:

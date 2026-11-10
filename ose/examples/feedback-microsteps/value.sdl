@@ -1,0 +1,3 @@
+message Value {
+    1: required uint32 count;
+}

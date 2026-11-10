@@ -49,6 +49,8 @@ def fingerprint(plan):
 
 def check_plan(plan):
     require_v2(plan)
+    from ose.modeling.activation import activation_order
+    activation_order(plan)
     if plan.get("execution") != "distributed":
         raise ValueError("use a deployment with execution=distributed")
     if set(plan["components"]) & {"coordinator", "replay"}:

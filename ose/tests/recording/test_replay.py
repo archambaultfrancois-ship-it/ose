@@ -173,6 +173,22 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
                     reference = trace.read_bytes()
                 self.assertEqual(reference, trace.read_bytes())
 
+    async def test_microstep_replay_preserves_time_and_worker_independent_traces(self):
+        for format in ('pcapng', 'mcap'):
+            path, _ = self.capture(format)
+            traces = []
+            for workers in (1, 4):
+                trace = self.root / 'microsteps.jsonl'
+                summary = await run(path, self.plan_path, .001, mappings=['source.value=external.signal'],
+                    workers=workers, trace=trace, microsteps=True, max_microsteps=2)
+                events = [json.loads(line) for line in trace.read_text().splitlines()]
+                outputs = [event for event in events if event['event'] == 'publication' and event['topic'] == 'sink.out']
+                self.assertEqual([(event['time_ns'], event['microstep']) for event in outputs],
+                                 [(0, 1), (7, 1), (7, 2)])
+                self.assertEqual(summary['completed_loops'], 1)
+                traces.append(trace.read_bytes())
+            self.assertEqual(traces[0], traces[1])
+
     async def test_range_is_half_open_and_rebases_first_selected_message(self):
         path, base = self.capture()
         with recording_events(path, self.topics, self.mapping, self.codec,

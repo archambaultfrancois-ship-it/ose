@@ -101,7 +101,8 @@ prepares one source-preserving, undoable operation, with component handlers list
 for review. Converting an input with incoming subscriptions to a timer is blocked
 until those subscriptions are disconnected. Switching to Pull explicitly removes
 its timeout and activation declarations in the preview. The authoritative OSE
-validator rejects invalid events, outputs, callback names and activation cycles.
+validator rejects invalid events, outputs and callback names. Activation cycles
+can be authored and compiled; execution requires simulated `--microsteps`.
 
 The **Activation links** checkbox displays internal input-event → output arrows:
 blue for received messages, amber dashed lines for timeouts. Display is optional
@@ -128,12 +129,13 @@ Links are curved by default. Use **Link style** in the graph toolbar to switch
 between curved, straight and right-angle links for the current view.
 Dragging from an output or an input marks the opposite ports with **✓ Compatible**,
 **? Contract unchecked** or **× Unavailable**. Hover a marked port for the reason:
-different logical roots, an activation cycle, conflicting shared reception settings,
+different logical roots, conflicting shared reception settings,
 or a directional SDL contract mismatch. Full **Validate** resolves candidate
 contracts, including ports not yet connected, for the current applied revision.
 Before validation, or after an edit, structural checks remain available and SDL
 compatibility is explicitly unchecked. Unknown contracts may be connected and
-checked later; known incompatible connections are blocked.
+checked later; known incompatible connections are blocked. A connection creating
+an activation cycle remains available with a note requiring simulated `--microsteps`.
 Use **Connect ports** for a keyboard-accessible publisher/destination selector,
 including ports hidden inside groups and external topics. A completed drag opens
 the same form. Enter a subscription ID and choose **Preview connection** to review

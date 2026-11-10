@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import hashlib
 import json
 from pathlib import Path
+from graphlib import CycleError, TopologicalSorter
 import signal
 from ose.codec.sdl2 import SDL2
 from ose.parameters.service import ParameterService
@@ -16,13 +17,25 @@ from ose.execution.simulation.clock import MAX_NS, VirtualClock, InputSchedule, 
 from ose.execution.simulation.router import Router
 from ose.execution.simulation.scenario import read_scenario, ParameterEvent
 from ose.execution.simulation.trace import Trace
+from ose.execution.simulation.options import microstep_limit
 
 DEFAULT_OUTPUT_LIMIT = 16 * 1024 * 1024
 
 
-def topology(plan):
+class MicrostepLimitError(RuntimeError):
+    """Bounded same-time execution failed to reach quiescence."""
+    def __init__(self, diagnostic):
+        self.diagnostic = diagnostic
+        path = diagnostic["activation_cycle"] or diagnostic["recent_activations"]
+        super().__init__(f"microstep limit {diagnostic['max_microsteps']} reached at "
+                         f"time_ns={diagnostic['time_ns']}, microstep={diagnostic['microstep']}; "
+                         f"activation path: {' -> '.join(path)}; "
+                         f"pending components: {', '.join(diagnostic['pending_activations'])}")
+
+
+def topology(plan, *, microsteps=False):
     from ose.modeling.activation import activation_order
-    activation_order(plan)
+    activation_order(plan, microsteps=microsteps)
     return sorted(plan["components"])
 
 
@@ -35,8 +48,12 @@ class PendingTick:
 
 class Simulation:
     def __init__(self, plan, duration, *, workers=1, scenario=None, events=None, trace=None,
-                 max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT, working_directory=None):
+                 max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT, working_directory=None,
+                 microsteps=False, max_microsteps=None):
         require_v2(plan)
+        self.microstep_limit = microstep_limit(microsteps, max_microsteps)
+        self.microstep_diagnostic = None
+        self.recent_activations = deque(maxlen=64)
         if type(workers) is not int or workers <= 0:
             raise ValueError("workers must be a positive integer")
         if type(max_tick_output_bytes) is not int or max_tick_output_bytes <= 0:
@@ -44,7 +61,7 @@ class Simulation:
         self.plan, self.workers, self.limit = plan, workers, max_tick_output_bytes
         self.working_directory = working_directory
         self.horizon, self.clock = seconds_ns(duration, positive=True), VirtualClock()
-        self.order = topology(plan)
+        self.order = topology(plan, microsteps=microsteps)
         self.codec = SDL2(plan["sdl_root"])
         self.parameter_service = ParameterService(plan, self.codec)
         self.parameter_bindings = {name: LocalBindings(node, self.parameter_service) for name, node in plan["components"].items()}
@@ -76,7 +93,7 @@ class Simulation:
         for sub in plan["subscriptions"]:
             if sub["policy"]["overflow"] == "wait" and sub["policy"]["wait_timeout_ms"] * 1_000_000 > MAX_NS:
                 raise ValueError("simulation admission wait exceeds uint64 nanoseconds")
-        self.trace = Trace(self.clock, trace)
+        self.trace = Trace(self.clock, trace, microsteps=self.microstep_limit is not None)
         try:
             self.router = Router(plan, self.codec, self.clock, self.trace)
         except BaseException:
@@ -137,6 +154,8 @@ class Simulation:
         self.trace.emit("wave", components=names)
         for name in names:
             self.schedules[name].tick_index += 1
+            if self.microstep_limit is not None:
+                self.recent_activations.append(f"{name}.{selected[name].port}:{selected[name].event}")
             snapshot = {selected[name].port: selected[name].record}
             self.trace.emit("tick", component=name, tick_index=self.schedules[name].tick_index,
                             inputs={port: None if record is None else record["id"] for port, record in snapshot.items()},
@@ -242,11 +261,44 @@ class Simulation:
                    if desc.get("kind") != "timer" and desc.get("mode", "push") != "pull"
                    and (port not in schedule.buffers or schedule.buffers[port].take() is None)]
         return dict(mode="simulated", functional=True, transport_simulation=False, running=False,
+                    **({"microstep": self.clock.microstep, "max_microsteps": self.microstep_limit,
+                        **({"microstep_diagnostic": self.microstep_diagnostic} if self.microstep_diagnostic else {})}
+                       if self.microstep_limit is not None else {}),
                     time_ns=self.clock.time_ns, ticks=self.ticks, waves=self.waves, publications=self.router.sequence,
                     stop_reason=self.reason, waiting_inputs=waiting, pending_ticks=len(self.busy),
                     pending_external=len(self.external), external_events=self.cursor - self.parameter_scenario_events, parameter_changes=self.parameter_changes,
                     inputs={name: {port: buffer.snapshot() for port, buffer in buffers.items()}
                             for name, buffers in self.router.buffers.items()}, trace_sha256=self.trace.digest.hexdigest())
+
+    def _check_microstep_limit(self):
+        if self.microstep_limit is None or self.clock.microstep < self.microstep_limit:
+            return
+        pending = {}
+        for name in self.order:
+            if name in self.busy:
+                continue
+            candidates = sorted(self.schedules[name].core._candidates(self.clock.time_ns), key=lambda item: item[:3])
+            if candidates:
+                pending[name] = [dict(input=port, event=event, due_ns=due,
+                    **({"handle": record["id"], "source": record["topic"]} if record is not None else {}))
+                    for due, port, event, record in candidates]
+        if not pending:
+            return
+        from ose.modeling.activation import activation_graph
+        graph = activation_graph(self.plan)
+        cycle = []
+        try:
+            tuple(TopologicalSorter({key: sorted(graph[key]) for key in sorted(graph)}).static_order())
+        except CycleError as error:
+            cycle = error.args[1]
+        self.microstep_diagnostic = dict(time_ns=self.clock.time_ns, microstep=self.clock.microstep,
+            max_microsteps=self.microstep_limit, activation_cycle=cycle,
+            recent_activations=list(self.recent_activations), pending_activations=pending,
+            pending_deliveries=[dict(handle=publication.record["id"], subscriptions=sorted(publication.pending))
+                for publication in self.external + [tick.publication for tick in self.busy.values() if tick.publication is not None]])
+        self.reason = "microstep_limit"
+        self.trace.emit("microstep_limit", diagnostic=self.microstep_diagnostic)
+        raise MicrostepLimitError(self.microstep_diagnostic)
 
     async def execute(self):
         starting = []
@@ -269,10 +321,13 @@ class Simulation:
                 for name, process in self.processes.items():
                     if process.returncode is not None:
                         raise RuntimeError(f"component {name} stopped unexpectedly")
+                self._check_microstep_limit()
                 selected = {name: snapshot for name, schedule in self.schedules.items()
                             if name not in self.busy and (snapshot := schedule.select()) is not None}
                 if selected:
                     await self._wave(selected)
+                    if self.microstep_limit is not None:
+                        self.clock.microstep += 1
                     continue
                 timestamp = self._next_event()
                 if timestamp is None:
@@ -281,6 +336,8 @@ class Simulation:
                 if timestamp <= self.clock.time_ns:
                     raise RuntimeError("simulation made no logical progress")
                 self.clock.time_ns = min(timestamp, self.horizon)
+                self.clock.microstep = 0
+                self.recent_activations.clear()
                 await asyncio.sleep(0)  # Allow cancellation even in long, callback-free scenarios.
             else:
                 self.reason = "duration"

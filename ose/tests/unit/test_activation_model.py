@@ -58,7 +58,8 @@ class ActivationModelTests(unittest.TestCase):
         feedback = self.model["components"]["a"]["inputs"]["feedback"]
         feedback.update(mode="push", activates=dict(message=["out"]))
         with self.assertRaisesRegex(ValueError, "activation graph contains a cycle") as raised:
-            validate_graph(self.model, self.deployment)
+            activation_order(self.model)
+        validate_graph(self.model, self.deployment)
         for location in ("a.feedback:message", "a.out:publish", "b.input:message", "b.out:publish"):
             self.assertIn(location, str(raised.exception))
 

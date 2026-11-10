@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "components": {
+    "a": {"container": {"language": "python", "handler": "a.py"}},
+    "b": {"container": {"language": "python", "handler": "b.py"}}
+  }
+}
