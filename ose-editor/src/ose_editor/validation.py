@@ -220,7 +220,13 @@ class Validator:
                     self.update(job, progress='Checking OSE model and deployment')
                     if self.execute(job, [sys.executable, '-m', 'ose.cli', 'validate', '--model', model_path, '--deployment', deployment_path, '--sdl-root', self.sdl_root], env) is None:
                         return
-                self.update(job, status='passed')
+                # Publish success together with the contract cache: a client
+                # seeing 'passed' may immediately prepare a connection.
+                with self.project.mutex, self.guard:
+                    if job['status'] != 'cancelled':
+                        job['status'] = 'passed'
+                        if job['revision'] == self.project.revision:
+                            self.project.last_validation = deepcopy(job)
         except (ValueError, OSError, KeyError, TypeError) as error:
             if job['status'] != 'cancelled':
                 message = str(error)

@@ -108,14 +108,16 @@ describe('input execution inspector', () => {
       description: { root: 'Value', mode: 'push', activates: { message: [] } } })
     expect(JSON.stringify(store.project)).toBe(before)
   })
-  it('blocks a newly selected activating cycle before creating a preview', async () => {
+  it('allows an activating cycle with microstep guidance before creating a preview', async () => {
     const { command, wrapper } = await setup()
     await wrapper.get('[aria-label="Input mode"]').setValue('push')
     await wrapper.get('[aria-label="Allow message to out"]').setValue(true)
     expect(wrapper.text()).toContain('Activation cycle:')
-    expect(wrapper.findAll('button').find(button => button.text() === 'Preview input changes')!.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('--microsteps')
+    expect(wrapper.findAll('button').find(button => button.text() === 'Preview input changes')!.attributes('disabled')).toBeUndefined()
     await wrapper.get('form').trigger('submit')
-    expect(command).not.toHaveBeenCalled()
+    expect(command).toHaveBeenCalledWith({ action: 'configure_input', component: 'a', port: 'feedback',
+      description: { root: 'Value', mode: 'push', activates: { message: ['out'] } } })
   })
   it('edits message and timeout permissions independently', async () => {
     const { command, wrapper } = await setup()

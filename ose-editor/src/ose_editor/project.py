@@ -244,7 +244,7 @@ class Project:
                 if len(self.prepared) > 32:
                     self.prepared.pop(next(iter(self.prepared)))
                 return {'id': token, 'revision': self.revision, 'changes': changes,
-                        'handlers_to_review': handlers if command.get('action', '').startswith(('rename', 'sdl', 'remove', 'configure_input')) else [],
+                        'handlers_to_review': handlers if command.get('action', '').startswith(('rename', 'sdl', 'remove', 'configure_', 'duplicate_port')) else [],
                         'external_consumers': 'Unregistered external consumers are not assessed.'}
             finally:
                 self.restore(before)
@@ -293,7 +293,7 @@ class Project:
 
     def execute(self, command):
         action = command['action']
-        if action in ('configure_input', 'add_component', 'remove_component', 'connect', 'duplicate_subscription', 'set_reception', 'rename'):
+        if action in ('configure_input', 'configure_output', 'configure_activation', 'duplicate_port', 'remove_port', 'add_component', 'remove_component', 'connect', 'duplicate_subscription', 'set_reception', 'rename'):
             self.application_model()
         if action == 'source':
             text = command['text']
@@ -333,9 +333,12 @@ class Project:
             doc.text = parsed.patches([(item['start'], item['end'], value)])
         elif action == 'rename':
             self.rename(command)
+        elif action in ('configure_output', 'configure_activation', 'duplicate_port', 'remove_port'):
+            from ose_editor.component_commands import execute
+            execute(self, command)
         elif action == 'configure_input':
             from ose.modeling.activation import component_inputs, activation_graph
-            from ose.modeling.validation import validate_graph
+            from ose_editor.component_commands import validate
             model = json.loads(self.document(self.model).text)
             name, port, description = command['component'], command['port'], command['description']
             if name not in model['components'] or not isinstance(port, str) or not port or '.' in port:
@@ -346,11 +349,12 @@ class Project:
                 raise ValueError('Disconnect incoming subscriptions before converting this input to a timer')
             node = model['components'][name]
             previous = node['inputs'].get(port)
+            if command.get('create') and previous is not None:
+                raise ValueError('Port already exists')
             node['inputs'][port] = description
             component_inputs(node)
             activation_graph(model)
-            for key in self.deployments:
-                validate_graph(model, json.loads(self.document(key).text))
+            validate(self, model)
             path = ['components', name, 'inputs', port]
             if previous is None:
                 self.json_set(self.model, path, description)
@@ -514,17 +518,8 @@ class Project:
             publisher = model['components'][source]['outputs'][output]
         else:
             publisher = model['external_topics'][subscription['from_topic']]
-        if publisher['root'] != consumer['root']:
-            raise ValueError('Connected roots must have the same logical name')
-        validation = self.last_validation
-        if validation and validation['revision'] == self.revision:
-            for report in validation.get('connection_contracts', []):
-                if (report['root'] == publisher['root']
-                        and report['publisher_schema'] == publisher.get('schema', model['schemas'])
-                        and report['consumer_schema'] == consumer.get('schema', model['schemas'])
-                        and not report['compatible']):
-                    raise ValueError('Incompatible SDL contract: ' + report['code']
-                                     + (' at ' + report['path'] if report.get('path') else ''))
+        from ose_editor.component_commands import check_contract
+        check_contract(self, model, publisher, consumer)
         self._check_reception(subscription['to'])
 
     def rename(self, command):
@@ -563,6 +558,8 @@ class Project:
                 field = 'from' if direction == 'outputs' else 'to'
                 if sub.get(field) == old:
                     self.json_set(self.model, ['subscriptions', str(i), field], component + '.' + new)
+            from ose_editor.component_commands import validate
+            validate(self)
         elif kind == 'subscription':
             for i, sub in enumerate(model.get('subscriptions', [])):
                 if sub['id'] == new:

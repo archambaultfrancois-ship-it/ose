@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import Button from 'primevue/button'
 import { useProject } from '../store'
 import { scalarText } from '../hints'
+import { rootTypes } from '../component-editing'
 import { activationCycle, inputKind } from '../execution'
-const store = useProject()
+const props = defineProps<{ compact?: boolean }>()
+const store = useProject(), typesId = useId()
+const roots = computed(() => rootTypes(store.project))
 const model = computed(() => store.project?.documents?.[store.project.model]?.value)
 const componentName = computed(() => {
   if (store.selection?.file !== store.project?.model) return ''
@@ -31,7 +34,11 @@ function load(name: string) {
     messageOutputs: Array.isArray(desc.activates?.message) ? [...desc.activates.message] : [],
     timeoutOutputs: Array.isArray(desc.activates?.timeout) ? [...desc.activates.timeout] : [] }
 }
-watch(() => [componentName.value, selectedPort.value, store.project?.revision], () => {
+watch(() => [componentName.value, selectedPort.value, store.project?.revision, store.portCreation], () => {
+  const creation = store.portCreation
+  if (props.compact && creation && creation.kind !== 'output') {
+    newInput(); draft.value.kind = creation.kind; return
+  }
   const chosen = selectedPort.value || (component.value?.inputs?.[port.value] ? port.value : Object.keys(component.value?.inputs || {})[0] || '')
   load(chosen)
 }, { immediate: true })
@@ -58,16 +65,19 @@ const problem = computed(() => {
   if (creating.value && component.value.inputs?.[port.value]) return 'This input already exists.'
   if (draft.value.kind === 'timer' && incoming.value.length) return 'Disconnect incoming subscriptions before converting this input to a timer.'
   try {
-    const desc = description()
-    const proposed = { ...model.value, components: { ...model.value.components, [componentName.value]: {
-      ...component.value, inputs: { ...component.value.inputs, [port.value]: desc } } } }
-    const cycle = activationCycle(proposed)
-    return cycle ? 'Activation cycle: ' + cycle.join(' → ') : ''
+    description()
+    return ''
   } catch (failure) { return (failure as Error).message }
+})
+const cycleWarning = computed(() => {
+  if (!component.value || !port.value || problem.value) return ''
+  const proposed = { ...model.value, components: { ...model.value.components, [componentName.value]: {
+    ...component.value, inputs: { ...component.value.inputs, [port.value]: description() } } } }
+  return activationCycle(proposed) ? 'Activation cycle: simulated execution with --microsteps is required.' : ''
 })
 async function preview() {
   if (problem.value || store.busy || store.pending) return
-  await store.command({ action: 'configure_input', component: componentName.value, port: port.value, description: description() })
+  await store.command({ action: 'configure_input', component: componentName.value, port: port.value, description: description(), ...(props.compact && creating.value ? { create: true } : {}) })
 }
 function choose(event: Event) {
   const name = (event.target as HTMLSelectElement).value
@@ -78,14 +88,14 @@ function choose(event: Event) {
   <section v-if="model?.version === 2 && component" class="execution-view" aria-label="Input execution and activation links">
     <h3>Input execution</h3>
     <p>Push calls its input callback. Pull is read during another activation. Timers carry no message.</p>
-    <div class="input-choice"><label>Input<select :value="creating ? '' : port" aria-label="Execution input" @change="choose"><option value="" disabled>Choose an input</option><option v-for="name in Object.keys(component.inputs || {})" :key="name">{{ name }}</option></select></label><Button label="Add input" size="small" severity="secondary" :disabled="!!store.pending || store.busy" @click="newInput" /></div>
+    <div v-if="!compact" class="input-choice"><label>Input<select :value="creating ? '' : port" aria-label="Execution input" @change="choose"><option value="" disabled>Choose an input</option><option v-for="name in Object.keys(component.inputs || {})" :key="name">{{ name }}</option></select></label><Button label="Add input" size="small" severity="secondary" :disabled="!!store.pending || store.busy" @click="newInput" /></div>
     <form v-if="port || creating" aria-label="Configure input" @submit.prevent="preview">
       <fieldset :disabled="!!store.pending || store.busy || store.project.documents[store.project.model].stale">
         <label v-if="creating">Input name<input v-model.trim="port" aria-label="New input name" required></label>
         <label>Kind<select v-model="draft.kind" aria-label="Input kind"><option value="message">Message</option><option value="timer">Timer</option></select></label>
         <template v-if="draft.kind === 'message'">
           <label>Mode<select v-model="draft.mode" aria-label="Input mode"><option value="push">Push · callback</option><option value="pull">Pull · passive</option></select></label>
-          <label>Logical root<input v-model="draft.root" aria-label="Input logical root" required></label>
+          <label>Logical root<input v-model="draft.root" :list="typesId" aria-label="Input logical root" required><datalist :id="typesId"><option v-for="type in roots" :key="type" :value="type" /></datalist></label>
           <label>Schema override<input v-model="draft.schema" aria-label="Input schema override" placeholder="Use the model schema"></label>
           <template v-if="draft.mode === 'push'"><label class="check"><input v-model="draft.timeoutEnabled" type="checkbox" aria-label="Enable inactivity timeout"> Inactivity timeout</label><label v-if="draft.timeoutEnabled">Timeout (seconds)<input v-model="draft.timeout" aria-label="Input inactivity timeout" inputmode="decimal" required></label></template>
           <p v-else>Passive Pull has no callback or activating timeout. Switching to Pull removes timeout and activation links in the preview.</p>
@@ -104,6 +114,7 @@ function choose(event: Event) {
           </fieldset>
         </div>
         <p>Review the component callbacks when changing an input's kind or mode.</p>
+        <p v-if="cycleWarning" class="execution-note" role="status">{{ cycleWarning }}</p>
         <p v-if="problem" class="error" role="status">{{ problem }}</p>
         <Button type="submit" label="Preview input changes" size="small" :disabled="!!problem" />
       </fieldset>

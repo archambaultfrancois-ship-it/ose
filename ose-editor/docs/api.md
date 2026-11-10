@@ -43,6 +43,10 @@ invalid commands return 422 and missing objects/previews return 404.
 | `rename` for SDL | `kind: "sdl"`, `file`, declaration `path`, `name`; scoped text-SDL references and roots |
 | `add_component` | `name`, optional `copy` component; copied handlers/parameter references stay shared |
 | `remove_component` | `name`; includes owned subscriptions and registered deployment entries |
+| `configure_output` | `component`, `port`, `description` (logical `root`, optional `schema`); optional `create: true` rejects existing names |
+| `duplicate_port` | `component`, `direction` (`inputs`/`outputs`), `source`, new `port`; copies the declaration without subscriptions or implicit output permissions |
+| `remove_port` | `component`, `direction`, `port`; removes subscriptions, their deployment overrides and affected output activation references atomically |
+| `configure_activation` | `component`, `input`, `event` (`message`/`timeout`), `output`, boolean `enabled`; optional `previous: {input, event, output}` replaces an existing permission atomically when enabled |
 | `connect` | `name` (subscription ID), `from`, `to`, optional `external` |
 | `sdl_edit` | `file`, declaration `path`, `property`, string `value` |
 | `sdl_add` | `file`, parent `path` or empty string, `kind`, `name`, optional `value` |
@@ -58,6 +62,15 @@ invalid commands return 422 and missing objects/previews return 404.
 JSON paths address structured properties, including descriptor fields. Text-SDL
 declaration paths identify the current projection's tree nodes and are revision
 bound. The source syntax tree remains distinct from resolved SDL catalogues.
+
+`configure_input` also accepts `create: true` to reject an existing port instead
+of updating it. Port edits validate the resulting model and all registered
+deployments, connected logical roots and any applicable current SDL contract
+reports. Activation edits preserve independent message/timeout permissions;
+Pull inputs cannot activate outputs and timers only expose timeout events.
+Activation cycles remain editable and require simulated `--microsteps` at launch.
+All component operations use the same revisioned preview/apply and undo protocol;
+none write application sources to disk until an explicit save.
 
 ## Validation
 

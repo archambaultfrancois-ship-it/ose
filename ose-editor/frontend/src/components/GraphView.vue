@@ -8,6 +8,7 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import ComponentNode from './ComponentNode.vue'
+import ComponentEditor from './ComponentEditor.vue'
 import { useProject } from '../store'
 import { topology, downstream, type LinkStyle } from '../graph'
 import { layoutGraph } from '../layout'
@@ -28,8 +29,16 @@ const targetOptions = computed(() => inputs(model.value).map(endpoint => ({ endp
 const assessment = computed(() => chosenSource.value && target.value ? assessConnection(store.project, chosenSource.value, target.value) : null)
 // Configure key filters through the store: Vue Flow's prop validator only
 // accepts booleans even though its selection engine supports key arrays.
-const { fitView, getSelectedNodes, selectionKeyCode } = useVueFlow()
+const { fitView, getViewport, setViewport, getSelectedNodes, selectionKeyCode } = useVueFlow()
 selectionKeyCode.value = ['Shift', 'Control', 'Meta']
+let overviewViewport: ReturnType<typeof getViewport> | null = null
+watch(() => store.editingComponent, async (name, previous) => {
+  if (name && !previous) overviewViewport = getViewport()
+  else if (!name && previous && overviewViewport) {
+    await nextTick()
+    await setViewport(overviewViewport)
+  }
+})
 const selectedGroups = computed(() => getSelectedNodes.value.filter(node => node.data.kind === 'group').map(node => node.data.name))
 const hasGroups = computed(() => Object.keys(store.project?.workspace.groups || {}).length > 0)
 const hasExpandedGroups = computed(() => Object.values(store.project?.workspace.groups || {}).some((group: any) => !group.collapsed))
@@ -117,6 +126,7 @@ function inspectInput(component: string, port: string) {
   graphInspection = store.selection
 }
 function expand(event: any) {
+  if (event.node.data.kind === 'component') { store.editComponent(event.node.data.name); return }
   if (event.node.data.kind !== 'group') return
   const groups = JSON.parse(JSON.stringify(store.project.workspace.groups))
   groups[event.node.data.name].collapsed = false
@@ -149,6 +159,8 @@ onBeforeUnmount(() => worker.terminate())
 </script>
 <template>
   <div class="graph-workspace">
+    <ComponentEditor v-if="store.editingComponent" />
+    <div v-show="!store.editingComponent" class="graph-overview">
     <div class="graph-toolbar"><InputText v-model="search" placeholder="Find a component…" aria-label="Find a component" /><Select v-model="scope" :options="['all', 'upstream', 'downstream', 'both']" aria-label="Dependency highlighting" /><Button ref="connectButton" label="Connect ports" severity="secondary" :disabled="!!store.pending" @click="openAssistant()" /><Button label="Auto layout" severity="secondary" :loading="layoutBusy" @click="layout" /><Button label="Group selection" severity="secondary" :disabled="!selectedComponents.length && !selectedGroups.length" @click="group" /><Button :label="hasExpandedGroups ? 'Collapse all groups' : 'Expand all groups'" severity="secondary" :disabled="!hasGroups" @click="toggleGroups" /><div class="link-display-controls"><label class="inline"><input type="checkbox" v-model="labels"> Link labels</label><label v-if="model?.version === 2" class="inline"><input type="checkbox" v-model="showActivations" aria-label="Show activation links"> Activation links</label><Select v-model="linkStyle" :options="linkStyles" option-label="label" option-value="value" size="small" class="link-style-select" aria-label="Link style" /></div></div>
     <form v-if="assistant" class="connection-assistant" aria-label="Connect ports" @submit.prevent="previewConnection" @keydown.esc.stop="closeAssistant">
       <label>Publisher<select ref="sourceSelect" v-model="sourceKey" aria-label="Connection publisher"><option value="" disabled>Choose an output</option><option v-for="source in sourceOptions" :key="source.key" :value="source.key">{{ source.endpoint }}{{ source.external ? ' (external topic)' : '' }}</option></select></label>
@@ -159,14 +171,17 @@ onBeforeUnmount(() => worker.terminate())
     </form>
     <p v-if="connectionFeedback" class="connection-feedback" role="status">{{ connectionFeedback }}</p>
     <VueFlow v-model:nodes="nodes" v-model:edges="edges" fit-view-on-init :is-valid-connection="validConnection" :multi-selection-key-code="['Shift', 'Control', 'Meta']" :delete-key-code="null" :min-zoom="0.15" :max-zoom="2" @node-click="selected" @node-double-click="expand" @edge-click="event => store.select(store.project.model, ['subscriptions', String(event.edge.data.index)])" @connect-start="startConnection" @connect-end="drag = null" @connect="connect" @node-drag-stop="position">
-      <template #node-component="nodeProps"><ComponentNode v-bind="nodeProps" @port-hover="message => connectionFeedback = message" @input-select="inspectInput" /></template>
+      <template #node-component="nodeProps"><ComponentNode v-bind="nodeProps" @port-hover="message => connectionFeedback = message" @input-select="inspectInput" @edit-component="store.editComponent" /></template>
       <Background :gap="24" pattern-color="#c8d5e5" /><MiniMap pannable zoomable /><Controls />
     </VueFlow>
     <p class="graph-caption">{{ Object.keys(model?.components || {}).length }} components · {{ model?.subscriptions?.length || 0 }} subscriptions · {{ selectedComponents.length }} components selected · {{ selectedGroups.length }} groups selected · Shift/Ctrl/Cmd + click to select multiple · Shift + drag to select an area · drag between ports to connect</p>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.graph-overview { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.graph-overview :deep(.vue-flow) { flex: 1; min-height: 0; }
 .connection-assistant { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 14px 16px; background: #f7f9fd; border-bottom: 1px solid #dce4ef; }
 .connection-assistant label { min-width: 150px; flex: 1; font-size: 11px; }
 .connection-assistant select, .connection-assistant input { width: 100%; min-height: 34px; padding: 6px; border: 1px solid #bcc9dd; border-radius: 5px; background: white; color: #334c6e; }

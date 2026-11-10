@@ -112,6 +112,21 @@ editing supports application model v2 only. An old model remains accessible as
 source for migration, with an explicit diagnostic; graph/table projections and
 structured model commands do not apply v2 semantics to it. Save draft can preserve
 that source. Deployment and scenario versions remain unchanged.
+
+**Double-click a component** or choose its pencil button to enter component
+editing. Inputs and timers appear on the left, outputs on the right. Select a
+port to edit its declaration, rename, duplicate or remove it; the toolbar adds
+new inputs, timers and outputs. Removal previews all affected subscriptions,
+deployment overrides and activation permissions together. Duplicated ports do
+not copy subscriptions; duplicating an output grants no activation permissions.
+Drag a message or timeout anchor to an output to add an activation permission.
+Alternatively, click or use Enter/Space on the event anchor, then the output
+anchor. Select an arrow to change its endpoints/event or remove it. Pull inputs
+have no activation anchor. Connected subscriptions remain accessible from the
+port context. **Application** returns to the graph with its viewport and visual
+groups retained. These edits use the normal preview, undo/redo and explicit save
+workflow; application handler code still requires manual review.
+
 In Graph, use **Shift**, **Ctrl**, or **Cmd + click** to add or remove components
 from the selection, or **Shift**, **Ctrl**, or **Cmd + drag** on the empty canvas
 to select an area. A plain drag on the canvas moves the view. The

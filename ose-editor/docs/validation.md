@@ -103,7 +103,8 @@ Graph cards label input modes and omit subscription handles for timers. Internal
 activation arrows are optional; message arrows are blue and timeout arrows amber
 and dashed. The activation table selects the corresponding input inspector.
 Connection guidance uses event-to-output dependencies for v2, accepting passive
-feedback and silent Push calculations while rejecting activating message cycles.
+feedback and silent Push calculations. Activating cycles remain editable with
+a warning that execution requires simulated `--microsteps`.
 Python remains the authoritative model/activation validator. The editor exposes
 application model v2 only: old versions produce a migration diagnostic, no graph
 or table projection, and no structured model changes. Source editing and explicit
@@ -118,6 +119,22 @@ checks a 2,500-component activation chain without recursive stack overflow.
 The rebuilt entry assets are served over HTTP; all five manifest file hashes
 verify, including the layout worker and runtime notices. These checks do not
 qualify real-browser pointer interaction, visual rendering or frame-rate targets.
+
+## Graphical component editing
+
+Pencil and double-click navigation open a dedicated component canvas while
+retaining the overview instance, search, group state and viewport. Ports,
+timers and independent event/output permissions use source-preserving compound
+commands with diff review and undo/redo. Port removal cleans subscriptions and
+registered deployment overrides; renaming outputs updates permissions. Existing
+SDL incompatibility reports and connected logical roots constrain port edits.
+
+`frontend/tests/component-editor.test.ts` exercises navigation, keyboard and
+pointer gestures, cancellation, independent events, forms and applied rename
+selection. `tests/test_component_commands.py` covers atomic replacement,
+removal, reference cleanup, duplication, undo/redo, disk isolation, rejection
+rollback, current contract reports and models without deployment profiles.
+These automated checks do not establish real-browser visual qualification.
 
 ## Remaining full-release qualification
 

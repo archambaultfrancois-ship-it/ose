@@ -3,7 +3,7 @@ import { computed, useId } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { statusLabel } from '../connections'
 const props = defineProps<{ data: any; selected?: boolean }>()
-const emit = defineEmits<{ 'port-hover': [message: string]; 'input-select': [component: string, port: string] }>()
+const emit = defineEmits<{ 'port-hover': [message: string]; 'input-select': [component: string, port: string]; 'edit-component': [component: string] }>()
 const marker = useId()
 const component = computed(() => props.data.kind === 'component')
 const rows = computed(() => Math.max(props.data.inputs.length, props.data.outputs.length, 1))
@@ -18,7 +18,7 @@ function inspect(port: any) { emit('input-select', port.component, port.port) }
 </script>
 <template>
   <div class="component-node" :class="[data.kind, { selected, 'execution-component': component }]">
-    <header><span class="node-icon">{{ data.kind === 'external' ? '↗' : data.kind === 'group' ? '▣' : '◇' }}</span><strong>{{ data.name }}</strong><small>{{ data.kind }}</small></header>
+    <header><span class="node-icon">{{ data.kind === 'external' ? '↗' : data.kind === 'group' ? '▣' : '◇' }}</span><strong>{{ data.name }}</strong><small>{{ data.kind }}</small><button v-if="component" class="nodrag nopan edit-component" :aria-label="'Edit component ' + data.name" title="Edit component" @click.stop="emit('edit-component', data.name)" @dblclick.stop>✎</button></header>
     <div class="node-trigger">{{ component ? 'Per-input callbacks · ' + data.activations.length + ' activation link(s)' : data.kind === 'group' ? 'Visual group · double-click to expand' : 'External publisher' }}</div>
     <div v-if="component" class="execution-ports" :style="{ minHeight: rows * 64 + 'px' }">
       <svg v-if="data.showActivations" class="activation-arrows" :viewBox="'0 0 400 ' + rows * 64" aria-label="Input event to output activation links">
@@ -52,6 +52,7 @@ function inspect(port: any) { emit('input-select', port.component, port.port) }
   </div>
 </template>
 <style scoped>
+.edit-component { border: 0; background: none; color: #3159a4; padding: 2px 6px; font-size: 18px; cursor: pointer; }
 .node-port[data-connection-status=compatible] { background: #eaf7f0; outline: 1px solid #3a926a; }
 .node-port[data-connection-status=incompatible] { background: #fff0ef; color: #9b3535; }
 .node-port[data-connection-status=unknown] { background: #fff8e6; outline: 1px dashed #b68a2e; }
