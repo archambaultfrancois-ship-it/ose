@@ -48,10 +48,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      # Java 7 is no longer available through Zulu's version discovery API.
+      - name: Download archived Zulu JDK 7
+        shell: bash
+        run: |
+          archive="$RUNNER_TEMP/zulu-jdk7.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 --output "$archive" \
+            https://cdn.azul.com/zulu/bin/zulu7.56.0.11-ca-jdk7.0.352-linux_x64.tar.gz
+          # SHA-256 from the Azul Java SE 7 compatibility certificate.
+          printf '%s  %s\n' '8a7387c1ed151474301b6553c6046f865dc6c1e1890bcf106acc2780c55727c8' "$archive" | sha256sum --check
       - uses: actions/setup-java@v4
         with:
-          distribution: zulu
-          java-version: '7'
+          distribution: jdkfile
+          java-version: '7.0.352'
+          jdkFile: ${{ runner.temp }}/zulu-jdk7.tar.gz
       - name: Read SDL revision
         id: sdl
         run: python -c 'import json,os; d=json.load(open("sdl-dependency.json")); open(os.environ["GITHUB_OUTPUT"],"a").write("revision="+d["revision"]+"\nsubdirectory="+d["subdirectory"]+"\n")'
