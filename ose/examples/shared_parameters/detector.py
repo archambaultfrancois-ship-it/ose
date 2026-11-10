@@ -3,7 +3,7 @@ import json
 import sys
 
 
-def on_tick(ctx):
+def on_clock(ctx, input):
     detection = ctx.parameters_detection()
     security = ctx.parameters_security()
     state = (detection.enabled and security.enabled,

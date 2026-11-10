@@ -30,11 +30,11 @@ Redirecting stdout produces successive plain-text reports without reading stdin;
 
 | Color | State | Evidence |
 | --- | --- | --- |
-| Green | `ACTIVE` | Completed ticks in the recent window or a tick in progress. |
-| Amber | `ATTENTION` | FIFO at least 80% full, admission refusal attempts, retries, or a periodic tick duration exceeding its configured period. |
+| Green | `ACTIVE` | Completed input callbacks in the recent window or a callback in progress. |
+| Amber | `ATTENTION` | FIFO at least 80% full, admission refusal attempts or retries. |
 | Red | `LOSS/ERROR` | Recent FIFO drops, exhausted/failed deliveries, invalid data, network admission loss or unavailable destinations. |
 | Red | `UNAVAILABLE` / `STALE` | Disconnected component in an activated graph, lost status connection, or running worker metrics older than three seconds. |
-| Cyan | `WAIT INPUT` | Missing required input whose timeout has not expired. |
+| Cyan | `WAIT INPUT` | The runtime explicitly reports pending input waits. V2 callbacks do not wait for a combined input snapshot. |
 | Dim | `STARTING` / `IDLE` | Startup barrier, or no recent processing activity. |
 
 Every state remains readable without color. The default `--color auto` uses ANSI
@@ -58,7 +58,7 @@ queue, timing and measurement snapshots. `presence_age_ms` tracks these lightwei
 reports separately. Logs wake their sender immediately in either mode. Older
 runtimes without demand negotiation retain their original reporting cadence.
 
-The table shows recent input admissions/s, publications/s and completed ticks/s,
+The table shows recent input admissions/s, publications/s and completed input callbacks/s (the `ticks` counter),
 the fullest FIFO's depth/capacity, recent delivery losses, and tick p95 in ms.
 Details show each input and outgoing delivery queue, its capacity, FIFO/latest
 policy, age, counters and the evidence for alerts. Direct delivery queues come
@@ -80,18 +80,22 @@ amber: a wait or retry may subsequently succeed. Replacing the retained `latest`
 value is normal operation and does not trigger saturation/loss alerts. Different
 input/output rates alone do not trigger an alert.
 
-Tick p95 measures wall time driving the component protocol, including IPC and
+Tick p95 measures wall time driving an input callback protocol, including IPC and
 component execution, excluding time the adapter spends publishing and waiting for
-downstream admission. It is **not CPU time**. It covers at most 256 completed
-ticks in the last five seconds; no recent samples means `-`. The detailed `busy`
-duration measures the entire tick currently in progress, including delivery waits.
-Exceeding a configured period is a diagnostic hint; OSE arms the next period
-after tick completion, so it is not a missed-deadline counter.
+downstream admission after `FINISHED`. It is **not CPU time**. It covers at most
+256 completed callbacks in the last five seconds; no recent samples means `-`.
+The detailed `busy` duration measures the callback protocol currently in progress.
+The telemetry field names `ticks`, `tick_p95_ms` and `tick_samples` are retained.
+
+The aggregate p95 combines different activating inputs, so it is not compared
+with any individual timer period. Periodic timers retain their deadline cadence
+and coalesce missed expirations; they do not restart their delay at callback
+completion.
 
 ## Flow metadata and SDL contracts
 
 The `status` response includes observation metadata derived from the compiled
-plan: component triggers, input/output roots, external topics and declared
+plan: input modes, timers, activation permissions, input/output roots, external topics and declared
 subscription endpoints and delivery policies. This lets the Web Console draw
 the application flow without a local model checkout.
 

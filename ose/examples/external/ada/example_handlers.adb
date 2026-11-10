@@ -10,6 +10,10 @@ package body Example_Handlers is
       Result : SDL_measurement.T_Measurement := Message;
    begin
       Result.F_value := Result.F_value * 2.0;
-      Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Messages.Publish (Publisher_Ptr (User).all, Result));
+      if Info.Has_App_Id then
+         Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Messages.Publish (Publisher_Ptr (User).all, Result, Info.App_Id));
+      else
+         Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Messages.Publish (Publisher_Ptr (User).all, Result));
+      end if;
    end Receive;
 end Example_Handlers;

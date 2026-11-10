@@ -26,7 +26,7 @@ def declaration(body):
 
 
 class ComponentRecording:
-    """CH/1 endpoint; callbacks never wait for network/disk when emitting."""
+    """CH/2 recording service; emitting never waits for network or disk."""
     def __init__(self, codec, *, declare=None, active=None, emit=None):
         self.codec, self.on_declare, self.on_active, self.on_emit = codec, declare, active, emit
         self.points = {}
@@ -75,8 +75,10 @@ class RemoteRecording:
     def emit(self, name, desc, payload):
         self.enqueue(dict(op="recording_emit", name=name), payload)
 
-    def emit_input(self, port, desc, envelope, tick_index):
-        self.enqueue(dict(op="recording_input", port=port, sequence=tick_index), envelope)
+    def emit_input(self, port, desc, envelope, tick_index, *, app_id=None):
+        from ose.delivery.messages import validate_app_id
+        extra = {"app_id": validate_app_id(app_id)} if app_id is not None else {}
+        self.enqueue(dict(op="recording_input", port=port, sequence=tick_index, **extra), envelope)
 
     def enqueue(self, header, payload):
         if self.queue.full() or self.bytes + len(payload) > 1024 * 1024:

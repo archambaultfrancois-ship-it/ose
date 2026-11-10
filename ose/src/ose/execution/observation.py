@@ -174,8 +174,8 @@ def describe(plan):
     """Expose scheduling and queue policies, without commands, secrets or schemas."""
     return {
         "version": 1,
-        "components": {name: {"trigger": node.get("trigger", {}), "inputs": {
-            port: {key: desc[key] for key in ("root", "required", "timeout") if key in desc}
+        "components": {name: {"inputs": {
+            port: {key: desc[key] for key in ("root", "timeout", "kind", "mode", "timer", "activates") if key in desc}
             for port, desc in node["inputs"].items()}, "outputs": {
             port: {"root": desc["root"]} for port, desc in node.get("outputs", {}).items()}}
             for name, node in plan["components"].items()},
@@ -202,7 +202,7 @@ def subscription_schema(plan, sub, side="source"):
 
 
 class TickTimings:
-    """Wall time driving CH/1, excluding caller-side publication/delivery waits.
+    """Wall time driving CH/2 callbacks, excluding caller-side delivery waits.
 
     Includes IPC and waiting for the component process; this is not CPU time.
     Percentiles cover at most 256 completed ticks from the last five seconds.
@@ -230,7 +230,7 @@ class TickTimings:
             self.started = None
             await events.aclose()
 
-    def snapshot(self, scheduler):
+    def snapshot(self):
         now = self.clock()
         while self.samples and now - self.samples[0][0] > 5:
             self.samples.popleft()
@@ -238,8 +238,4 @@ class TickTimings:
         return {"tick_p95_ms": values[math.ceil(.95 * len(values)) - 1] if values else None,
                 "tick_samples": len(values), "tick_window_seconds": 5,
                 "busy_ms": (now - self.started) * 1000 if self.started is not None else None,
-                "waiting_inputs": [port for port, desc in scheduler.node["inputs"].items()
-                    if desc.get("required", True) and scheduler.buffers.get(port) is not None
-                    and scheduler.buffers[port].take() is None
-                    and now < scheduler.deadlines.get(port, float("inf"))]
-                    if self.started is None else []}
+                "waiting_inputs": []}

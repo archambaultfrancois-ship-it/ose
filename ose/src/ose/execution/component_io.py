@@ -1,11 +1,11 @@
-"""Synchronous Python SDK matching the C and Rust binary component protocol."""
+"""Shared stdio framing and context services for Python component sessions."""
 import json
 import struct
 import sys
 from enum import Enum
 from ose.recording.component import validate_name, MAX_POINTS, MAX_TICK_BYTES
 from ose.execution.measurements import validate_name as validate_measurement_name, validate_value
-from ose.execution.ipc import MAX_SIZE, TICK_CONTEXT, frame, port_data, unpack_port, tick_context
+from ose.execution.ipc import MAX_SIZE, frame, port_data, unpack_port
 
 
 def read_exact(stream, size):
@@ -24,8 +24,8 @@ class RecordResult(str, Enum):
     DROPPED = "dropped"
 
 
-class ComponentSession:
-    def __init__(self, reader=None, writer=None, *, auto_ready=True, timed_ticks=False):
+class SessionIO:
+    def __init__(self, reader=None, writer=None):
         self.reader = reader or sys.stdin.buffer
         self.writer = writer or sys.stdout.buffer
         op, payload = self.receive()
@@ -49,16 +49,8 @@ class ComponentSession:
         self.recording_points = {}
         self._measurement_names = set()
         self._recording_bytes = 0
-        self._in_tick = False
-        self.timed_ticks = timed_ticks
+        self._in_callback = False
         self.time_ns, self.tick_index = 0, 0
-        if auto_ready:
-            self.ready()
-
-    def ready(self):
-        if not self.is_ready:
-            self.send("R", b"\x03" if self.config.get("parameter_bindings") else (TICK_CONTEXT if self.timed_ticks else b""))
-            self.is_ready = True
 
     def receive(self):
         size = struct.unpack(">I", read_exact(self.reader, 4))[0]
@@ -70,9 +62,6 @@ class ComponentSession:
     def send(self, op, data=b""):
         self.writer.write(frame(op, data))
         self.writer.flush()
-
-    def publish(self, port, payload):
-        self.send("P", port_data(port, payload))
 
     def log(self, level, message, logger=''):
         from ose.execution.logs import log_body
@@ -106,16 +95,16 @@ class ComponentSession:
         self._measurement_names.add(name)
 
     def measure(self, name, value):
-        if not self._in_tick:
-            raise RuntimeError('measurement emission requires an active tick')
+        if not self._in_callback:
+            raise RuntimeError('measurement emission requires an active callback')
         if name not in self._measurement_names:
             raise ValueError('unknown measurement name')
         body = port_data(name, struct.pack('>d', validate_value(value)))
         self.send('V', body)
 
     def record(self, name, payload):
-        if not self._in_tick:
-            raise RuntimeError("recording requires an active tick")
+        if not self._in_callback:
+            raise RuntimeError("recording requires an active callback")
         if not self.recording_enabled(name):
             return RecordResult.DISABLED
         body_size = 2 + len(name.encode()) + len(payload)
@@ -137,38 +126,3 @@ class ComponentSession:
             raise ValueError('invalid parameter write result')
         if result != b'\x01':
             raise ValueError(result[1:].decode() or 'parameter write failed')
-
-    def ticks(self):
-        inputs = {}
-        while True:
-            op, data = self.receive()
-            if op == 'E':
-                active = data.decode().split("\0") if data else []
-                if len(active) != len(set(active)) or set(active) - self.recording_points.keys():
-                    raise ValueError("unknown or duplicate active recording point")
-                self.recording_points.update((name, name in active) for name in self.recording_points)
-            elif op == 'U':
-                alias, catalogue, payload = unpack_port(data, True)
-                binding = self.config.get('parameter_bindings', {}).get(alias)
-                if binding is None or 'read' not in binding['access'] or catalogue != binding['catalogue'] or not payload:
-                    raise ValueError('invalid shared parameter update')
-                self.parameter_values[alias] = (catalogue, payload)
-            elif op == "D":
-                port, catalogue, payload = unpack_port(data, True)
-                if port in inputs:
-                    raise ValueError("duplicate input in tick")
-                inputs[port] = None if not catalogue and not payload else (catalogue, payload)
-            elif op == "T":
-                self.time_ns, self.tick_index = tick_context(data, self.tick_index)
-                self._in_tick = True
-                self._recording_bytes = 0
-                yield inputs
-                self._in_tick = False
-                self.send("F")
-                inputs = {}
-            elif op == "X":
-                if data:
-                    raise ValueError("STOP must be empty")
-                return
-            else:
-                raise ValueError("unexpected adapter event")

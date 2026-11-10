@@ -1,4 +1,5 @@
 #include "ose_component_internal.h"
+#include "ose_inputs.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,18 +19,6 @@ static uint32_t number(const uint8_t *b) {
 }
 static void header(uint8_t *b, uint32_t n) {
     b[0]=(uint8_t)(n>>24); b[1]=(uint8_t)(n>>16); b[2]=(uint8_t)(n>>8); b[3]=(uint8_t)n;
-}
-int ose_ready(void) {
-    const uint8_t capability = 1;
-    return ose_send('R', &capability, 1);
-}
-int ose_tick(const OseEvent *event, uint64_t *time_ns, uint64_t *tick_index) {
-    if (event->op != 'T') return 0;
-    if (!event->size) { *time_ns = 0; ++*tick_index; return 1; }
-    if (event->size != 16) return 0;
-    *time_ns = ((uint64_t)number(event->data) << 32) | number(event->data + 4);
-    *tick_index = ((uint64_t)number(event->data + 8) << 32) | number(event->data + 12);
-    return *tick_index != 0;
 }
 static int read_all(void *data, size_t size) {
     size_t offset=0;
@@ -118,9 +107,6 @@ static int named_send(char op, const char *port, const void *payload, size_t siz
     memcpy(data+2,port,n); memcpy(data+2+n,payload,size);
     ok=ose_send(op,data,2+n+size); free(data); return ok;
 }
-int ose_publish(const char *port, const void *payload, size_t size) {
-    return named_send('P', port, payload, size);
-}
 int ose_record_bytes(const char *name, const void *payload, size_t size) {
     return named_send('C', name, payload, size);
 }
@@ -168,7 +154,7 @@ int ose_input(const OseEvent *event, const uint8_t **port, size_t *port_size,
                 const uint8_t **payload, size_t *payload_size) {
     const uint8_t *data;
     size_t n,c;
-    if ((event->op!='D' && event->op!='U') || event->size<6) return 0;
+    if (event->op!='U' || event->size<6) return 0;
     data=event->data;
     n=((size_t)data[0]<<8)|data[1];
     if (n>event->size-6) return 0;
@@ -177,5 +163,165 @@ int ose_input(const OseEvent *event, const uint8_t **port, size_t *port_size,
     *port=data+2; *port_size=n;
     *catalogue=data+6+n; *catalogue_size=c;
     *payload=data+6+n+c; *payload_size=event->size-6-n-c;
+    return 1;
+}
+
+/* CH/2 wire primitives use the common outer frame and shared services. */
+typedef struct { const uint8_t *data; size_t size, offset; int ok; } InputReader;
+static const uint8_t *input_take(InputReader *r, size_t size) {
+    const uint8_t *p;
+    if (!r->ok || size > r->size - r->offset) { r->ok = 0; return NULL; }
+    p = r->data + r->offset; r->offset += size; return p;
+}
+static uint64_t input_number(InputReader *r, size_t size) {
+    const uint8_t *p = input_take(r, size);
+    uint64_t value = 0;
+    size_t i;
+    if (p) for (i = 0; i < size; ++i) value = (value << 8) | p[i];
+    return value;
+}
+static int input_utf8(const uint8_t *p, size_t size) {
+    size_t i = 0;
+    while (i < size) {
+        uint32_t value = p[i++], minimum;
+        size_t tail;
+        if (!value) return 0; /* C strings cannot represent embedded NUL. */
+        if (value < 128) continue;
+        if (value >= 0xc2 && value <= 0xdf) { tail = 1; minimum = 0x80; value &= 31; }
+        else if (value >= 0xe0 && value <= 0xef) { tail = 2; minimum = 0x800; value &= 15; }
+        else if (value >= 0xf0 && value <= 0xf4) { tail = 3; minimum = 0x10000; value &= 7; }
+        else return 0;
+        if (tail > size - i) return 0;
+        while (tail--) {
+            if ((p[i] & 0xc0) != 0x80) return 0;
+            value = (value << 6) | (p[i++] & 63);
+        }
+        if (value < minimum || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) return 0;
+    }
+    return 1;
+}
+static char *input_text(InputReader *r, int wide, size_t *length) {
+    size_t n = (size_t)input_number(r, wide ? 4 : 2);
+    const uint8_t *p = input_take(r, n);
+    char *copy;
+    if (!p || !n || !input_utf8(p, n)) { r->ok = 0; return NULL; }
+    copy = malloc(n + 1);
+    if (!copy) { r->ok = 0; return NULL; }
+    memcpy(copy, p, n); copy[n] = 0;
+    if (length) *length = n;
+    return copy;
+}
+static int input_id(InputReader *r, uint64_t *value) {
+    unsigned flag = (unsigned)input_number(r, 1);
+    if (flag > 1) r->ok = 0;
+    if (flag == 1) *value = input_number(r, 8);
+    return flag == 1;
+}
+static int input_record(InputReader *r, OseInputRecord *record) {
+    unsigned flag = (unsigned)input_number(r, 1);
+    if (flag > 1) r->ok = 0;
+    record->present = flag == 1;
+    if (record->present) {
+        record->handle = input_text(r, 0, NULL);
+        record->source = input_text(r, 0, NULL);
+        record->has_app_id = input_id(r, &record->app_id);
+        record->received_ns = input_number(r, 8);
+        record->catalogue = input_text(r, 1, &record->catalogue_size);
+        record->envelope_size = r->size - r->offset;
+        record->envelope = input_take(r, record->envelope_size);
+        if (!record->envelope_size) r->ok = 0;
+    }
+    return r->ok && r->offset == r->size;
+}
+int ose_inputs_record(const void *data, size_t size, OseInputRecord *record) {
+    InputReader r = {data, size, 0, data != NULL && size < MAX_SIZE};
+    return input_record(&r, record);
+}
+void ose_inputs_record_release(OseInputRecord *record) {
+    free(record->handle); free(record->source); free(record->catalogue);
+    memset(record, 0, sizeof(*record));
+}
+int ose_inputs_activation(const OseEvent *event, OseActivation *activation) {
+    InputReader r = {event->data, event->size, 0,
+        event->op == 'T' && event->data != NULL && event->size < MAX_SIZE};
+    activation->time_ns = input_number(&r, 8);
+    activation->index = input_number(&r, 8);
+    activation->due_ns = input_number(&r, 8);
+    activation->elapsed = input_number(&r, 8);
+    activation->event = (OseInputEvent)input_number(&r, 1);
+    activation->port = input_text(&r, 0, NULL);
+    return input_record(&r, &activation->record) && activation->index && activation->elapsed &&
+        activation->due_ns <= activation->time_ns &&
+        ((activation->event == OSE_INPUT_MESSAGE && activation->record.present && activation->elapsed == 1 &&
+          activation->record.received_ns <= activation->time_ns) ||
+         (activation->event == OSE_INPUT_TIMEOUT && !activation->record.present));
+}
+void ose_inputs_activation_release(OseActivation *activation) {
+    free(activation->port); ose_inputs_record_release(&activation->record);
+    memset(activation, 0, sizeof(*activation));
+}
+static void input_u64(uint8_t *data, uint64_t value) {
+    size_t i;
+    for (i = 0; i < 8; ++i) data[i] = (uint8_t)(value >> (56 - 8 * i));
+}
+static int input_string_size(const char *text, size_t *size) {
+    if (!text || !(*size = strlen(text)) || *size > 65535) return 0;
+    return input_utf8((const uint8_t *)text, *size);
+}
+static size_t input_put_text(uint8_t *data, const char *text, size_t n) {
+    data[0] = (uint8_t)(n >> 8); data[1] = (uint8_t)n;
+    memcpy(data + 2, text, n); return n + 2;
+}
+int ose_inputs_publish(const char *port, const void *payload, size_t size, const uint64_t *app_id) {
+    size_t n, offset, overhead;
+    uint8_t *data;
+    int ok;
+    if (!input_string_size(port, &n) || !payload || !size) return 0;
+    overhead = n + 3 + (app_id ? 8 : 0);
+    if (size >= MAX_SIZE - overhead) return 0;
+    data = malloc(overhead + size);
+    if (!data) return 0;
+    offset = input_put_text(data, port, n); data[offset++] = app_id != NULL;
+    if (app_id) { input_u64(data + offset, *app_id); offset += 8; }
+    memcpy(data + offset, payload, size);
+    ok = ose_send('P', data, overhead + size); free(data); return ok;
+}
+int ose_inputs_request(unsigned operation, const char *port, const OseSelector *selector,
+                       const uint64_t *delay_ns, OseEvent *reply) {
+    size_t n, h = 0, s = 0, offset, size;
+    uint8_t *data;
+    unsigned flags = 0;
+    int ok;
+    if (operation < 1 || operation > 5 || !input_string_size(port, &n)) return 0;
+    if (operation <= 3) {
+        if (delay_ns) return 0;
+        if (selector) {
+            if (selector->has_app_id != 0 && selector->has_app_id != 1) return 0;
+            flags = selector->has_app_id ? 1 : 0;
+            if (selector->handle) { if (!input_string_size(selector->handle, &h)) return 0; flags |= 2; }
+            if (selector->source) { if (!input_string_size(selector->source, &s)) return 0; flags |= 4; }
+        }
+    } else if (selector || (operation == 5 && delay_ns) || (delay_ns && !*delay_ns)) return 0;
+    size = 3 + n + (operation <= 3 ? 1 + (flags & 1 ? 8 : 0) + (h ? h + 2 : 0) + (s ? s + 2 : 0)
+                              : operation == 4 ? 1 + (delay_ns ? 8 : 0) : 0);
+    data = malloc(size);
+    if (!data) return 0;
+    data[0] = (uint8_t)operation; offset = 1 + input_put_text(data + 1, port, n);
+    if (operation <= 3) {
+        data[offset++] = (uint8_t)flags;
+        if (flags & 1) { input_u64(data + offset, selector->app_id); offset += 8; }
+        if (h) offset += input_put_text(data + offset, selector->handle, h);
+        if (s) offset += input_put_text(data + offset, selector->source, s);
+    } else if (operation == 4) {
+        data[offset++] = delay_ns != NULL;
+        if (delay_ns) input_u64(data + offset, *delay_ns);
+    }
+    ok = ose_send('Q', data, size); free(data);
+    if (!ok || !ose_read(reply)) return 0;
+    if (reply->op != 'A' || !reply->size || reply->data[0] != 1) {
+        if (reply->op == 'A' && reply->size > 1 && reply->size <= 4097 && reply->data[0] == 0)
+            fprintf(stderr, "input operation: %.*s\n", (int)(reply->size - 1), (const char *)reply->data + 1);
+        return 0;
+    }
     return 1;
 }

@@ -67,7 +67,7 @@ class Subscription:
             # A FIFO record remains reserved and counted until its callback completes.
             if self.policy.buffer == "fifo":
                 self.buffer.reserved.add(record["id"])
-            info = MessageInfo(record["id"], record["topic"], record["epoch"], record["sequence"])
+            info = MessageInfo(record["id"], record["topic"], record["epoch"], record["sequence"], record.get("app_id"))
             try:
                 await asyncio.get_running_loop().run_in_executor(self.executor, self.callback, record["body"], info)
             except Exception as error:

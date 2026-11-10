@@ -19,7 +19,7 @@ tick_recorded = False
 def write(stage):
     Path('python-' + stage + '.txt').write_text(str(Path.cwd()))
 def on_start(ctx): write('start')
-def on_tick(ctx):
+def on_clock(ctx, input):
     global tick_recorded
     if not tick_recorded:
         write('tick')
@@ -38,14 +38,15 @@ static int write_path(const char *name) {
     return fclose(file) == 0 && ok;
 }
 static int start(OseContext *ctx) { (void)ctx; return write_path("c-start.txt"); }
-static int tick(OseContext *ctx) {
+static int on_clock(OseContext *ctx, const Input_clock *input) {
+    (void)input;
     static int recorded = 0;
     (void)ctx;
     if (!recorded) recorded = write_path("c-tick.txt");
     return recorded;
 }
 static int stop(OseContext *ctx) { (void)ctx; return write_path("c-stop.txt"); }
-const ComponentCallbacks component_callbacks = { .on_start=start, .on_tick=tick, .on_stop=stop };
+const ComponentCallbacks component_callbacks = { .on_start=start, .on_clock=on_clock, .on_stop=stop };
 '''
 
 
@@ -61,8 +62,8 @@ class ApplicationDirectoryTests(unittest.TestCase):
         (cls.project / 'empty.sdl').write_text('message Empty {}')
         (cls.project / 'source.py').write_text(PYTHON_SOURCE)
         (cls.project / 'source.c').write_text(C_SOURCE)
-        model = dict(version=1, schemas='empty.sdl', subscriptions=[], components={
-            language: dict(inputs={}, outputs={}, trigger=dict(mode='periodic', period_ms=10))
+        model = dict(version=2, schemas='empty.sdl', subscriptions=[], components={
+            language: dict(inputs={'clock': dict(kind='timer', timer=dict(mode='periodic', delay=.01))}, outputs={})
             for language in ('python', 'c')})
         deployment = dict(version=1, components={language: dict(container=dict(language=language,
             handler='source.' + ('py' if language == 'python' else 'c'))) for language in model['components']})

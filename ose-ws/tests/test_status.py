@@ -10,9 +10,11 @@ from ose_ws.services.status import StatusCollector
 class FlowStatusTests(unittest.TestCase):
     def test_model_metadata_preserves_external_and_direct_links_without_secrets(self):
         plan = {"components": {
-            "source": {"inputs": {}, "outputs": {"value": {"root": "Value", "catalogue": "secret"}},
-                       "trigger": {"mode": "periodic", "period_ms": 100}, "env": {"TOKEN": "secret"}},
-            "sink": {"inputs": {"input": {"root": "Value", "required": False, "timeout": 1}}, "outputs": {}},
+            "source": {"inputs": {"clock": {"kind": "timer", "timer": {"mode": "periodic", "delay": .1},
+                        "activates": {"timeout": ["value"]}}},
+                       "outputs": {"value": {"root": "Value", "catalogue": "secret"}}, "env": {"TOKEN": "secret"}},
+            "sink": {"inputs": {"input": {"root": "Value", "mode": "push", "timeout": 1},
+                                "offset": {"root": "Value", "mode": "pull"}}, "outputs": {}},
             "isolated": {"inputs": {}, "outputs": {}}},
             "external_topics": {"source.offset": {"root": "Value", "catalogue": "secret"}},
             "subscriptions": [
@@ -31,6 +33,8 @@ class FlowStatusTests(unittest.TestCase):
         collector.report = {"components": []}
         topology = collector.diagnostics()["topology"]
         self.assertEqual(len(topology["components"]), 3)
+        self.assertEqual(topology["components"]["source"]["inputs"]["clock"], plan["components"]["source"]["inputs"]["clock"])
+        self.assertEqual(topology["components"]["sink"]["inputs"]["offset"]["mode"], "pull")
         self.assertEqual(topology["subscriptions"]["offset"]["from_topic"], "source.offset")
         self.assertEqual(topology["subscriptions"]["direct"]["routing"], "direct")
         # A connection failure retains the topology and explicitly marks the report.
@@ -49,5 +53,6 @@ class FlowStatusTests(unittest.TestCase):
             "subscriptions": {"external": {"from": "offset", "to": "sink.offset", "policy": {}}}}}
         topology = collector.diagnostics()["topology"]
         self.assertNotIn("connected", topology["components"]["sink"])
+        self.assertNotIn("trigger", topology["components"]["sink"])
         self.assertEqual(topology["external_topics"], {})
         self.assertEqual(topology["subscriptions"]["external"]["from"], "offset")

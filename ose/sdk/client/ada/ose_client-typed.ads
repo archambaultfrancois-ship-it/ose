@@ -8,6 +8,7 @@ package Ose_Client.Typed is
    type Publisher is new Ada.Finalization.Limited_Controlled with private;
    procedure Open (Self : in out Publisher; Owner : Client; Topic : String);
    function Publish (Self : Publisher; Message : Message_Type) return String;
+   function Publish (Self : Publisher; Message : Message_Type; Id : Interfaces.Unsigned_64) return String;
    procedure Close (Self : in out Publisher);
    overriding procedure Finalize (Self : in out Publisher);
    type On_Message is access procedure (Message : Message_Type; Info : Message_Info; User : System.Address);

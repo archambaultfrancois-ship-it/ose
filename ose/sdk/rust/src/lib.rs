@@ -1,8 +1,8 @@
 //! Binary stdio component SDK. No transport or codec dependencies.
 use std::io::{self, Read, Write};
+pub mod inputs;
 
 pub const MAX_SIZE: usize = 1024 * 1024;
-pub const TICK_CONTEXT: &[u8] = &[1];
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum LogLevel { Debug=10, Info=20, Warning=30, Error=40, Critical=50, Fatal=60 }
@@ -49,7 +49,7 @@ impl std::fmt::Write for LogText {
         Ok(())
     }
 }
-/// Deposit a log in the CH/1 stream; delivery and retention are best effort.
+/// Deposit a log in the component stream; delivery and retention are best effort.
 /// Use format_args! for compile-time checking of the template and argument types.
 /// For preformatted text, pass format_args!("{}", message).
 /// ```compile_fail
@@ -62,24 +62,11 @@ pub fn logf(level: LogLevel, logger: &str, arguments: std::fmt::Arguments<'_>) -
     deposit_log(level, logger, &message.finish())
 }
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+/// Time and activation counter populated from a CH/2 reference by the wrapper.
 pub struct TickContext { pub time_ns: u64, pub tick_index: u64 }
-pub fn tick(event: &Event, previous_index: u64) -> io::Result<TickContext> {
-    if event.op != b'T' { return Err(invalid("expected tick")); }
-    if event.data.is_empty() {
-        return Ok(TickContext { time_ns: 0, tick_index: previous_index + 1 });
-    }
-    if event.data.len() != 16 { return Err(invalid("invalid tick context")); }
-    let time_ns = u64::from_be_bytes(event.data[..8].try_into().unwrap());
-    let tick_index = u64::from_be_bytes(event.data[8..].try_into().unwrap());
-    if tick_index == 0 { return Err(invalid("tick index must be positive")); }
-    Ok(TickContext { time_ns, tick_index })
-}
 pub struct Event { pub op: u8, pub data: Vec<u8> }
+/// Borrowed shared-parameter update; business messages use inputs::Record.
 pub struct Input<'a> { pub port: &'a str, pub catalogue: &'a str, pub payload: &'a [u8] }
-impl Input<'_> {
-    /// Explicit null input from the adapter, allowed only on a required timed input.
-    pub fn is_null(&self) -> bool { self.catalogue.is_empty() && self.payload.is_empty() }
-}
 
 pub fn receive() -> io::Result<Event> {
     let mut reader = io::stdin().lock();
@@ -115,7 +102,6 @@ fn named_send(op: u8, port: &str, payload: &[u8]) -> io::Result<()> {
     data.extend_from_slice(port.as_bytes()); data.extend_from_slice(payload);
     send(op, &data)
 }
-pub fn publish(port: &str, payload: &[u8]) -> io::Result<()> { named_send(b'P', port, payload) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecordResult { Queued, Disabled, Dropped }
 pub fn valid_recording_name(name: &str) -> bool {
@@ -150,9 +136,10 @@ pub fn set_parameters(name: &str, payload: &[u8]) -> io::Result<()> {
     }
     Err(invalid("invalid parameter write result"))
 }
+/// Decode a U shared-parameter update, excluding legacy D message frames.
 pub fn input(event: &Event) -> io::Result<Input<'_>> {
     let d = &event.data;
-    if !matches!(event.op, b'D' | b'U') || d.len() < 6 { return Err(invalid("expected input")); }
+    if event.op != b'U' || d.len() < 6 { return Err(invalid("expected parameter update")); }
     let n = u16::from_be_bytes([d[0],d[1]]) as usize;
     if n > d.len()-6 { return Err(invalid("truncated port")); }
     let c = u32::from_be_bytes(d[2+n..6+n].try_into().unwrap()) as usize;
@@ -160,12 +147,6 @@ pub fn input(event: &Event) -> io::Result<Input<'_>> {
     Ok(Input { port: std::str::from_utf8(&d[2..2+n]).map_err(|_| invalid("port UTF8"))?,
         catalogue: std::str::from_utf8(&d[6+n..6+n+c]).map_err(|_| invalid("catalogue UTF8"))?,
         payload: &d[6+n+c..] })
-}
-pub fn initialize() -> io::Result<Vec<u8>> {
-    let event = receive()?;
-    if event.op != b'I' { return Err(invalid("expected initialization")); }
-    send(b'R', &[])?;
-    Ok(event.data)
 }
 fn invalid(text: &str) -> io::Error { io::Error::new(io::ErrorKind::InvalidData, text) }
 
@@ -190,18 +171,13 @@ mod tests {
         assert!(bounded.finish().ends_with(LOG_TRUNCATION));
     }
     #[test]
-    fn timestamped_ticks_and_legacy_frames() {
-        assert_eq!(tick(&Event { op: b'T', data: vec![] }, 2).unwrap(), TickContext { time_ns: 0, tick_index: 3 });
-        let data = [123456789_u64.to_be_bytes(), 4_u64.to_be_bytes()].concat();
-        assert_eq!(tick(&Event { op: b'T', data }, 0).unwrap(), TickContext { time_ns: 123456789, tick_index: 4 });
-        for size in [1, 15, 17] {
-            assert!(tick(&Event { op: b'T', data: vec![0; size] }, 0).is_err());
-        }
-        assert!(tick(&Event { op: b'T', data: vec![0; 16] }, 0).is_err());
-    }
-    #[test]
-    fn truncated_inputs_are_rejected() {
-        for n in 0..6 { assert!(input(&Event {op:b'D',data:vec![0;n]}).is_err()); }
-        assert!(input(&Event {op:b'D',data:vec![255;6]}).is_err());
+    fn parameter_updates_reject_truncations_and_legacy_message_frames() {
+        let data = [vec![0, 5], b"value".to_vec(), 3_u32.to_be_bytes().to_vec(), b"cat".to_vec(), vec![1, 2]].concat();
+        let update = Event { op: b'U', data: data.clone() };
+        let value = input(&update).unwrap();
+        assert_eq!((value.port, value.catalogue, value.payload), ("value", "cat", &[1, 2][..]));
+        assert!(input(&Event { op: b'D', data }).is_err());
+        for n in 0..6 { assert!(input(&Event {op:b'U',data:vec![0;n]}).is_err()); }
+        assert!(input(&Event {op:b'U',data:vec![255;6]}).is_err());
     }
 }

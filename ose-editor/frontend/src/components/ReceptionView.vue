@@ -9,7 +9,7 @@ const model = computed(() => store.project?.documents?.[store.project.model]?.va
 const target = computed(() => {
   const selection = store.selection, path = selection?.path || []
   if (selection?.file !== store.project?.model) return ''
-  if (path[0] === 'components' && path[2] === 'inputs' && path.length === 4) return path[1] + '.' + path[3]
+  if (path[0] === 'components' && path[2] === 'inputs' && path.length === 4 && model.value?.components?.[path[1]]?.inputs?.[path[3]]?.kind !== 'timer') return path[1] + '.' + path[3]
   if (path[0] === 'subscriptions' && path.length >= 2) return model.value?.subscriptions?.[Number(path[1])]?.to || ''
   return ''
 })

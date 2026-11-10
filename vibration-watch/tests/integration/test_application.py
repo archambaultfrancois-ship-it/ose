@@ -21,7 +21,8 @@ class ApplicationTests(unittest.TestCase):
     def test_normal_and_increasing_profiles_and_deterministic_simulation(self):
         expected = json.loads((ROOT / "tests/fixtures/expected.json").read_text())
         normal = observations(invoke("simulate", "--scenario", "normal", "--duration", "2", "--workers", "1").stderr)
-        self.assertEqual(len(normal), 40)
+        self.assertEqual(len(normal), 2 * expected["observations_per_machine"])
+        self.assertEqual(min(event["time_ns"] for event in normal), 100_000_000)
         self.assertTrue(all(event["state"] == 0 for event in normal))
         # The prepared/generated plan must retain the observer's distinct contract.
         plan = json.loads((ROOT / "build/plan.json").read_text())
@@ -38,7 +39,7 @@ class ApplicationTests(unittest.TestCase):
         parallel = invoke("simulate", "--duration", "2", "--workers", "4")
         self.assertEqual(trace, (ROOT / "build/simulation.jsonl").read_bytes())
         rows = observations(parallel.stderr)
-        self.assertEqual(len(rows), 40)
+        self.assertEqual(len(rows), 2 * expected["observations_per_machine"])
         motor_1 = [row for row in rows if row["machine_id"] == 1]
         self.assertEqual(motor_1[0]["state"], 0)
         self.assertEqual(motor_1[-1]["state"], 1)

@@ -121,7 +121,7 @@ impl ParameterClient {
             let mut size = [0; 4];
             connection.stream.read_exact(&mut size)?;
             let size = u32::from_be_bytes(size) as usize;
-            if !(7..=1024 * 1024).contains(&size) {
+            if !(crate::PREFIX_SIZE..=1024 * 1024).contains(&size) {
                 return Err(Error::new("protocol", "invalid parameter frame length"));
             }
             let mut bytes = vec![0; size];

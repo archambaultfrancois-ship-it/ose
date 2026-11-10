@@ -21,9 +21,10 @@ from ose.delivery.buffers import Buffer, input_buffers
 from ose.delivery.engine import DeliveryEngine
 from ose.delivery.policies import SubscriptionPolicy
 from ose.delivery.stores import MemoryStore
+from ose.delivery.messages import validate_app_id
 from ose.execution.leadership import lease_clock
-from ose.execution.process import start_component, stop_component, tick_events
-from ose.execution.scheduler import Scheduler, reserve_snapshot
+from ose.execution.process import start_component, stop_component, input_events
+from ose.execution.plan import require_v2, read_plan
 from ose.execution.observation import TickTimings, describe, ReportSchedule, ObservationDemand, subscription_schema
 from ose.transport.protocol import encode
 from ose.transport.secure import RPCServer, connect, finish_cleanup, identity, loopback
@@ -34,8 +35,9 @@ from ose.execution.logs import LogStore, ComponentLogs
 
 
 def fingerprint(plan):
-    logical = {"components": {name: {key: node.get(key) for key in
-                ("inputs", "outputs", "trigger", "parameters", "env")} for name, node in plan["components"].items()},
+    logical = {"version": plan["version"],
+               "components": {name: {key: node.get(key) for key in
+                ("inputs", "outputs", "parameters", "env", "execution_model")} for name, node in plan["components"].items()},
                "subscriptions": plan["subscriptions"], "max_frame": plan["max_frame"],
                "external_topics": plan.get("external_topics", {}),
                "external_limits": plan.get("broker", {}).get("external", {}),
@@ -46,6 +48,7 @@ def fingerprint(plan):
 
 
 def check_plan(plan):
+    require_v2(plan)
     if plan.get("execution") != "distributed":
         raise ValueError("use a deployment with execution=distributed")
     if set(plan["components"]) & {"coordinator", "replay"}:
@@ -57,6 +60,11 @@ def check_plan(plan):
             raise ValueError("routing must be broker or direct")
         if "from_topic" in sub and sub.get("routing", "broker") != "broker":
             raise ValueError("external inputs require broker routing")
+
+
+def application_id(metadata):
+    """Preserve absence separately from zero, without changing transport identities."""
+    return {"app_id": validate_app_id(metadata["app_id"])} if "app_id" in metadata else {}
 
 
 async def admit(buffer, record, valid=lambda: None):
@@ -246,13 +254,14 @@ class Coordinator:
         if not self.activated:
             raise ValueError("graph is not activated")
         desc = self.plan["external_topics"][topic]
+        extra = application_id(header)
         self.codec.validate_only(desc["catalogue"], desc["root"], body)
         session["sequence"] += 1
         sequence, token = session["sequence"], session["token"]
         self.recording.observe(topic, body, generation=token, sequence=sequence,
-                               catalogue=desc["catalogue"], root=desc["root"])
+                               catalogue=desc["catalogue"], root=desc["root"], **extra)
         record = dict(id=f"{token}:{sequence}", epoch=self.epoch, sequence=sequence,
-                      source_token=token, source=topic, body=body, topic=topic)
+                      source_token=token, source=topic, body=body, topic=topic, **extra)
         result = await self.publish_record(record)
         self.metrics["external_publications"] += 1
         return result, None
@@ -266,7 +275,7 @@ class Coordinator:
                 target = self.current(sub["to"].split(".")[0], ready=True)
             except ValueError:
                 return key, "unavailable"
-            metadata = {k: record[k] for k in ("id", "epoch", "sequence", "source_token", "source", "topic")}
+            metadata = {k: record[k] for k in ("id", "epoch", "sequence", "source_token", "source", "topic", "app_id") if k in record}
             try:
                 encode({"op": "result", "request": 2**63 - 1, "record": metadata}, record["body"], self.plan["max_frame"])
             except ValueError:
@@ -412,7 +421,7 @@ class Coordinator:
             if type(sequence) is not int or sequence < 1:
                 raise ValueError("invalid publication sequence")
             record = dict(id=f"{session['token']}:{sequence}", epoch=self.epoch, sequence=sequence,
-                          source_token=session["token"], source=name, body=body, topic=topic)
+                          source_token=session["token"], source=name, body=body, topic=topic, **application_id(header))
             return await self.publish_record(record), None
         if op in ("poll", "ack"):
             key = header["subscription"]
@@ -436,7 +445,7 @@ class Coordinator:
                         continue
                     delivery.sent(record["id"])
                     return {"record": {key: value for key, value in record.items()
-                                       if key in ("id", "epoch", "sequence", "source_token", "source", "topic")}}, record["body"]
+                                       if key in ("id", "epoch", "sequence", "source_token", "source", "topic", "app_id")}}, record["body"]
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return {"empty": True}, None
@@ -500,7 +509,16 @@ class Worker:
         self.engines = {key: engine(sub) for key, sub in self.outgoing.items()}
         for delivery in self.engines.values():
             delivery.store.on_change = self.reports.mark
-        self.scheduler = Scheduler(self.node, self.buffers)
+        from ose.execution.activation import InputScheduler
+        from ose.execution.input_ipc import InputServices
+        for port, desc in self.node["inputs"].items():
+            if desc.get("kind") != "timer" and port not in self.buffers:
+                buffer = Buffer(SubscriptionPolicy(), MemoryStore())
+                buffer.store.on_change = self._changed
+                self.buffers[port] = buffer
+        self.scheduler = InputScheduler(self.node, self.buffers)
+        self.scheduler.start()
+        self.input_services = InputServices(self.scheduler, self._input_now, on_change=self._changed)
         self.timings = TickTimings()
         self.recording = TapHub(self.recording_points, plan["max_frame"], codec=self.codec)
         self.input_recording = InputRecording(self.codec, self.node,
@@ -522,6 +540,9 @@ class Worker:
         self.activity.set()
         self.reports.mark()
 
+    def _input_now(self):
+        return time.monotonic_ns() - self.started_at if self.started_at else 0
+
     def recording_points(self):
         points = {f"{self.name}.{port}": dict(topic=f"{self.name}.{port}", root=desc["root"], catalogue=desc["catalogue"], kind="output",
                     generation=getattr(self, "token", None), available=self.started.is_set(), endpoint=None)
@@ -533,9 +554,9 @@ class Worker:
                 generation=getattr(self, "token", None), available=self.started.is_set(), endpoint=None)
         return points
 
-    def _emit_input(self, port, desc, envelope, tick_index):
+    def _emit_input(self, port, desc, envelope, tick_index, *, app_id=None):
         self.recording.observe(input_key(self.plan, self.name, port), envelope,
-            generation=self.token, sequence=tick_index, catalogue=desc["catalogue"], root=desc["root"])
+            generation=self.token, sequence=tick_index, catalogue=desc["catalogue"], root=desc["root"], app_id=app_id)
 
     def _active_inputs(self):
         if not self.recording.sessions:
@@ -581,7 +602,8 @@ class Worker:
             self.parameters = await RemoteBindings(self.node, self.control, self.activity).open()
             if self.parameters.task:
                 tasks.append(self.parameters.task)
-            initialization = asyncio.create_task(start_component(self.node, self.parameters, self.internal_recording, self.component_logs))
+            initialization = asyncio.create_task(start_component(self.node, self.parameters, self.internal_recording, self.component_logs,
+                inputs=self.input_services))
             tasks.append(initialization)
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             if initialization not in done:
@@ -590,11 +612,9 @@ class Worker:
                 for task in done:
                     task.result()
                 raise RuntimeError("control connection failed during initialization")
-            self.process, self.timed_ticks = initialization.result()
+            self.process = initialization.result()
             self.process.measurements.on_change = self.reports.mark
             tasks.remove(initialization)
-            if not self.timed_ticks:
-                raise ValueError("distributed components require timestamped ticks; regenerate containers")
             self.directory, _ = await self.control("ready")
             self.reports.configure(self.directory.get('reporting'))
             self.started.set()
@@ -677,7 +697,7 @@ class Worker:
         process = getattr(self, 'process', None)
         metrics = ({**self.metrics, 'running': bool(self.started_at),
             'process': describe('w', self.plan, self.name, process),
-            **self.timings.snapshot(self.scheduler),
+            **self.timings.snapshot(),
             'inputs': {key: value.snapshot() for key, value in self.buffers.items()},
             'direct': {key: value.snapshot() for key, value in self.engines.items()},
             'measurements': process.measurements.snapshot() if process is not None else {}} if full else
@@ -712,6 +732,7 @@ class Worker:
         if header.get("target_token") != self.token:
             raise ValueError("obsolete target generation")
         record = {key: header[key] for key in ("id", "epoch", "sequence", "source_token", "source", "topic")}
+        record.update(application_id(header))
         result = await self._admit(key, record, body)
         self.metrics["direct_bytes_received"] += len(body)
         return {"admission": result}, None
@@ -730,7 +751,10 @@ class Worker:
             desc = self.plan["components"][source_name]["outputs"][source_port]
         port = sub["to"].split(".")[1]
         self.codec.validate_only(desc["catalogue"], desc["root"], body)
-        value = dict(record, body=body, payload=body[self.codec.api.ENVELOPE_HEADER_SIZE:], catalogue=desc["catalogue"])
+        value = dict(record, body=body, payload=body[self.codec.api.ENVELOPE_HEADER_SIZE:], catalogue=desc["catalogue"],
+                     **application_id(record))
+        from ose.execution.input_ipc import check_record_size
+        check_record_size(port, value)
         # Latest sequence numbers belong to a source generation, not a whole run.
         value["epoch"] = record["source_token"]
         buffer = self.buffers[port]
@@ -739,7 +763,8 @@ class Worker:
             while True:
                 buffer.store.changed.clear()
                 await self.control("authorize", subscription=key, source_token=record["source_token"])
-                result = buffer.admit(value)
+                result = self.scheduler.admit(port, value, self._input_now())
+                self._changed()
                 if result != "full" or buffer.policy.overflow != "wait" or time.monotonic() >= deadline:
                     return result
                 try:
@@ -770,43 +795,62 @@ class Worker:
                 await self.activity.wait()
         if self.closing:
             return
-        self.scheduler.start()
         self.started_at = time.monotonic_ns()
+        await self._input_work()
+
+    async def _input_work(self):
         while not self.closing:
             self.activity.clear()
             if hasattr(self, "parameters"):
                 await updates(self.process, self.node, self.parameters.drain())
-            selected = self.scheduler.select()
-            if selected is None:
+            now = self._input_now()
+            reference = self.scheduler.select(now)
+            if reference is None:
+                deadline = self.scheduler.next_event(now)
+                timeout = max(0, (deadline - now) / 1e9) if deadline is not None else None
                 try:
-                    await asyncio.wait_for(self.activity.wait(), self.scheduler.wait_timeout())
+                    await asyncio.wait_for(self.activity.wait(), timeout)
                 except asyncio.TimeoutError:
                     pass
                 continue
-            reserve_snapshot(self.buffers, selected)
-            self.reports.mark()
             self.metrics["ticks"] += 1
-            self.input_recording.observe(selected, self.metrics["ticks"])
-            async for port, payload in self.timings.events(tick_events(self.process, self.node, selected,
-                    time.monotonic_ns() - self.started_at, self.metrics["ticks"], **({"parameters": self.parameters} if self.node.get("parameter_bindings") else {}))):
-                desc = self.node["outputs"][port]
-                await self.publish(f"{self.name}.{port}", self.codec.wrap(desc["catalogue"], payload))
-            self.scheduler.complete(selected)
+            self.reports.mark()
+            self.input_recording.observe({reference.port: reference.record}, self.metrics["ticks"])
+            outputs, size, success = [], 0, False
+            try:
+                async for port, payload, app_id in self.timings.events(input_events(
+                        self.process, self.node, reference, self.metrics["ticks"], self.input_services,
+                        **({"parameters": self.parameters} if self.node.get("parameter_bindings") else {}))):
+                    size += len(payload) + len(port.encode()) + 12
+                    if size > 16 * 1024 * 1024:
+                        raise ValueError("callback outputs exceed 16 MiB")
+                    desc = self.node["outputs"][port]
+                    envelope = self.codec.wrap(desc["catalogue"], payload)
+                    self.codec.validate_only(desc["catalogue"], desc["root"], envelope)
+                    outputs.append((port, envelope, app_id))
+                success = True
+            finally:
+                self.scheduler.complete(reference, self._input_now(), success=success)
+            # Commit withdrawals before outbound admission waits, as in local
+            # execution. A failed/missing FINISHED publishes no staged output.
+            for port, envelope, app_id in outputs:
+                await self.publish(f"{self.name}.{port}", envelope, app_id=app_id)
             self.metrics["completed_ticks"] += 1
             self.reports.mark()
 
-    async def publish(self, topic, body):
+    async def publish(self, topic, body, *, app_id=None):
+        extra = {"app_id": validate_app_id(app_id)} if app_id is not None else {}
         self.sequence += 1
         if self.recording.sessions:
             desc = self.node["outputs"][topic.split(".")[1]]
             self.recording.observe(topic, body, generation=self.token, sequence=self.sequence,
-                                   catalogue=desc["catalogue"], root=desc["root"])
+                                   catalogue=desc["catalogue"], root=desc["root"], **extra)
         record = dict(id=f"{self.token}:{self.sequence}", epoch=self.epoch, sequence=self.sequence,
-                      source_token=self.token, source=self.name, body=body, topic=topic)
+                      source_token=self.token, source=self.name, body=body, topic=topic, **extra)
         broker = any(s["from"] == topic and s.get("routing", "broker") == "broker"
                      for s in self.subscriptions.values())
         if broker:
-            result, _ = await self.control("publish", body, topic=topic, sequence=self.sequence)
+            result, _ = await self.control("publish", body, topic=topic, sequence=self.sequence, **extra)
             self.metrics["refused"] += sum(v not in ("accepted", "stale") for v in result["delivery"].values())
         for key, sub in self.outgoing.items():
             if sub["from"] != topic:
@@ -825,7 +869,7 @@ class Worker:
 
     def _header(self, key, record):
         return {"op": "deliver", "request": 1, "subscription": key,
-                **{key: record[key] for key in ("id", "epoch", "sequence", "source_token", "target_token", "source", "topic")}}
+                **{key: record[key] for key in ("id", "epoch", "sequence", "source_token", "target_token", "source", "topic", "app_id") if key in record}}
 
     async def _send(self, key):
         sub, delivery = self.outgoing[key], self.engines[key]
@@ -872,7 +916,7 @@ class Worker:
 
 async def serve(plan_path, host, port, server_context=None, lease_seconds=6, kubernetes_lease=None, namespace="default"):
     from ose.execution.identity import identify
-    plan = json.loads(Path(plan_path).read_text())
+    plan = read_plan(plan_path)
     identify("coord", plan)
     from ose.execution.leadership import KubernetesLease
     leader = KubernetesLease(kubernetes_lease, namespace) if kubernetes_lease else None
@@ -913,7 +957,7 @@ async def serve(plan_path, host, port, server_context=None, lease_seconds=6, kub
 
 
 async def work(plan_path, name, host, port, **kwargs):
-    plan = json.loads(Path(plan_path).read_text())
+    plan = read_plan(plan_path)
     from ose.execution.identity import identify
     identify("w", plan, name)
     check_plan(plan)

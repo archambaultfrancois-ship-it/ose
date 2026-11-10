@@ -11,6 +11,14 @@ Distributed mixed routing sends the 64 KiB signals directly between adapters;
 analysis and alarm events use the distributed coordinator's broker queues.
 Business callbacks and generated typed APIs are identical for both paths.
 
+The application uses OSE model v2. Each sensor has an explicit 100 ms timer input;
+analyzers, alarm inputs and the observer each receive one activating message
+reference. Only the declared input-event/output links permit publication.
+Deployments, scenarios and configuration files retain version 1. In simulation,
+the first signal is generated at 100 ms; a two-second run excludes the endpoint
+and contains 19 blocks per machine. The increasing profile first alarms at
+sequence 11 (1.1 seconds), with nine alarms before 2 seconds.
+
 The `events` link illustrates compatible SDL contract evolution: the alarm adds
 the optional string `source_note` (ID 7) to the logical message `Alarm`. The
 observer's separate input schema keeps fields 1–6; SDL skips the additional

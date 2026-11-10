@@ -66,7 +66,9 @@ def render(report, selected=0, details=False, frozen=False, color=False, width=1
         row = rows[selected]
         if details:
             lines.append(f"Details: {safe_text(row['name'])} | report age {number(row['report_age_ms'])} ms | busy {number(row['busy_ms'])} ms")
-            lines.append("  Trigger: " + safe_text(row["trigger"]) + "; waiting inputs: " + safe_text(", ".join(row["waiting_inputs"]) or "none"))
+            inputs = ", ".join(f"{name} ({desc.get('kind') if desc.get('kind') == 'timer' else desc.get('mode', 'push')})"
+                               for name, desc in row["inputs"].items())
+            lines.append("  Inputs: " + safe_text(inputs or "none") + "; waiting inputs: " + safe_text(", ".join(row["waiting_inputs"]) or "none"))
             for queue in row["queues"]:
                 policy = queue["policy"]
                 lines.append(f"  {safe_text(queue['scope'] + ' ' + queue['name'])}: {queue.get('depth', 0)}/{policy.get('capacity', '?')} "

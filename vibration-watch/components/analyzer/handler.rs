@@ -1,4 +1,4 @@
-use crate::container::{Callbacks, Context, Result};
+use crate::container::{Callbacks, Context, InputReference, Result};
 use crate::types::{analysis::Analysis, vibration_signal::SignalBlock};
 #[path = "math.rs"]
 mod math;
@@ -20,17 +20,22 @@ impl Callbacks for Handler {
         ctx.logf(sdl_ose_component::LogLevel::Info, "lifecycle", format_args!("Analyzer stopped"))
     }
 
-    fn on_input(&mut self, ctx: &mut Context, message: &SignalBlock) -> Result {
+    fn on_input(&mut self, ctx: &mut Context, input: &InputReference<SignalBlock>) -> Result {
+        let message = input.message.as_ref().ok_or("missing signal message")?;
         ctx.record("dsp.input", message)?;
         let (rms, peak) = math::summarize(&message.samples)?;
         ctx.measure("vibration.rms", rms)?;
-        ctx.publish_result(&Analysis {
+        let result = Analysis {
             machine_id: message.machine_id,
             sequence: message.sequence,
             time_ns: message.time_ns,
             rms,
             peak,
-        })?;
+        };
+        match input.app_id {
+            Some(id) => ctx.publish_result_with_id(&result, id)?,
+            None => ctx.publish_result(&result)?,
+        }
         if message.sequence == 1 || message.sequence % 10 == 0 {
             ctx.logf(sdl_ose_component::LogLevel::Debug, "analysis", format_args!(
                 "Analyzed signal: machine={} sequence={} samples={} rms={:.3} peak={:.3}",

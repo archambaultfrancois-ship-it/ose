@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from ose.codec.sdl2 import SDL2
 from ose.modeling.compiler import build
-from ose.execution.process import start_component, tick_events, stop_component
+from ose.execution.process import stop_component
 from ose.parameters.service import ParameterService
 from ose.parameters.bindings import LocalBindings
 from ose.parameters.client import ParameterClient
@@ -17,6 +17,7 @@ from ose.execution.broker import Broker
 from ose.execution.adapter import Adapter
 from ose.execution.distributed import Coordinator, Worker
 from ose.execution.simulation.coordinator import Simulation
+from tests.component_driver import ComponentDriver
 
 SDL_ROOT = os.environ.get('SDL_ROOT', str(Path(__file__).resolve().parents[3] / 'sdl'))
 
@@ -26,7 +27,7 @@ def on_start(ctx):
     assert p.threshold == 80.0
     p.threshold = 81.0
     ctx.set_parameters_detection(p)
-def on_tick(ctx):
+def on_clock(ctx, input):
     p = ctx.parameters_detection()
     ctx.publish_result(p)
     p.threshold += 1.0
@@ -39,13 +40,14 @@ static int on_start(OseContext *ctx) {
     p.threshold = 81.0;
     return set_parameters_detection(ctx, &p);
 }
-static int on_tick(OseContext *ctx) {
+static int on_clock(OseContext *ctx, const Input_clock *input) {
+    (void)input;
     Settings p = *parameters_detection(ctx);
     if (!publish_result(ctx, &p)) return 0;
     p.threshold += 1.0;
     return set_parameters_detection(ctx, &p);
 }
-const ComponentCallbacks component_callbacks = { .on_start=on_start, .on_tick=on_tick };
+const ComponentCallbacks component_callbacks = { .on_start=on_start, .on_clock=on_clock };
 '''
 RUST = '''use crate::container::{Callbacks, Context, Result};
 #[derive(Default)] pub struct Handler;
@@ -56,7 +58,7 @@ impl Callbacks for Handler {
         p.threshold = 81.0;
         ctx.set_parameters_detection(&p)
     }
-    fn on_tick(&mut self, ctx: &mut Context) -> Result {
+    fn on_clock(&mut self, ctx: &mut Context, _input: &crate::container::InputReference<()>) -> Result {
         let mut p = ctx.parameters_detection().clone();
         ctx.publish_result(&p)?;
         p.threshold += 1.0;
@@ -73,7 +75,7 @@ public class ParameterHandler extends API.Handler {
         p.threshold = 81.0;
         ctx.set_parameters_detection(p);
     }
-    public void onTick(API.Context ctx, API.Inputs inputs) throws Exception {
+    public void on_clock(API.Context ctx, org.sdlose.InputProtocol.Reference<Void> input) throws Exception {
         Settings p = ctx.parameters_detection();
         ctx.publish_result(p);
         p.threshold += 1.0;
@@ -85,7 +87,7 @@ ADA_SPEC = '''with Ose_probe;
 package Parameter_Handler is
     type Object is new Ose_probe.Handler with null record;
     overriding procedure On_Start (Self : in out Object; Ctx : in out Ose_probe.Context);
-    overriding procedure On_Tick (Self : in out Object; Ctx : in out Ose_probe.Context; Selected : Ose_probe.Inputs);
+    overriding procedure On_clock (Self : in out Object; Ctx : in out Ose_probe.Context; Input : Ose_probe.Input_clock);
 end Parameter_Handler;
 '''
 ADA = '''with SDL_settings; with SDL_Runtime;
@@ -98,7 +100,7 @@ package body Parameter_Handler is
         P.F_threshold := 81.0;
         Ose_probe.Set_Parameters_detection (Ctx, P);
     end;
-    overriding procedure On_Tick (Self : in out Object; Ctx : in out Ose_probe.Context; Selected : Ose_probe.Inputs) is
+    overriding procedure On_clock (Self : in out Object; Ctx : in out Ose_probe.Context; Input : Ose_probe.Input_clock) is
         P : SDL_settings.T_Settings := Ose_probe.Parameters_detection (Ctx);
     begin
         Ose_probe.Publish_result (Ctx, P);
@@ -117,9 +119,10 @@ class ComponentParameterTests(unittest.IsolatedAsyncioTestCase):
             (root / filename).write_text(source)
             if language == 'ada':
                 (root / 'parameter_handler.ads').write_text(ADA_SPEC)
-            node = dict(inputs={}, outputs={'result': {'root': 'Settings'}}, trigger=dict(mode='periodic', period_ms=100),
+            node = dict(inputs={'clock': dict(kind='timer', timer=dict(mode='periodic', delay=.1),
+                                            activates={'timeout': ['result']})}, outputs={'result': {'root': 'Settings'}},
                         parameter_bindings={'detection': {'path': 'machine/detection', 'access': 'read_write'}})
-            model = dict(version=1, schemas='settings.sdl', components={'probe': node}, subscriptions=[],
+            model = dict(version=2, schemas='settings.sdl', components={'probe': node}, subscriptions=[],
                          shared_parameters={'machine/detection': dict(root='Settings', initial={'threshold': 80.})})
             container = dict(language=language, handler=filename, **(identity or {}))
             deployment = dict(version=1, components={'probe': {'container': container}})
@@ -131,13 +134,14 @@ class ComponentParameterTests(unittest.IsolatedAsyncioTestCase):
             service = ParameterService(plan, codec)
             node = plan['components']['probe']
             bindings = LocalBindings(node, service)
-            process, capable = await start_component(node, bindings)
+            driver = ComponentDriver(node)
+            process = await driver.start(parameters=bindings)
             try:
-                self.assertTrue(capable)
                 observed = []
                 for index in (1, 2):
-                    async for port, payload in tick_events(process, node, {}, 0, index, bindings):
+                    async for port, payload, app_id in driver.events(process, parameters=bindings):
                         self.assertEqual(port, 'result')
+                        self.assertIsNone(app_id)
                         value = codec.api.decode_dynamic(codec.api.prepare(node['outputs']['result']['catalogue']), payload)
                         observed.append(value.fields['threshold'])
                 self.assertEqual(observed, [81., 82.])
@@ -174,15 +178,15 @@ class NetworkParameterTests(unittest.IsolatedAsyncioTestCase):
         (self.root / 'reader.py').write_text('''import json
 def on_start(ctx):
     assert ctx.parameters_detection().threshold in (80., 10., 85.)
-def on_tick(ctx):
+def on_clock(ctx, input):
     with open(ctx.parameters['path'], 'a') as stream:
         stream.write(str(ctx.parameters_detection().threshold) + '\\n')
 ''')
-        nodes = {name: dict(inputs={}, outputs={}, trigger=dict(mode='periodic', period_ms=20),
+        nodes = {name: dict(inputs={'clock': dict(kind='timer', timer=dict(mode='periodic', delay=.02))}, outputs={},
                     parameters={'path': str(self.root / (name + '.values'))},
                     parameter_bindings={'detection': {'path': path, 'access': 'read'}})
                  for name, path in (('first', 'machine/first'), ('second', 'machine/second'))}
-        model = dict(version=1, schemas='settings.sdl', components=nodes, subscriptions=[],
+        model = dict(version=2, schemas='settings.sdl', components=nodes, subscriptions=[],
                      shared_parameters={path: dict(root='Settings', initial={'threshold': value})
                          for path, value in (('machine/first', 80.), ('machine/second', 10.))})
         deployment = dict(version=1, execution='distributed' if distributed else 'local',
@@ -676,7 +680,7 @@ end Parameter_Probe;
             await broker.close()
 
     async def test_native_tls_parameters_and_certificate_identity(self):
-        from test_distributed import certificates, tls
+        from tests.integration.test_distributed import certificates, tls
         await self.setup_plan(True)
         binary = await self.native_probe()
         await asyncio.to_thread(certificates, self.root, ['coordinator', 'operator', 'impostor'])
@@ -693,7 +697,7 @@ end Parameter_Probe;
         await self.setup_plan()
         from copy import deepcopy
         writer = self.root / 'writer.py'
-        writer.write_text('''def on_tick(ctx):
+        writer.write_text('''def on_clock(ctx, input):
     p = ctx.parameters_detection()
     p.threshold += 1
     ctx.set_parameters_detection(p)
@@ -717,7 +721,8 @@ end Parameter_Probe;
             result = await Simulation(plan, .06, workers=workers, scenario=scenario).execute()
             hashes.append(result['trace_sha256'])
             observations.append(self.values('first'))
-            self.assertEqual(self.values('second'), [10., 10., 10.])
-            self.assertEqual(result['parameter_changes'], 4)
+            # Timers first fire at 20 ms; the 60 ms horizon is exclusive.
+            self.assertEqual(self.values('second'), [10., 10.])
+            self.assertEqual(result['parameter_changes'], 3)
         self.assertEqual(hashes[0], hashes[1])
-        self.assertEqual(observations, [[80., 81., 200.], [80., 81., 200.]])
+        self.assertEqual(observations, [[80., 200.], [80., 200.]])

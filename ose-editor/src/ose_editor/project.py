@@ -154,7 +154,7 @@ class Project:
                 data = path.read_bytes()
                 self.documents[key] = Document(path, data.decode('utf-8'), data, role)
             elif create:
-                initial = {'version': 1, 'schemas': 'schemas', 'components': {}, 'subscriptions': []} if role == 'model' else {'version': 1, 'components': {}} if role == 'deployment' else None
+                initial = {'version': 2, 'schemas': 'schemas', 'components': {}, 'subscriptions': []} if role == 'model' else {'version': 1, 'components': {}} if role == 'deployment' else None
                 self.documents[key] = Document(path, text if text is not None else json.dumps(initial, indent=2) + '\n' if initial else '', None, role, created=True)
             else:
                 raise ValueError('Source file does not exist: ' + key)
@@ -244,7 +244,7 @@ class Project:
                 if len(self.prepared) > 32:
                     self.prepared.pop(next(iter(self.prepared)))
                 return {'id': token, 'revision': self.revision, 'changes': changes,
-                        'handlers_to_review': handlers if command.get('action', '').startswith(('rename', 'sdl', 'remove')) else [],
+                        'handlers_to_review': handlers if command.get('action', '').startswith(('rename', 'sdl', 'remove', 'configure_input')) else [],
                         'external_consumers': 'Unregistered external consumers are not assessed.'}
             finally:
                 self.restore(before)
@@ -293,6 +293,8 @@ class Project:
 
     def execute(self, command):
         action = command['action']
+        if action in ('configure_input', 'add_component', 'remove_component', 'connect', 'duplicate_subscription', 'set_reception', 'rename'):
+            self.application_model()
         if action == 'source':
             text = command['text']
             if len(text.encode()) > self.max_document_bytes:
@@ -331,13 +333,43 @@ class Project:
             doc.text = parsed.patches([(item['start'], item['end'], value)])
         elif action == 'rename':
             self.rename(command)
+        elif action == 'configure_input':
+            from ose.modeling.activation import component_inputs, activation_order
+            from ose.modeling.validation import validate_graph
+            model = json.loads(self.document(self.model).text)
+            name, port, description = command['component'], command['port'], command['description']
+            if name not in model['components'] or not isinstance(port, str) or not port or '.' in port:
+                raise ValueError('Choose an existing component and a nonempty input name without dots')
+            if not isinstance(description, dict):
+                raise ValueError('Input description must be an object')
+            if description.get('kind') == 'timer' and any(sub['to'] == name + '.' + port for sub in model['subscriptions']):
+                raise ValueError('Disconnect incoming subscriptions before converting this input to a timer')
+            node = model['components'][name]
+            previous = node['inputs'].get(port)
+            node['inputs'][port] = description
+            component_inputs(node)
+            activation_order(model)
+            for key in self.deployments:
+                validate_graph(model, json.loads(self.document(key).text))
+            path = ['components', name, 'inputs', port]
+            if previous is None:
+                self.json_set(self.model, path, description)
+            else:
+                for field in previous.keys() - description.keys():
+                    self.json_set(self.model, [*path, field], remove=True)
+                for field, value in description.items():
+                    if field not in previous or previous[field] != value:
+                        self.json_set(self.model, [*path, field], value)
         elif action == 'add_component':
             name = command['name']
             model = loads(self.document(self.model).text)
             if not name or '.' in name or name in model.get('components', {}):
                 raise ValueError('Use a unique component name without dots')
             source = command.get('copy')
-            value = deepcopy(model['components'][source]) if source else {'inputs': {}, 'outputs': {}, 'trigger': {'mode': 'periodic', 'period_ms': 100}}
+            if source:
+                value = deepcopy(model['components'][source])
+            else:
+                value = {'inputs': {'clock': {'kind': 'timer', 'timer': {'mode': 'periodic', 'delay': .1}}}, 'outputs': {}}
             self.json_set(self.model, ['components', name], value)
             for key in self.deployments:
                 deployment = loads(self.document(key).text)
@@ -461,27 +493,25 @@ class Project:
                 resolved.append({'to': target, 'policy': policy.to_dict()})
             reception_policies(resolved)
 
-    def _check_connection(self, subscription):
+    def application_model(self):
         model = loads(self.document(self.model).text)
+        if not isinstance(model, dict) or type(model.get('version')) is not int or model['version'] != 2:
+            raise ValueError('Application model v2 is required; migrate v1 triggers and callbacks before using structured editing')
+        return model
+
+    def _check_connection(self, subscription):
+        model = self.application_model()
         target, input_name = subscription['to'].split('.')
         consumer = model['components'][target]['inputs'][input_name]
+        if consumer.get('kind') == 'timer':
+            raise ValueError('Timer inputs cannot receive a subscription')
+        from ose.modeling.activation import activation_order
+        # Match OSE's JSON number types; the editor's Decimal values are
+        # retained for source edits, but timer validation expects int/float.
+        activation_order(json.loads(self.document(self.model).text))
         if 'from' in subscription:
             source, output = subscription['from'].split('.')
             publisher = model['components'][source]['outputs'][output]
-            edges = {key: [] for key in model['components']}
-            for sub in model['subscriptions']:
-                if 'from' in sub:
-                    edges[sub['from'].split('.')[0]].append(sub['to'].split('.')[0])
-            seen = set()
-            def visit(name, ancestors):
-                if name in ancestors:
-                    raise ValueError('Connection would create a component cycle')
-                if name not in seen:
-                    for child in edges[name]:
-                        visit(child, ancestors | {name})
-                    seen.add(name)
-            for name in edges:
-                visit(name, set())
         else:
             publisher = model['external_topics'][subscription['from_topic']]
         if publisher['root'] != consumer['root']:
@@ -523,6 +553,12 @@ class Project:
             component, port = old.split('.')
             direction = command['direction']
             self.document(self.model).text = JsonSource(self.document(self.model).text).rename(['components', component, direction, port], new)
+            if direction == 'outputs':
+                for origin, desc in model['components'][component]['inputs'].items():
+                    for event, outputs in desc.get('activates', {}).items():
+                        if port in outputs:
+                            self.json_set(self.model, ['components', component, 'inputs', origin, 'activates', event],
+                                          [new if output == port else output for output in outputs])
             for i, sub in enumerate(model.get('subscriptions', [])):
                 field = 'from' if direction == 'outputs' else 'to'
                 if sub.get(field) == old:
@@ -690,6 +726,11 @@ class Project:
                 diagnostics.append({'severity': 'error', 'origin': 'syntax', 'file': key, 'message': str(error)})
             result[key] = item
         validation = self.last_validation if self.last_validation and self.last_validation.get('revision') == self.revision else None
+        if not result.get(self.model, {}).get('stale'):
+            try:
+                self.application_model()
+            except ValueError as error:
+                diagnostics.append({'severity': 'error', 'origin': 'OSE', 'file': self.model, 'message': str(error)})
         return {'name': self.root.name, 'revision': self.revision, 'model': self.model, 'deployments': self.deployments,
                 'selected_deployment': self.selected_deployment, 'documents': result, 'schema_inputs': self.schema_inputs,
                 'workspace': deepcopy(self.workspace), 'diagnostics': diagnostics, 'validation': validation,

@@ -15,17 +15,13 @@ void ose_release(OseEvent *event);
 int ose_send(char op, const void *data, size_t size);
 typedef enum { OSE_LOG_DEBUG=10, OSE_LOG_INFO=20, OSE_LOG_WARNING=30,
                OSE_LOG_ERROR=40, OSE_LOG_CRITICAL=50, OSE_LOG_FATAL=60 } OseLogLevel;
-int ose_publish(const char *port, const void *payload, size_t size);
 int ose_record_bytes(const char *name, const void *payload, size_t size);
 int ose_measurement_declare(const char *name);
 int ose_measurement_value(const char *name, double value);
 int ose_declare_recording(const char *name, const char *root, const char *catalogue, const char *description);
 int ose_set_parameters(const char *name, const void *payload, size_t size);
-/* Opt in to timestamped ticks. Historical ose_send('R', NULL, 0) stays valid. */
-int ose_ready(void);
-/* Empty historical TICKs return time zero and the next local index. */
-int ose_tick(const OseEvent *event, uint64_t *time_ns, uint64_t *tick_index);
-/* Borrowed fields remain valid until event is released. Catalogue is not NUL terminated. */
+/* Parse a U shared-parameter update. Borrowed fields last until event release.
+ * Catalogue is not NUL terminated. Message activations use ose_inputs.h. */
 int ose_input(const OseEvent *event, const uint8_t **port, size_t *port_size,
                 const uint8_t **catalogue, size_t *catalogue_size,
                 const uint8_t **payload, size_t *payload_size);

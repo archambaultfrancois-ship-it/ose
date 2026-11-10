@@ -91,6 +91,19 @@ class NativeTests(unittest.TestCase):
         self.assertEqual([r[2] for r in records], [2**64-2, 2**64-1, 2**64-1])
         self.assertTrue(all(r[0] == description(Q).encode() for r in records))
         self.assertTrue(all(r[5] == 'radio/é📻\0iq'.encode() for r in records))
+
+    def test_native_reader_can_ignore_optional_python_message_metadata(self):
+        catalogue = description(V1)
+        context = prepare(catalogue, [V1])
+        for format in ('pcapng', 'mcap'):
+            with RecordingWriter(self.path, format=format, overwrite=True, chunk_size=128) as writer:
+                channel = writer.register_channel(topic='samples', catalogue=catalogue, root_type='Sample')
+                payloads = [encode(context, V1(value=i)) for i in range(3)]
+                for i, payload in enumerate(payloads):
+                    writer.write_encoded(channel, payload, log_time_ns=i, metadata={'ose.app_id': str(i)})
+            self.assertEqual([record[1] for record in self.native_records()], payloads)
+            self.assertEqual([record.metadata['ose.app_id'] for record in RecordingReader(self.path).iter_records()],
+                             ['0', '1', '2'])
     def test_native_to_python_schema_revisions_exact_bytes(self):
         writer = self.lib.writer_open(Bytes.of(str(self.path)), 0, 128)
         self.assertTrue(writer, self.lib.error())

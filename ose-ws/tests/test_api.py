@@ -101,9 +101,9 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         plain["counter"] = int(plain["counter"])
         plain["samples"] = [int(v) for v in plain["samples"]]
         initial = codec.encode(plain)
-        node = {"inputs": {}, "outputs": {"settings": {"catalogue": CATALOGUE, "root": "Settings"}},
-                "trigger": {"mode": "periodic", "period_ms": 100}}
-        self.broker = Broker({"sdl_root": str(SDL_ROOT), "components": {"source": node}, "subscriptions": [],
+        node = {"execution_model": 2, "inputs": {"clock": {"kind": "timer", "timer": {"mode": "periodic", "delay": .1},
+                "activates": {"timeout": ["settings"]}}}, "outputs": {"settings": {"catalogue": CATALOGUE, "root": "Settings"}}}
+        self.broker = Broker({"version": 2, "sdl_root": str(SDL_ROOT), "components": {"source": node}, "subscriptions": [],
             "max_frame": 1024**2, "max_datagram": 1200,
             "shared_parameters": {"machine/settings": {"catalogue": CATALOGUE, "root": "Settings", "initial_payload": base64.b64encode(initial).decode()}},
             "parameter_clients": {"operator": {"token": "test-parameter-token", "read": ["machine/settings"], "write": ["machine/settings"]}}})
@@ -219,7 +219,7 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         external_catalogue = "SDL2|Child{1:uint16:code;}|Packet{1:Child:child;2*:fl32:samples;3:Mode:mode;}|#Mode{OFF=0;ON=1;}"
         sink = {"inputs": {"settings": {"root": "Settings", "catalogue": CATALOGUE},
                            "offset": {"root": "Packet", "catalogue": external_catalogue}},
-                "outputs": {}, "trigger": {"mode": "on_change"}}
+                "outputs": {}, "execution_model": 2}
         policy = SubscriptionPolicy.resolve().to_dict()
         collector = self.app.state.collector
         for distributed in (False, True):

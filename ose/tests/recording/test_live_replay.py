@@ -24,12 +24,15 @@ from sdl_recording import RecordingWriter
 from tests.integration import test_distributed as distributed_fixture
 
 CAT = "SDL2|Value{1:uint64:sequence;2:fl64:value;}"
-SINK = '''import json, struct
-from ose.execution.component import ComponentSession
-s = ComponentSession(timed_ticks=True)
-for inputs in s.ticks():
+SINK = '''import json, os, struct
+from ose.execution.input_process import InputSession
+from ose.codec.sdl2 import SDL2
+s = InputSession()
+codec = SDL2(os.environ["SDL_ROOT"])
+for input in s.activations():
+    _, payload = codec.api.unpack_envelope(input.record["body"])
     with open(s.config["parameters"]["path"], "a") as stream:
-        stream.write(json.dumps(struct.unpack(">Qd", inputs["input"][1][1:])) + "\\n")
+        stream.write(json.dumps(struct.unpack(">Qd", payload[1:])) + "\\n")
 '''
 
 
@@ -43,16 +46,20 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
         script = self.root / "sink.py"
         script.write_text(SINK)
         desc = dict(root="Value", catalogue=CAT)
-        self.plan = dict(version=1, execution="local", sdl_root=str(self.codec.root), build_dir=str(self.root),
+        self.plan = dict(version=2, execution="local", sdl_root=str(self.codec.root), build_dir=str(self.root),
             max_frame=1024 * 1024, max_datagram=1200, external_topics={"external.signal": desc},
-            components={"sink": dict(inputs={"input": desc}, outputs={}, trigger={"mode": "on_change"},
+            components={"sink": dict(execution_model=2, inputs={"input": desc}, outputs={},
                 parameters={"path": str(self.path)}, cwd=str(self.root), env={}, command=[sys.executable, str(script)])},
             subscriptions=[dict(id="signal", from_topic="external.signal", routing="broker",
                 **{"from": "external.signal", "to": "sink.input"},
                 policy=SubscriptionPolicy.resolve(dict(capacity=16, ack="received", retry={})).to_dict())])
         self.plan_path = self.root / "plan.json"
         self.tasks = []
-        self.addAsyncCleanup(self.shutdown)
+
+    async def asyncTearDown(self):
+        # Stop and reap components while their brokers are still available.
+        # Async cleanups registered by each test close those brokers afterward.
+        await self.shutdown()
 
     async def shutdown(self):
         for task in self.tasks:
@@ -451,8 +458,8 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_compiler_accepts_external_distributed_inputs_and_rejects_direct_route(self):
         (self.root / "value.sdl").write_text("message Value {uint64 sequence; fl64 value;}")
-        model = dict(version=1, schemas="value.sdl", external_topics={"external.signal": {"root": "Value"}},
-            components={"sink": dict(inputs={"input": {"root": "Value"}}, outputs={}, trigger={"mode": "on_change"})},
+        model = dict(version=2, schemas="value.sdl", external_topics={"external.signal": {"root": "Value"}},
+            components={"sink": dict(inputs={"input": {"root": "Value"}}, outputs={})},
             subscriptions=[dict(id="signal", from_topic="external.signal", to="sink.input")])
         deployment = dict(version=1, execution="distributed", components={"sink": {"command": [sys.executable, str(self.root / "sink.py")]}})
         model_path, deployment_path = self.root / "model.json", self.root / "deployment.json"

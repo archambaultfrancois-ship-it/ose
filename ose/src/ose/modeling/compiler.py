@@ -20,7 +20,7 @@ BACKENDS = {"c": generate_c, "rust": generate_rust, "java": generate_java, "ada"
 
 def compile_plan(model_path, deployment_path, sdl_root, destination):
     model_path, deployment_path = Path(model_path).resolve(), Path(deployment_path).resolve()
-    model, deployment = load(model_path), load(deployment_path)
+    model, deployment = load(model_path, version=2), load(deployment_path)
     validate_graph(model, deployment)
     from ose.execution.identity import aliases_for
     process_names = {"prefix": deployment.get("process_names", {}).get("prefix", "ose")}
@@ -35,7 +35,7 @@ def compile_plan(model_path, deployment_path, sdl_root, destination):
         language = deployment["components"][component].get("container", {}).get("language")
         if language:
             schema_languages.setdefault((model_path.parent / model["schemas"]).resolve(), set()).add(language)
-        descriptions = [desc for direction in ("inputs", "outputs", "recording_types") for desc in node.get(direction, {}).values()]
+        descriptions = [desc for direction in ("inputs", "outputs", "recording_types") for desc in node.get(direction, {}).values() if desc.get("kind") != "timer"]
         descriptions += [parameter_defs[b["path"]] for b in node.get("parameter_bindings", {}).values()]
         for desc in descriptions:
             schema_path = (model_path.parent / desc.get("schema", model["schemas"])).resolve()
@@ -81,10 +81,13 @@ def compile_plan(model_path, deployment_path, sdl_root, destination):
 
     for name, original in model["components"].items():
         node = json.loads(json.dumps(original))
+        node["execution_model"] = 2
         node["process_identity"] = {"prefix": process_names["prefix"], "component": name,
                                     "alias": process_names["components"][name]}
         for direction in ("inputs", "outputs", "recording_types"):
             for port in node.get(direction, {}).values():
+                if port.get("kind") == "timer":
+                    continue
                 port["catalogue"] = catalogue(port.get("schema", model["schemas"]))
                 port["catalogue_id"] = codec.identity(port["catalogue"])
                 if port["root"] not in codec.api.message_names(codec.api.prepare(port["catalogue"])):
@@ -98,7 +101,7 @@ def compile_plan(model_path, deployment_path, sdl_root, destination):
             handler = handlers[name]
             language = execution["container"]["language"]
             paths = dict.fromkeys([(model_path.parent / desc.get("schema", model["schemas"])).resolve()
-                                  for desc in [d for direction in ("inputs", "outputs", "recording_types") for d in node.get(direction, {}).values()] +
+                                  for desc in [d for direction in ("inputs", "outputs", "recording_types") for d in node.get(direction, {}).values() if d.get("kind") != "timer"] +
                                   [parameter_defs[b["path"]] for b in node.get("parameter_bindings", {}).values()]])
             if not paths:
                 paths = {(model_path.parent / model["schemas"]).resolve(): None}
@@ -169,7 +172,7 @@ def compile_plan(model_path, deployment_path, sdl_root, destination):
             raise ValueError(f"invalid {key}")
     from ose.parameters.service import ParameterService
     ParameterService({"shared_parameters": shared_parameters, "max_frame": deployment.get("max_frame", 1024 * 1024)}, codec)
-    return {"version": 1, "process_names": process_names, "execution": deployment.get("execution", "local"), "sdl_root": str(codec.root), "components": components, "subscriptions": subscriptions,
+    return {"version": model["version"], "process_names": process_names, "execution": deployment.get("execution", "local"), "sdl_root": str(codec.root), "components": components, "subscriptions": subscriptions,
             "shared_parameters": shared_parameters, "parameter_clients": deployment.get("parameter_clients", {}),
             "external_topics": external_topics, "broker": deployment.get("broker", {}), "build_dir": str(destination), "max_frame": deployment.get("max_frame", 1024 * 1024),
             "max_datagram": deployment.get("max_datagram", 1200)}
@@ -184,7 +187,7 @@ def build(model, deployment, sdl_root, destination, component=None):
         if "container" in node:
             container = node["container"]
             if container["language"] == "python":
-                scaffold_handler(node, container["handler"], container["types"])
+                scaffold_handler(node, container["handler"])
             elif container["language"] in ("java", "ada"):
                 scaffold_managed(node, container)
             else:

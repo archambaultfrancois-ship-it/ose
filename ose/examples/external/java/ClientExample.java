@@ -20,7 +20,7 @@ public final class ClientExample {
                     public void onMessage(Measurement value, Client.MessageInfo info) throws Exception {
                         Measurement result = new Measurement();
                         result.sequence = value.sequence; result.value = value.value * 2;
-                        System.err.println(publisher.publish(result));
+                        System.err.println(publisher.publish(result, info.appId));
                     }
                 });
             try { client.run(); }

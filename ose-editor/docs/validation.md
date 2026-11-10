@@ -89,6 +89,36 @@ Automated checks for this change passed on Termux ARM64: 64 Python integration
 tests and 54 frontend tests, including the representative thirty-component
 workload. Frontend checks ran after reinstalling the exact lockfile dependencies.
 
+## Model v2 execution authoring
+
+The execution inspector edits message Push/Pull modes, schema references,
+inactivity timeouts, periodic/one-shot timers and automatic/manual initial arming.
+Per-event output checklists retain independent message/timeout declarations;
+empty selections authorize no output. Pull has no activating event. A single
+compound input command validates through OSE, preserves surrounding sources,
+lists affected handlers for review and supports undo/redo. Connected inputs
+cannot become timers until their subscriptions are disconnected.
+
+Graph cards label input modes and omit subscription handles for timers. Internal
+activation arrows are optional; message arrows are blue and timeout arrows amber
+and dashed. The activation table selects the corresponding input inspector.
+Connection guidance uses event-to-output dependencies for v2, accepting passive
+feedback and silent Push calculations while rejecting activating message cycles.
+Python remains the authoritative model/activation validator. The editor exposes
+application model v2 only: old versions produce a migration diagnostic, no graph
+or table projection, and no structured model changes. Source editing and explicit
+Save draft remain available. Deployment and scenario versions are unchanged.
+
+Executed qualification on Termux: 73 Python tests and 70 frontend tests passed
+(143 distinct cases), and the production Vue/TypeScript build passed. Coverage
+includes atomic/rejected input edits, source fidelity and undo/redo, real unsaved
+SDL/OSE validation through HTTP, independent event permissions, Pull conversion,
+invalid/connected timers, optional arrows and input selection. The frontend also
+checks a 2,500-component activation chain without recursive stack overflow.
+The rebuilt entry assets are served over HTTP; all five manifest file hashes
+verify, including the layout worker and runtime notices. These checks do not
+qualify real-browser pointer interaction, visual rendering or frame-rate targets.
+
 ## Remaining full-release qualification
 
 - Full row-specific creation/modification/boundary evidence is not complete.

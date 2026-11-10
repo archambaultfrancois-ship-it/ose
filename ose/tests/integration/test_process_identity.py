@@ -9,8 +9,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from ose.execution.process import start_component, stop_component
+from ose.execution.process import stop_component
 from ose.modeling.compiler import build
+from tests.component_driver import ComponentDriver
 
 
 SDL_ROOT = os.environ.get('SDL_ROOT')
@@ -51,8 +52,8 @@ assert Path("/proc/self/comm").read_text().strip() == "vw-web"
             with self.subTest(language=language), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 (root / 'schema.sdl').write_text('message Value {1: uint32 number;}')
-                model = {'version': 1, 'schemas': 'schema.sdl', 'subscriptions': [], 'components': {
-                    'sensor_1': {'inputs': {}, 'outputs': {}, 'trigger': {'mode': 'periodic', 'period_ms': 100}}}}
+                model = {'version': 2, 'schemas': 'schema.sdl', 'subscriptions': [], 'components': {
+                    'sensor_1': {'inputs': {}, 'outputs': {}}}}
                 stem = 'handler' if language == 'ada' else 'Handler'
                 container = {'language': language, 'handler': stem + suffixes[language]}
                 if language in ('java', 'ada'):
@@ -65,7 +66,7 @@ assert Path("/proc/self/comm").read_text().strip() == "vw-web"
                                                SDL_ROOT, root / 'build')
                 plan = json.loads(path.read_text())
                 self.assertEqual(plan['process_names']['components']['sensor_1'], 'sensor1')
-                process, _ = await start_component(plan['components']['sensor_1'])
+                process, _ = await ComponentDriver(plan['components']['sensor_1']).start()
                 try:
                     self.assertEqual(Path(f'/proc/{process.pid}/comm').read_text().strip(), 'vw-c-sensor1')
                     self.assertIsNone(process.returncode)
@@ -77,9 +78,9 @@ assert Path("/proc/self/comm").read_text().strip() == "vw-web"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / 'schema.sdl').write_text('message Value {1: uint32 number;}')
-            (root / 'handler.py').write_text('def on_tick(ctx): pass\n')
-            model = {'version': 1, 'schemas': 'schema.sdl', 'subscriptions': [], 'components': {
-                'sensor_1': {'inputs': {}, 'outputs': {}, 'trigger': {'mode': 'periodic', 'period_ms': 100}}}}
+            (root / 'handler.py').write_text('def on_clock(ctx, input): pass\n')
+            model = {'version': 2, 'schemas': 'schema.sdl', 'subscriptions': [], 'components': {
+                'sensor_1': {'inputs': {'clock': {'kind': 'timer', 'timer': {'mode': 'periodic', 'delay': .1}}}, 'outputs': {}}}}
             deployment = {'version': 1, 'process_names': {'prefix': 'vw'}, 'components': {
                 'sensor_1': {'container': {'language': 'python', 'handler': 'handler.py'}}}}
             (root / 'model.json').write_text(json.dumps(model))

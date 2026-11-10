@@ -21,15 +21,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         move |value, info| {
             println!("MESSAGE {} {}", info.sequence, value.value);
-            tx.send(value)
+            tx.send((value, info.app_id))
                 .map_err(|e| sdl_ose_client::Error::new("callback_failed", e.to_string()))?;
             Ok(())
         },
     )?;
     println!("READY");
-    let mut value = rx.recv_timeout(Duration::from_secs(10))?;
+    let (mut value, app_id) = rx.recv_timeout(Duration::from_secs(10))?;
     value.value *= 2.;
-    let result = publisher.publish(&value)?;
+    let result = match app_id {
+        Some(id) => publisher.publish_with_id(&value, id)?,
+        None => publisher.publish(&value)?,
+    };
     if !result.accepted() {
         return Err("broker refused an admission".into());
     }

@@ -19,15 +19,16 @@ import uuid
 
 PYTHON = '''from pathlib import Path
 from measurement import Measurement
-def on_tick(ctx):
+def on_clock(ctx, input):
     Path('python.txt').write_text(str(Path.cwd()))
-    ctx.publish_out(Measurement(value=ctx.tick_index))
+    ctx.publish_out(Measurement(value=ctx.activation_index), id=0)
 '''
 C = '''#include "component.h"
 #include <stdio.h>
 #include <unistd.h>
-static int tick(OseContext *ctx) {
+static int clock_input(OseContext *ctx, const Input_clock *input) {
     (void)ctx;
+    (void)input;
     char path[4096];
     if (!getcwd(path, sizeof(path))) return 0;
     FILE *file = fopen("c.txt", "w");
@@ -35,12 +36,12 @@ static int tick(OseContext *ctx) {
     fputs(path, file);
     return fclose(file) == 0;
 }
-const ComponentCallbacks component_callbacks = { .on_tick=tick };
+const ComponentCallbacks component_callbacks = { .on_clock=clock_input };
 '''
-RUST = '''use crate::container::{Callbacks, Context, Result};
+RUST = '''use crate::container::{Callbacks, Context, InputReference, Result};
 #[derive(Default)] pub struct Handler;
 impl Callbacks for Handler {
-    fn on_tick(&mut self, _ctx: &mut Context) -> Result {
+    fn on_clock(&mut self, _ctx: &mut Context, _input: &InputReference<()>) -> Result {
         std::fs::write("rust.txt", std::env::current_dir()?.to_string_lossy().as_bytes())?;
         Ok(())
     }
@@ -56,10 +57,12 @@ def application(root, languages):
         if language not in languages:
             continue
         (root / ('handler.' + suffix)).write_text(source)
-        nodes[language] = {'inputs': {}, 'outputs': {'out': {'root': 'Measurement'}} if language == 'python' else {},
-                           'trigger': {'mode': 'periodic', 'period_ms': 10}}
+        nodes[language] = {
+            'inputs': {'clock': {'kind': 'timer', 'timer': {'mode': 'periodic', 'delay': .01},
+                                 'activates': {'timeout': ['out'] if language == 'python' else []}}},
+            'outputs': {'out': {'root': 'Measurement'}} if language == 'python' else {}}
         deployment[language] = {'container': {'language': language, 'handler': 'handler.' + suffix}}
-    (root / 'model.json').write_text(json.dumps({'version': 1, 'schemas': 'measurement.sdl', 'components': nodes, 'subscriptions': []}))
+    (root / 'model.json').write_text(json.dumps({'version': 2, 'schemas': 'measurement.sdl', 'components': nodes, 'subscriptions': []}))
     (root / 'deployment.json').write_text(json.dumps({'version': 1, 'components': deployment}))
     (root / 'Makefile').write_text('.PHONY: build\nbuild:\n\t"$(PYTHON)" -m ose.cli build --model model.json --deployment deployment.json --build-dir build\n')
 
@@ -198,6 +201,11 @@ for row in pathlib.Path('/proc/self/maps').read_text().splitlines():
         subprocess.run(['cargo', 'metadata', '--offline', '--locked', '--format-version', '1', '--manifest-path',
                         prefix / 'framework/sdl/runtime/recording/Cargo.toml'], env=cargo_env,
                        check=True, stdout=subprocess.DEVNULL, timeout=30)
+        cargo_env['CARGO_TARGET_DIR'] = str(root / 'sdk tests')
+        for crate in ('rust', 'client/rust'):
+            subprocess.run(['cargo', 'test', '--offline', '--manifest-path',
+                            prefix / 'framework/ose/sdk' / crate / 'Cargo.toml'],
+                           env=cargo_env, cwd=root, check=True, timeout=120)
 
         log = stack.enter_context((root / 'live.log').open('w+'))
 
@@ -273,11 +281,23 @@ for row in pathlib.Path('/proc/self/maps').read_text().splitlines():
         operation('/recordings/' + capture + '/stop', {})
         files = request('/api/v1/recordings/' + capture + '/files')['items']
         assert files
+        captured_paths = []
         for artifact in files:
-            assert (runtime / '.ose-ws/captures' / capture / artifact['name']).stat().st_size > 0
+            path = runtime / '.ose-ws/captures' / capture / artifact['name']
+            assert path.stat().st_size > 0
+            captured_paths.append(str(path))
+        capture_probe = '''import json, sys
+from sdl_recording import RecordingReader
+records = [record for path in json.loads(sys.argv[1]) for record in RecordingReader(path).iter_records()]
+assert records, 'Capture has no messages'
+assert all(record.metadata.get('ose.app_id') == '0' for record in records), 'Capture lost application ID zero'
+'''
+        capture_env = dict(env, PYTHONPATH=str(prefix / 'framework/sdl/runtime/python'))
+        subprocess.run([python, '-c', capture_probe, json.dumps(captured_paths)],
+                       env=capture_env, cwd=root, check=True, timeout=30)
         assert (runtime / '.ose-ws/state.sqlite3').is_file()
         assert not (one / '.ose-ws/state.sqlite3').exists()
-    print('Release passed: offline installation without system Python, private native libraries, independent C/Rust/Python applications, simulation, real-time execution, web login and filtered capture.')
+    print('Release passed: offline installation without system Python, private native libraries, independent v2 C/Rust/Python applications, SDK tests, simulation, real-time execution, web login and filtered capture with application IDs.')
 
 
 if __name__ == '__main__':

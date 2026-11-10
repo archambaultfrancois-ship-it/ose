@@ -1,4 +1,4 @@
-"""Verify the installed package, CLI and SDK assets outside the source path.
+"""Verify installed CLI/SDK assets and CH/2 execution outside the source path.
 
 TEST_LANGUAGES selects build toolchains, as for make check; all are used by default.
 """
@@ -13,7 +13,7 @@ LANGUAGES = set(os.environ.get('TEST_LANGUAGES', 'python,c,rust,java,ada').split
 if not LANGUAGES or LANGUAGES - {'python', 'c', 'rust', 'java', 'ada'}:
     raise ValueError('unknown TEST_LANGUAGES entry')
 PROGRAM = r'''
-import importlib.metadata, json, os, pathlib, shutil, subprocess, sys
+import asyncio, importlib.metadata, json, os, pathlib, shutil, subprocess, sys
 if os.environ.get("OSE_INSTALLED_TARGET"):
     sys.path.insert(0, os.environ["OSE_INSTALLED_TARGET"])
     os.environ["PYTHONPATH"] = os.environ["OSE_INSTALLED_TARGET"]
@@ -34,7 +34,9 @@ assert pathlib.Path(ose.__file__).resolve().is_relative_to(pathlib.Path(distribu
 root = pathlib.Path.cwd()
 sdk = sdk_root()
 assert 'share/ose/sdk' in str(sdk), sdk
-for asset in ('java/org/sdlose/Component.java', 'ada/ose_component.ads',
+for asset in ('c/ose_inputs.h', 'rust/src/inputs.rs',
+              'java/org/sdlose/InputProtocol.java', 'ada/ose_inputs.ads', 'ada/ose_inputs.adb',
+              'java/org/sdlose/Component.java', 'ada/ose_component.ads',
               'ada/ose_measurements.ads', 'ada/ose_measurements.adb',
               'client/java/ose_jni.c', 'client/ada/ose_client-typed.adb',
               'client/c/ose_parameters.h', 'client/rust/src/parameters.rs',
@@ -53,8 +55,49 @@ containers = {
     'java': {'language': 'java', 'handler': 'Handler.java', 'class': 'Handler'},
     'ada': {'language': 'ada', 'handler': 'handler_ada.adb', 'unit': 'Handler_Ada'},
 }
-model = {'version': 1, 'schemas': 'probe.sdl', 'components': {
-    name: {'inputs': {}, 'outputs': {}, 'trigger': {'mode': 'periodic', 'period_ms': 100},
+handlers = {
+    'python': """def on_clock(ctx, input):
+    assert input.timed_out and input.message is None
+""",
+    'c': """#include "component.h"
+static int on_clock(OseContext *ctx, const Input_clock *input) {
+    (void)ctx; (void)input; return 1;
+}
+const ComponentCallbacks component_callbacks = { .on_clock=on_clock };
+""",
+    'rust': """use crate::container::{Callbacks, Context, InputReference, Result};
+#[derive(Default)] pub struct Handler;
+impl Callbacks for Handler {
+    fn on_clock(&mut self, _ctx: &mut Context, _input: &InputReference<()>) -> Result { Ok(()) }
+}
+""",
+    'java': """import org.sdlose.generated.java.API;
+import org.sdlose.InputProtocol.Reference;
+public final class Handler extends API.Handler {
+    @Override public void on_clock(API.Context ctx, Reference<Void> input) {}
+}
+""",
+    'ada': """package body Handler_Ada is
+    overriding procedure On_clock (Self : in out Object; Ctx : in out Ose_ada.Context;
+                                   Input : Ose_ada.Input_clock) is
+    begin
+        null;
+    end On_clock;
+end Handler_Ada;
+""",
+}
+for language in languages:
+    (root / containers[language]['handler']).write_text(handlers[language])
+if 'ada' in languages:
+    (root / 'handler_ada.ads').write_text("""with Ose_ada;
+package Handler_Ada is
+    type Object is new Ose_ada.Handler with null record;
+    overriding procedure On_clock (Self : in out Object; Ctx : in out Ose_ada.Context;
+                                   Input : Ose_ada.Input_clock);
+end Handler_Ada;
+""")
+model = {'version': 2, 'schemas': 'probe.sdl', 'components': {
+    name: {'inputs': {'clock': {'kind': 'timer', 'timer': {'mode': 'one_shot', 'delay': .01}}}, 'outputs': {},
            'parameter_bindings': {'settings': {'path': 'shared/settings', 'access': 'read_write'}}}
     for name in languages}, 'subscriptions': [],
     'shared_parameters': {'shared/settings': {'schema': 'settings.sdl', 'root': 'Settings',
@@ -62,14 +105,25 @@ model = {'version': 1, 'schemas': 'probe.sdl', 'components': {
 deployment = {'version': 1, 'components': {
     name: {'container': containers[name]} for name in languages}}
 (root / 'model.json').write_text(json.dumps(model)); (root / 'deployment.json').write_text(json.dumps(deployment))
-build(root / 'model.json', root / 'deployment.json', sys.argv[1], root / 'build')
+plan_path = build(root / 'model.json', root / 'deployment.json', sys.argv[1], root / 'build')
+from ose.execution.simulation import Simulation
+engine = Simulation(json.loads(plan_path.read_text()), .02, workers=len(languages), trace=root / 'trace.jsonl')
+summary = asyncio.run(engine.execute())
+assert summary['ticks'] == len(languages), summary
+assert summary['stop_reason'] == 'quiescent', summary
+assert all(process.returncode == 0 for process in engine.processes.values())
+activations = [json.loads(line) for line in (root / 'trace.jsonl').read_text().splitlines()
+               if json.loads(line).get('event') == 'tick']
+assert {row['component'] for row in activations} == set(languages), activations
+assert all(row['activation_event'] == 'timeout' and row['time_ns'] == 10_000_000
+           for row in activations), activations
 from ose.modeling.client_build import build_java
 from ose.modeling.ada_client_build import build_ada
 if 'java' in languages:
     build_java(sys.argv[1], root / 'java-client')
 if 'ada' in languages:
     build_ada(sys.argv[1], root / 'ada-client')
-print('Installed ose package, ose entry point and SDK builds passed: ' + ', '.join(languages))
+print('Installed ose package, CLI, SDK builds and CH/2 timer callbacks passed: ' + ', '.join(languages))
 '''
 with tempfile.TemporaryDirectory() as directory:
     # -I removes PYTHONPATH and the current directory from imports.

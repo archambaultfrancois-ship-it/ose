@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
-import { layout, nodeHeight, nodeWidth, type Topology } from '../src/flow-graph'
+import { layout, inputSummary, inputDetails, nodeHeight, nodeWidth, type Topology } from '../src/flow-graph'
 import ComponentsPage from '../src/components/ComponentsPage.vue'
 import model from '../../../vibration-watch/model.json'
 
@@ -46,6 +46,26 @@ it('preserves isolated nodes, parallel links, direct routes and external topics 
   expect(layout(null).nodes).toEqual([])
 })
 
+it('describes independent activations and keeps passive feedback links visible', () => {
+  const inputs = {
+    clock: { kind: 'timer', timer: { mode: 'one_shot', delay: .1, start: 'manual' }, activates: { timeout: ['value'] } },
+    commands: { mode: 'push', timeout: 1, activates: { message: ['value'], timeout: [] } },
+    feedback: { mode: 'pull' },
+  }
+  const graph = layout({ version: 1, components: { a: { inputs }, b: {} }, subscriptions: {
+    forward: { from: 'a.value', to: 'b.input' }, back: { from: 'b.value', to: 'a.feedback' },
+  } })
+  expect(inputSummary(graph.nodes.find(node => node.name === 'a')?.inputs)).toBe('1 timer · 1 Push · 1 Pull')
+  expect(inputDetails(inputs)).toContain('clock: One-shot timer · 0.1 s · manual · timeout → value')
+  expect(inputDetails(inputs)).toContain('commands: Push · inactivity 1 s · message → value · timeout → no outputs')
+  expect(inputDetails(inputs)).toContain('feedback: Pull')
+  expect(graph.edges).toHaveLength(2)
+  expect(graph.edges.every(edge => !edge.path.includes('NaN'))).toBe(true)
+  expect(graph.nodes[0].y).not.toBe(graph.nodes[1].y)
+  expect(inputSummary({})).toBe('No activating inputs')
+  expect(inputSummary()).toBe('Inputs unavailable')
+})
+
 let app: ReturnType<typeof createApp> | undefined
 afterEach(() => { app?.unmount(); document.body.innerHTML = '' })
 
@@ -63,6 +83,8 @@ it('opens diagnostics from graph nodes and updates or freezes graph and details 
   expect(root.querySelectorAll('.flow-node')).toHaveLength(Object.keys(model.components).length)
   expect(root.querySelectorAll('.flow-edge')).toHaveLength(model.subscriptions.length)
   expect(root.querySelector('.flow-edge title')?.textContent).toContain('→')
+  expect(root.textContent).not.toContain('Trigger unavailable')
+  expect(root.querySelector('[aria-label="sensor_1: ACTIVE"] title')?.textContent).toContain('timer')
   const node = root.querySelector('[aria-label="sensor_1: ACTIVE"]')!
   node.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   await nextTick()

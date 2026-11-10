@@ -1,12 +1,15 @@
-"""Managed backend validation independent of Java/GNAT toolchains."""
+"""Container generation guards and managed validation without native toolchains."""
 import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from ose.modeling.managed_containers import tool, validate_names
+from ose.modeling.managed_containers import tool, validate_names, generate_java
+from ose.modeling.validation import validate_graph
 from ose.modeling.native_client_build import writable_manifest
 from ose.modeling.ada_containers import generate as generate_ada, scaffold as scaffold_ada
+from ose.modeling.containers import generate_python
+from ose.modeling.native_containers import generate_c, generate_rust
 
 
 class ManagedNamesTests(unittest.TestCase):
@@ -19,8 +22,38 @@ class ManagedNamesTests(unittest.TestCase):
         with self.assertRaises(ValueError): validate_names('ada', 'source', {'inputs': {'Input': {}, 'input': {}}, 'outputs': {}}, {'unit': 'Handler'})
         with self.assertRaises(ValueError): validate_names('java', 'source', node, {'class': 'org.sdlose.Handler'})
 
+    def test_ada_v2_ports_may_use_keywords_in_prefixed_identifiers(self):
+        node = {'inputs': {'in': {}}, 'outputs': {'out': {}}}
+        validate_names('ada', 'source', node, {'unit': 'App.Handler'})
+        for port in ('Bad__Port', 'Bad_', '1port'):
+            with self.subTest(port=port), self.assertRaises(ValueError):
+                validate_names('ada', 'source', {'inputs': {port: {}}, 'outputs': {}}, {'unit': 'App.Handler'})
+        with self.assertRaises(ValueError):
+            validate_names('ada', 'source', {'inputs': {'IN': {}, 'in': {}}, 'outputs': {}}, {'unit': 'App.Handler'})
+
 
 class ManagedBuildTests(unittest.TestCase):
+    def test_all_containers_reject_v1_before_generating_sources(self):
+        model = dict(version=1, schemas='schema.sdl', subscriptions=[], components={
+            'source': dict(inputs={}, outputs={}, trigger=dict(mode='periodic', period_ms=10))})
+        for language, generate, handler, identity in (
+                ('python', generate_python, 'handler.py', {}),
+                ('c', generate_c, 'handler.c', {}),
+                ('rust', generate_rust, 'handler.rs', {}),
+                ('java', generate_java, 'Handler.java', {'class': 'Handler'}),
+                ('ada', generate_ada, 'handler.adb', {'unit': 'Handler'})):
+            deployment = dict(version=1, components={
+                'source': dict(container=dict(language=language, handler=handler, **identity))})
+            with self.subTest(language=language):
+                with self.assertRaisesRegex(ValueError, 'version 2 application model'):
+                    validate_graph(model, deployment)
+                with tempfile.TemporaryDirectory() as directory:
+                    destination = Path(directory) / 'generated'
+                    arguments = ('Handler',) if language in ('java', 'ada') else ()
+                    with self.assertRaisesRegex(ValueError, language.title() + ' containers require execution model 2'):
+                        generate('source', {}, Path(handler), Path('sdl'), [], destination, *arguments)
+                    self.assertFalse(destination.exists())
+
     def test_ada_rejects_noncanonical_handler_filenames_before_generation(self):
         for filename, identity, expected in [('Handler.adb', 'Handler', 'handler.adb'),
                                              ('App-Handler.adb', 'App.Handler', 'app-handler.adb'),
@@ -36,7 +69,7 @@ class ManagedBuildTests(unittest.TestCase):
             with self.subTest(identity=identity), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 handler = root / filename
-                node = {'inputs': {}, 'outputs': {}}
+                node = {'execution_model': 2, 'inputs': {}, 'outputs': {}}
                 generated = generate_ada('probe', node, handler, sdl, [], root / 'build', identity)
                 scaffold_ada(dict(node, command=generated['command']), {'handler': str(handler), 'unit': identity})
                 self.assertTrue(handler.is_file())

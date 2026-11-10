@@ -4,6 +4,10 @@ import sys
 from measurement import Measurement
 
 
-def on_input(ctx, message: Measurement):
+def observe(ctx, message: Measurement):
     print(json.dumps({"observer": ctx.name, "sequence": message.sequence, "value": message.value}),
           file=sys.stderr, flush=True)
+
+
+def on_input(ctx, input):
+    observe(ctx, input.message)

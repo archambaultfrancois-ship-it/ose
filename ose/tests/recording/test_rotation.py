@@ -106,6 +106,23 @@ class RotationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(capture.status()["counts"]["written"], 7)
                 self.assertEqual(capture.status()["topic_bytes"]["source.value"], 7 * 17)
 
+    async def test_rotation_keeps_application_ids_independent_of_container_sequence(self):
+        self.recorder.set_max_size(1)
+        ids = [0, None, (1 << 64) - 1, 0]
+        for format in ('pcapng', 'mcap'):
+            capture = await self.recorder.start(self.root / ('ids.' + format), format=format)
+            for number, app_id in enumerate(ids):
+                payload = b'\x01' + struct.pack('>Qd', number, float(number))
+                await self.broker.publish('source.value', self.codec.wrap(CAT, payload), app_id=app_id)
+            await self.recorder.stop()
+            self.assertIsNone(capture.error)
+            paths = sorted(self.root.glob('ids_*.' + format))
+            self.assertEqual(len(paths), 4)
+            records = [r for path in paths for r in RecordingReader(path).iter_records()]
+            self.assertEqual([r.metadata.get('ose.app_id') for r in records],
+                             [str(value) if value is not None else None for value in ids])
+            self.assertEqual([r.decode().fields['sequence'] for r in records], list(range(4)))
+
     async def test_point_counts_and_payload_bytes_are_independent_during_rotation(self):
         self.broker.topics['source.other'] = self.broker.topics['source.value']
         await self.recorder.refresh()

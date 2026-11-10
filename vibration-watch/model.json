@@ -1,17 +1,26 @@
 {
-  "version": 1,
+  "version": 2,
   "schemas": "schemas",
   "components": {
     "sensor_1": {
-      "inputs": {},
+      "inputs": {
+        "clock": {
+          "kind": "timer",
+          "timer": {
+            "mode": "periodic",
+            "delay": 0.1
+          },
+          "activates": {
+            "timeout": [
+              "signal"
+            ]
+          }
+        }
+      },
       "outputs": {
         "signal": {
           "root": "SignalBlock"
         }
-      },
-      "trigger": {
-        "mode": "periodic",
-        "period_ms": 100
       },
       "parameters": {
         "machine_id": 1
@@ -26,28 +35,39 @@
     "analyzer_1": {
       "inputs": {
         "input": {
-          "root": "SignalBlock"
+          "root": "SignalBlock",
+          "activates": {
+            "message": [
+              "result"
+            ]
+          }
         }
       },
       "outputs": {
         "result": {
           "root": "Analysis"
         }
-      },
-      "trigger": {
-        "mode": "on_change"
       }
     },
     "sensor_2": {
-      "inputs": {},
+      "inputs": {
+        "clock": {
+          "kind": "timer",
+          "timer": {
+            "mode": "periodic",
+            "delay": 0.1
+          },
+          "activates": {
+            "timeout": [
+              "signal"
+            ]
+          }
+        }
+      },
       "outputs": {
         "signal": {
           "root": "SignalBlock"
         }
-      },
-      "trigger": {
-        "mode": "periodic",
-        "period_ms": 100
       },
       "parameters": {
         "machine_id": 2
@@ -62,36 +82,43 @@
     "analyzer_2": {
       "inputs": {
         "input": {
-          "root": "SignalBlock"
+          "root": "SignalBlock",
+          "activates": {
+            "message": [
+              "result"
+            ]
+          }
         }
       },
       "outputs": {
         "result": {
           "root": "Analysis"
         }
-      },
-      "trigger": {
-        "mode": "on_change"
       }
     },
     "alarm": {
       "inputs": {
         "machine_1": {
           "root": "Analysis",
-          "required": false
+          "activates": {
+            "message": [
+              "event"
+            ]
+          }
         },
         "machine_2": {
           "root": "Analysis",
-          "required": false
+          "activates": {
+            "message": [
+              "event"
+            ]
+          }
         }
       },
       "outputs": {
         "event": {
           "root": "Alarm"
         }
-      },
-      "trigger": {
-        "mode": "on_change"
       },
       "parameter_bindings": {
         "detection_1": {
@@ -112,9 +139,6 @@
         }
       },
       "outputs": {},
-      "trigger": {
-        "mode": "on_change"
-      },
       "parameter_bindings": {
         "display": {
           "path": "observer/display",
@@ -192,7 +216,10 @@
       "schema": "schemas/observer_settings.sdl",
       "initial": {
         "label": null,
-        "machine_ids": [1, 2],
+        "machine_ids": [
+          1,
+          2
+        ],
         "output": {
           "format": {
             "include_time_ns": true,

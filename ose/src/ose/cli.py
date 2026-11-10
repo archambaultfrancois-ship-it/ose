@@ -1,4 +1,5 @@
 """Standalone project command line."""
+from ose.execution.plan import read_plan
 import argparse
 import asyncio
 import json
@@ -329,7 +330,7 @@ def execute(args, parser=None):
                 print(json.dumps(summary), flush=True)
             else:
                 from ose.execution.supervisor import run
-                if json.loads(Path(args.plan).read_text()).get("execution") == "distributed":
+                if read_plan(args.plan).get("execution") == "distributed":
                     raise ValueError("use serve and worker for a distributed plan")
                 if any(value is not None for value in (args.workers, args.scenario, args.trace, args.max_tick_output_bytes)):
                     raise ValueError("--workers, --scenario, --trace and --max-tick-output-bytes require simulated mode")
@@ -416,7 +417,7 @@ def execute(args, parser=None):
                 asyncio.run(inspect())
         else:
             from ose.execution.adapter import Adapter
-            plan = json.loads(Path(args.plan).read_text())
+            plan = read_plan(args.plan)
             async def execute():
                 adapter = Adapter(plan, args.node, working_directory=args.working_directory)
                 task = asyncio.create_task(adapter.run("127.0.0.1", args.port))

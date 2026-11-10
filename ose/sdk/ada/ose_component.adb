@@ -25,12 +25,6 @@ package body Ose_Component is
      with Import, Convention => C, External_Name => "ose_release";
    function C_Send (Code : Interfaces.C.char; Data : System.Address; Size : Interfaces.C.size_t) return Interfaces.C.int
      with Import, Convention => C, External_Name => "ose_send";
-   function C_Ready return Interfaces.C.int
-     with Import, Convention => C, External_Name => "ose_ready";
-   function C_Tick (E : access constant Raw_Event; Time_Ns, Tick_Index : access Interfaces.Unsigned_64) return Interfaces.C.int
-     with Import, Convention => C, External_Name => "ose_tick";
-   function C_Publish (Port : Interfaces.C.char_array; Data : System.Address; Size : Interfaces.C.size_t) return Interfaces.C.int
-     with Import, Convention => C, External_Name => "ose_publish";
    function C_Record (Name : Interfaces.C.char_array; Data : System.Address; Size : Interfaces.C.size_t) return Interfaces.C.int
      with Import, Convention => C, External_Name => "ose_record_bytes";
    function C_Declare_Recording (Name, Root, Catalogue, Description : Interfaces.C.char_array) return Interfaces.C.int
@@ -47,7 +41,7 @@ package body Ose_Component is
      with Import, Convention => C, External_Name => "ose_set_parameters";
    procedure Check (Result : Interfaces.C.int) is
    begin
-      if Result = 0 then raise Protocol_Error with "invalid or incomplete CH/1 frame"; end if;
+      if Result = 0 then raise Protocol_Error with "invalid or incomplete component frame"; end if;
    end Check;
    function Copy_Text (Data : System.Address; Size : Interfaces.C.size_t) return String is
       Bytes : Interfaces.C.char_array (0 .. Size) with Import, Address => Data;
@@ -65,6 +59,15 @@ package body Ose_Component is
    function Op (E : Event) return Character is (Interfaces.C.To_Ada (E.Raw.Code));
    function Body_Text (E : Event) return String is (Copy_Text (E.Raw.Data, E.Raw.Size));
    function Body_Size (E : Event) return Natural is (Natural (E.Raw.Size));
+   function Body_Bytes (E : Event) return SDL_Runtime.Bytes is
+      Data : SDL_Runtime.Bytes (1 .. Natural (E.Raw.Size)) with Import, Address => E.Raw.Data;
+   begin
+      return Data;
+   end Body_Bytes;
+   procedure Send_Event (Code : Character; Data : SDL_Runtime.Bytes) is
+   begin
+      Check (C_Send (Interfaces.C.To_C (Code), Data'Address, Interfaces.C.size_t (Data'Length)));
+   end Send_Event;
    procedure Input (E : Event; Port, Catalogue : out Ada.Strings.Unbounded.Unbounded_String;
                     Payload : out SDL_Runtime.Buffer) is
       P, C, D : aliased System.Address;
@@ -78,31 +81,11 @@ package body Ose_Component is
       declare Bytes : SDL_Runtime.Bytes (1 .. Natural (DN)) with Import, Address => D;
       begin for B of Bytes loop Payload.Append (B); end loop; end;
    end Input;
-   procedure Tick (E : Event; Time_Ns, Tick_Index : in out Interfaces.Unsigned_64) is
-      T : aliased Interfaces.Unsigned_64 := Time_Ns;
-      I : aliased Interfaces.Unsigned_64 := Tick_Index;
-   begin
-      if Body_Size (E) = 0 and I = Interfaces.Unsigned_64'Last then
-         raise Protocol_Error with "tick index overflow";
-      end if;
-      Check (C_Tick (E.Raw'Access, T'Access, I'Access)); Time_Ns := T; Tick_Index := I;
-   end Tick;
-   procedure Ready (Parameters : Boolean := False) is
-      Capability : aliased Interfaces.C.unsigned_char := 3;
-   begin
-      if Parameters then
-         Check (C_Send (Interfaces.C.To_C ('R'), Capability'Address, 1));
-      else Check (C_Ready); end if;
-   end Ready;
    procedure Set_Parameters (Name : String; Payload : SDL_Runtime.Bytes) is
    begin
       Check (C_Set_Parameters (Interfaces.C.To_C (Name), Payload'Address, Interfaces.C.size_t (Payload'Length)));
    end Set_Parameters;
    procedure Finish is begin Check (C_Send (Interfaces.C.To_C ('F'), System.Null_Address, 0)); end Finish;
-   procedure Publish (Port : String; Payload : SDL_Runtime.Bytes) is
-   begin
-      Check (C_Publish (Interfaces.C.To_C (Port), Payload'Address, Interfaces.C.size_t (Payload'Length)));
-   end Publish;
    procedure Declare_Recording (Name, Root, Catalogue, Description : String) is
    begin
       Check (C_Declare_Recording (Interfaces.C.To_C (Name), Interfaces.C.To_C (Root),

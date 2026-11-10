@@ -1,8 +1,18 @@
 # Java and Ada components and external clients
 
 Java 7 and Ada 2012 have the same execution boundary as C and Rust: generated
-SDL message types, CH/1 component IPC, typed callbacks, and CENV external clients.
+SDL message types, CH/2 component IPC, typed callbacks, and CENV/2 external clients.
 Delivery uses bounded RAM queues. No persistence is introduced.
+
+Java and Ada use model v2 CH/2 input callbacks, explicit timers and Pull
+inboxes in local real-time or simulated execution. See the qualified
+[Java API](java-inputs.md) and [Ada API](ada-inputs.md). Ada passes with GNAT 12;
+Java's source/API/bytecode target passes with JDK 17 `--release 7`, while an actual
+JVM 7 run is deferred and does not block obsolete-code retirement.
+
+The Java and Ada generators and component SDKs now require model v2 and CH/2.
+Their v1 snapshot APIs and legacy READY/TICK dispatch have been removed. Rebuild
+containers and migrate handlers together; there is no callback compatibility adapter.
 
 ## Toolchains and deployment
 
@@ -56,25 +66,25 @@ constructor. Its fields hold application state.
 package app;
 import org.sdlose.generated.analyse.API;
 import sdl.globaltypes.measurement.Measurement;
+import org.sdlose.InputProtocol.Reference;
 
 public final class AnalyseHandler extends API.Handler {
     private long received;
 
-    @Override public void on_input(API.Context ctx, Measurement message)
+    @Override public void on_input(API.Context ctx, Reference<Measurement> input)
             throws Exception {
         ++received;
-        if (message == null) return; // Required input timeout.
-        ctx.publish_result(message);
+        if (input.timedOut()) return;
+        ctx.publish_result(input.message, input.appId);
     }
 }
 ```
 
-`onStart` and `onStop` are optional. `onTick(Context, Inputs)` defaults to calling
-`on_<port>` in model order. Override it to process the complete snapshot together.
-A source overrides `onTick` as well. Optional absent inputs are null in the
-snapshot and their individual callbacks are skipped. A required timed input
-receives null when its timeout expires. Missing callbacks fail explicitly when
-invoked.
+`onStart` and `onStop` are optional. Each activating input has its own callback;
+Pull inputs have none. Sources declare explicit timer inputs. The reference
+carries message/timeout event metadata and an optional application ID. Only
+outputs authorized for that input event may be published. See the
+[Java input guide](java-inputs.md) for timer references and Pull selectors.
 
 `ctx.name` and `ctx.configJson` expose identity and raw INIT configuration.
 `Json.parse(ctx.configJson)` provides a dependency-free reader for parameters.
@@ -91,8 +101,8 @@ responsibility; the generated launcher exits when component execution ends.
 
 For a component named `analyse`, the generated package is `Ose_analyse`.
 The user unit defines `Object` derived from `Ose_analyse.Handler` and overrides
-`On_Start`, `On_Stop`, `On_Tick`, or `On_<port>` as needed. Add fields to `Object`
-for application state. The default `On_Tick` dispatches the selected ports.
+`On_Start`, `On_Stop` or `On_<port>` as needed. Add fields to `Object`
+for application state. Each activating input receives its own reference.
 
 ```ada
 with Ose_analyse;
@@ -100,16 +110,15 @@ package Analyse_Handler is
    type Object is new Ose_analyse.Handler with null record;
    overriding procedure On_input
      (Self : in out Object; Ctx : in out Ose_analyse.Context;
-      Message : Ose_analyse.Input_input);
+      Input : Ose_analyse.Input_input);
 end Analyse_Handler;
 ```
 
-A timed required input uses a nullable access-to-constant message. Untimed
-individual callbacks use `not null` access. Snapshot fields may be null for
-absent optional inputs. Message references are borrowed for the callback;
-copy the record to retain it. Generated SDL controlled fields/vectors preserve
-ownership during copies. The container frees selected messages on successful
-completion, shutdown, and exceptions.
+An owned input reference contains the message, event metadata and optional
+application ID. A timeout reference has no message. Generated controlled fields
+preserve message ownership during copies. Pull inputs generate explicit
+nonblocking Get/Pull/Remove methods rather than callbacks. See the
+[Ada input guide](ada-inputs.md) for selectors, timers and lifetime rules.
 
 `Name`, `Config_JSON`, `Time_Ns`, `Tick_Index`, and `Now` provide the same context
 as other languages. Counters use `Interfaces.Unsigned_64`. Configuration remains
@@ -118,10 +127,10 @@ active callback task. Use `Ada.Text_IO.Standard_Error` for diagnostics.
 
 ## Execution modes
 
-Both languages use the existing process driver and CH/1 protocol. They advertise
-timestamped ticks and accept historical empty ticks. Malformed frames, duplicate
-inputs, missing required inputs, incompatible catalogues, and incorrect message
-roots fail the tick. No completion frame is sent after a failed callback.
+Both languages use CH/2 with READY byte 0x02 and one reference per activation.
+Malformed frames, invalid activation metadata, incompatible catalogues and
+incorrect message roots fail processing. No FINISHED is sent after an escaping
+exception. Deferred withdrawals and staged publications are cancelled.
 
 In `realtime`, the adapter applies configured subscriptions and timeouts. In
 `simulated`, virtual time and the coordinator determine inputs, wave membership,
@@ -163,6 +172,9 @@ Client.Subscription sub = client.subscribe("sensor.measurement", Measurement.cla
 
 `publish` returns the broker receipt as JSON, including admission results;
 inspect `delivery` to distinguish accepted and refused subscriptions.
+The overload `publish(message, BigInteger id)` attaches an optional uint64
+application ID. Read `MessageInfo.appId` (`null` when absent). Negative and
+wider-than-64-bit IDs are rejected; the normal overload sends no application ID.
 `listTopics` and `stats` return JSON. `Client.run()` waits for closure/failure;
 callback failures are attached as the cause of its `IOException`.
 
@@ -196,6 +208,9 @@ The generic package provides `Publisher`, `Open`, `Publish`, `Subscription`,
 administrative operations return JSON like the C API. `Options` expresses the
 same policies as Java/C/Rust. Callback parameters include typed message data,
 metadata with an unsigned 64-bit sequence, and an optional user address.
+The overload `Publish (Publisher, Message, Id)` attaches an
+`Interfaces.Unsigned_64` application ID. Callback metadata exposes `Has_App_Id`
+and `App_Id`; absence is distinct from zero. The overload without `Id` sends no ID.
 
 Messages are borrowed during callbacks; copy records to retain them. The bridge
 registers foreign threads with GNAT and catches exceptions at every ABI callback

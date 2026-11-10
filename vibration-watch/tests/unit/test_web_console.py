@@ -70,6 +70,7 @@ class WebConsoleTests(unittest.TestCase):
         (self.root / "build").mkdir()
         for token in ("first-plan-token", "replacement-plan-token"):
             (self.root / "build/plan.json").write_text(json.dumps({
+                "version": 2, "components": {"source": {"execution_model": 2}},
                 "parameter_clients": {"operator": {"token": token}}}))
             self.assertEqual(self.invoke(), 0)
             self.assertEqual(self.token, token)

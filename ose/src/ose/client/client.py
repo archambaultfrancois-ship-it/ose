@@ -6,6 +6,7 @@ import uuid
 from ose.codec.runtime import TypedCodec
 from ose.transport.tcp import Client as RPC, RemoteError
 from ose.transport.udp import UDP
+from ose.delivery.messages import validate_app_id
 from .errors import (ClientError, UnknownTopic, SchemaError, QoSError,
                      ConnectionLost, PublicationRefused)
 from .qos import Fifo
@@ -19,13 +20,16 @@ class Publisher:
         self.lock = threading.Lock()
         self.closed = False
 
-    def publish(self, message):
+    def publish(self, message, *, id=None):
         if self.closed:
             raise ClientError("publisher is closed")
+        if id is not None:
+            validate_app_id(id)
         with self.lock:
             envelope = self.codec.encode(message)
         async def send():
-            header, _ = await self.client._rpc("publish", envelope, topic=self.topic)
+            header, _ = await self.client._rpc("publish", envelope, topic=self.topic,
+                **({"app_id": id} if id is not None else {}))
             return PublishResult(**{k: header[k] for k in ("publication_id", "epoch", "sequence", "delivery")})
         return self.client._call(send())
 

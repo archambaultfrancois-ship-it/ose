@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from ose.execution.ipc import frame
 from ose.modeling.compiler import build, compile_plan
+from tests.component_driver import timer_frame
 
 
 def check_generation(case, root, sdl, language):
@@ -14,11 +15,11 @@ def check_generation(case, root, sdl, language):
     root.mkdir()
     (root / 'sample.sdl').write_text('package demo; message Sample {1: uint64 sequence;}')
     (root / 'details.sdl').write_text('package other; message Details {1: string label;}')
-    model = {'version': 1, 'schemas': 'sample.sdl', 'components': {
-        'source': {'inputs': {}, 'outputs': {
+    model = {'version': 2, 'schemas': 'sample.sdl', 'components': {
+        'source': {'inputs': {'clock': {'kind': 'timer', 'timer': {'mode': 'periodic', 'delay': .01},
+                                     'activates': {'timeout': ['sample', 'details']}}}, 'outputs': {
             'sample': {'root': 'demo.Sample'},
-            'details': {'root': 'other.Details', 'schema': 'details.sdl'}},
-            'trigger': {'mode': 'periodic', 'period_ms': 10}}}, 'subscriptions': []}
+            'details': {'root': 'other.Details', 'schema': 'details.sdl'}}}}, 'subscriptions': []}
     container = ({'language': 'java', 'handler': 'handlers/NewHandler.java', 'class': 'app.components.NewHandler'}
                  if language == 'java' else
                  {'language': 'ada', 'handler': 'handlers/app-handlers-main_handler.adb', 'unit': 'App.Handlers.Main_Handler'})
@@ -45,10 +46,15 @@ def check_generation(case, root, sdl, language):
     build(model_path, deployment_path, sdl, destination)
     case.assertEqual({p: p.read_bytes() for p in files}, original)
     command = json.loads(path.read_text())['components']['source']['command']
-    result = subprocess.run(command, input=frame('I', b'{}') + frame('T') + frame('X'),
+    result = subprocess.run(command, input=frame('I', b'{}') + frame('X'),
                             capture_output=True, timeout=15)
     case.assertEqual(result.returncode, 0, result.stderr.decode())
-    case.assertEqual(result.stdout, frame('R', b'\1') + frame('F'))
+    case.assertEqual(result.stdout, frame('R', b'\2'))
+    # Scaffolds must fail explicitly until their activating callbacks are implemented.
+    result = subprocess.run(command, input=frame('I', b'{}') + timer_frame(1) + frame('X'),
+                            capture_output=True, timeout=15)
+    case.assertNotEqual(result.returncode, 0)
+    case.assertEqual(result.stdout, frame('R', b'\2'))
 
     if language == 'ada':
         handler.rename(handler.with_suffix('.saved'))

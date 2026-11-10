@@ -1,4 +1,4 @@
-//! External CENV/1 client. Control, each subscription's admission, and callbacks run independently.
+//! External CENV/2 client. Control, each subscription's admission, and callbacks run independently.
 use std::{
     any::Any,
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
@@ -12,11 +12,13 @@ use std::{
     time::{Duration, Instant},
 };
 mod ffi;
+mod cenv;
 pub mod json;
 pub mod parameters;
 #[cfg(unix)]
 mod parameters_tls;
 use json::{object, Json};
+use cenv::{packet, unpack, PREFIX_SIZE};
 
 fn spawn_named<F, T>(role: &str, work: F) -> thread::JoinHandle<T>
 where F: FnOnce() -> T + Send + 'static, T: Send + 'static {
@@ -49,13 +51,20 @@ where F: FnOnce() -> T + Send + 'static, T: Send + 'static {
 #[cfg(all(test, target_os = "linux"))]
 #[test]
 fn native_thread_names_are_distinct_and_bounded() {
+    fn native_name() -> String {
+        extern "C" { fn prctl(option: std::ffi::c_int, ...) -> std::ffi::c_int; }
+        let mut name = [0u8; 16];
+        // Query the calling thread directly. PRoot can resolve procfs's
+        // /proc/thread-self symlink in the tracer rather than this thread.
+        assert_eq!(unsafe { prctl(16, name.as_mut_ptr(), 0usize, 0usize, 0usize) }, 0);
+        std::ffi::CStr::from_bytes_until_nul(&name).unwrap().to_str().unwrap().to_owned()
+    }
     let first = spawn_named("io", || {
-        let native = std::fs::read_to_string("/proc/thread-self/comm").unwrap();
+        let native = native_name();
         assert_eq!(native.trim(), thread::current().name().unwrap());
         native
     }).join().unwrap();
-    let second = spawn_named("io", || std::fs::read_to_string("/proc/thread-self/comm").unwrap())
-        .join().unwrap();
+    let second = spawn_named("io", native_name).join().unwrap();
     assert_ne!(first, second);
     assert!(first.trim().is_ascii() && first.trim().len() <= 15);
 }
@@ -94,30 +103,6 @@ fn text<'a>(j: &'a Json, k: &str) -> Result<&'a str> {
 fn number(j: &Json, k: &str) -> Result<u64> {
     j.get(k)?.uint()
 }
-fn packet(h: &Json, b: &[u8], limit: usize) -> Result<Vec<u8>> {
-    let m = h.stringify();
-    if m.len() > 65536 || 7 + m.len() + b.len() > limit {
-        return Err(Error::new("oversize", "frame limit exceeded"));
-    }
-    let mut p = Vec::with_capacity(7 + m.len() + b.len());
-    p.extend(b"CE\x01");
-    p.extend((m.len() as u32).to_be_bytes());
-    p.extend(m.as_bytes());
-    p.extend(b);
-    Ok(p)
-}
-fn unpack(p: &[u8], limit: usize) -> Result<Packet> {
-    if p.len() < 7 || p.len() > limit || &p[..3] != b"CE\x01" {
-        return Err(Error::new("protocol", "invalid packet"));
-    }
-    let n = u32::from_be_bytes(p[3..7].try_into().unwrap()) as usize;
-    if n > 65536 || n > p.len() - 7 {
-        return Err(Error::new("protocol", "metadata size"));
-    }
-    let h = json::parse(&p[7..7 + n])?;
-    text(&h, "op")?;
-    Ok((h, p[7 + n..].to_vec()))
-}
 fn receive(s: &mut TcpStream, limit: usize) -> Result<Packet> {
     receive_with(s, || limit)
 }
@@ -126,7 +111,7 @@ fn receive_with(s: &mut TcpStream, limit: impl Fn() -> usize) -> Result<Packet> 
     s.read_exact(&mut n)?;
     let n = u32::from_be_bytes(n) as usize;
     let limit = limit();
-    if !(7..=limit).contains(&n) {
+    if !(PREFIX_SIZE..=limit).contains(&n) {
         return Err(Error::new("protocol", "TCP length"));
     }
     let mut p = vec![0; n];
@@ -218,6 +203,7 @@ pub struct MessageInfo {
     pub topic: String,
     pub epoch: String,
     pub sequence: u64,
+    pub app_id: Option<u64>,
 }
 #[derive(Clone, Debug)]
 pub struct PublishResult {
@@ -515,7 +501,10 @@ impl Client {
         Ok(())
     }
     pub fn publish_envelope(&self, topic: &str, envelope: &[u8]) -> Result<PublishResult> {
-        publish(&self.inner, topic, envelope)
+        publish(&self.inner, topic, envelope, None)
+    }
+    pub fn publish_envelope_with_id(&self, topic: &str, envelope: &[u8], id: u64) -> Result<PublishResult> {
+        publish(&self.inner, topic, envelope, Some(id))
     }
     pub fn subscribe<M: Message>(
         &self,
@@ -662,8 +651,11 @@ impl Drop for Client {
         self.close()
     }
 }
-fn publish(c: &Inner, topic: &str, b: &[u8]) -> Result<PublishResult> {
-    let (r, _) = c.rpc("publish", object([("topic", topic.into())]), b)?;
+fn publish(c: &Inner, topic: &str, b: &[u8], app_id: Option<u64>) -> Result<PublishResult> {
+    let mut arguments = BTreeMap::new();
+    arguments.insert("topic".into(), topic.into());
+    if let Some(id) = app_id { arguments.insert("app_id".into(), id.into()); }
+    let (r, _) = c.rpc("publish", Json::Object(arguments), b)?;
     let mut delivery = BTreeMap::new();
     if let Json::Object(d) = r.get("delivery")? {
         for (k, v) in d {
@@ -704,6 +696,12 @@ pub struct Publisher<M: Message> {
 }
 impl<M: Message> Publisher<M> {
     pub fn publish(&self, m: &M) -> Result<PublishResult> {
+        self.publish_optional_id(m, None)
+    }
+    pub fn publish_with_id(&self, m: &M, id: u64) -> Result<PublishResult> {
+        self.publish_optional_id(m, Some(id))
+    }
+    fn publish_optional_id(&self, m: &M, app_id: Option<u64>) -> Result<PublishResult> {
         let b = self.codec.lock().unwrap().encode(m)?;
         publish(
             self.client
@@ -712,6 +710,7 @@ impl<M: Message> Publisher<M> {
                 .as_ref(),
             &self.topic,
             &b,
+            app_id,
         )
     }
     pub fn close(&self) -> Result<()> {
@@ -845,6 +844,9 @@ fn admission(s: &Sub, rx: mpsc::Receiver<Packet>, mut decode: Decoder) -> Result
             topic: text(&h, "topic")?.into(),
             epoch: text(&h, "epoch")?.into(),
             sequence: number(&h, "sequence")?,
+            app_id: if let Json::Object(fields) = &h {
+                fields.get("app_id").map(Json::uint).transpose()?
+            } else { None },
         };
         let deadline = Instant::now() + Duration::from_millis(s.options.wait_timeout_ms as u64);
         let mut q = s.queue.lock().unwrap();

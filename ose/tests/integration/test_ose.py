@@ -62,9 +62,10 @@ class OseTests(unittest.TestCase):
         temporary.mkdir(exist_ok=True)
         (temporary / "publisher.sdl").write_text("message Measurement {1: uint64 sequence; 2: fl64 value;}")
         (temporary / "bad.sdl").write_text("message Measurement {1: uint64 sequence; 2: string value;}")
-        model = {"version": 1, "schemas": "publisher.sdl", "components": {
-            "source": {"inputs": {}, "outputs": {"out": {"root": "Measurement"}}, "trigger": {"mode": "periodic", "period_ms": 10}},
-            "sink": {"inputs": {"in": {"root": "Measurement", "schema": "bad.sdl"}}, "outputs": {}, "trigger": {"mode": "on_change"}}},
+        model = {"version": 2, "schemas": "publisher.sdl", "components": {
+            "source": {"inputs": {"clock": {"kind": "timer", "timer": {"mode": "periodic", "delay": .01},
+                                          "activates": {"timeout": ["out"]}}}, "outputs": {"out": {"root": "Measurement"}}},
+            "sink": {"inputs": {"in": {"root": "Measurement", "schema": "bad.sdl"}}, "outputs": {}}},
             "subscriptions": [{"id": "link", "from": "source.out", "to": "sink.in"}]}
         deployment = {"version": 1, "components": {name: {"command": [sys.executable]} for name in model["components"]}}
         m, d = temporary / "model.json", temporary / "deployment.json"

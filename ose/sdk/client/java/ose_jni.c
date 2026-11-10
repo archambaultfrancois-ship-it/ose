@@ -59,7 +59,16 @@ JNIEXPORT jbyteArray JNICALL JNI_NAME(call)(JNIEnv *env, jclass cls, jlong handl
     case 0: reply = cenv_list_topics(p); ok = reply != NULL; break;
     case 1: ok = cenv_declare(p, x, y, z); break;
     case 2: ok = cenv_release_publisher(p, x); break;
-    case 3: reply = cenv_publish_envelope(p, x, (uint8_t *)y, (size_t)(*env)->GetArrayLength(env, b)); ok = reply != NULL; break;
+    case 3: {
+        jsize id_size = (*env)->GetArrayLength(env, c);
+        if (id_size == 0) reply = cenv_publish_envelope(p, x, (uint8_t *)y, (size_t)(*env)->GetArrayLength(env, b));
+        else if (id_size == 8) {
+            uint64_t id = 0;
+            for (int i = 0; i < 8; ++i) id = (id << 8) | (uint8_t)z[i];
+            reply = cenv_publish_envelope_with_id(p, x, (uint8_t *)y, (size_t)(*env)->GetArrayLength(env, b), id);
+        } else cenv_set_error("argument", "application ID size");
+        ok = reply != NULL; break;
+    }
     case 4: ok = cenv_run(p); break;
     case 5: cenv_close(p); break;
     case 6: ok = cenv_unsubscribe(p); break;
@@ -110,7 +119,8 @@ static int deliver(void *user, const void *value, const CenvMessageInfo *info) {
     if ((*env)->PushLocalFrame(env, 16) == 0) {
         jbyteArray id = bytes(env, info->publication_id, strlen(info->publication_id));
         jbyteArray topic = bytes(env, info->topic, strlen(info->topic)), epoch = bytes(env, info->epoch, strlen(info->epoch));
-        if (!(*env)->ExceptionCheck(env)) (*env)->CallVoidMethod(env, h->state, h->deliver, (jobject)value, id, topic, epoch, (jlong)info->sequence);
+        if (!(*env)->ExceptionCheck(env)) (*env)->CallVoidMethod(env, h->state, h->deliver, (jobject)value, id, topic, epoch,
+            (jlong)info->sequence, (jboolean)(info->has_app_id != 0), (jlong)info->app_id);
         ok = !failed(env, h); (*env)->PopLocalFrame(env, NULL);
     } else failed(env, h);
     detach(attached); return ok;
@@ -127,7 +137,7 @@ JNIEXPORT jlong JNICALL JNI_NAME(subscribe)(JNIEnv *env, jclass cls, jlong clien
         jclass type = (*env)->GetObjectClass(env, state);
         h->state = (*env)->NewGlobalRef(env, state);
         h->decode = (*env)->GetMethodID(env, type, "decode", "([B[B)Ljava/lang/Object;");
-        h->deliver = (*env)->GetMethodID(env, type, "deliver", "(Ljava/lang/Object;[B[B[BJ)V");
+        h->deliver = (*env)->GetMethodID(env, type, "deliver", "(Ljava/lang/Object;[B[B[BJZJ)V");
         h->failed = (*env)->GetMethodID(env, type, "failed", "(Ljava/lang/Throwable;)V");
         if (h->state && h->decode && h->deliver && h->failed && !(*env)->ExceptionCheck(env)) {
             CenvHooks hooks = {h, decode, free_value, deliver, destroy};

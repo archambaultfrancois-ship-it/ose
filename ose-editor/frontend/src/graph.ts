@@ -1,8 +1,10 @@
 import { receptionFor } from './reception'
+import { activationLinks, inputKind, inputMode, inputLabel } from './execution'
 
 export type LinkStyle = 'default' | 'straight' | 'smoothstep'
 
-export function topology(model: any, workspace: any, labels = true, linkStyle: LinkStyle = 'default') {
+export function topology(model: any, workspace: any, labels = true, linkStyle: LinkStyle = 'default', showActivations = false) {
+  if (model?.version !== 2) return { nodes: [], edges: [] }
   const components = model?.components || {}, groups = workspace?.groups || {}, collapsed = new Map<string, string>()
   const visibleGroups = new Map<string, string[]>()
   const membersOf = (id: string, ancestors = new Set<string>()): string[] => {
@@ -26,13 +28,20 @@ export function topology(model: any, workspace: any, labels = true, linkStyle: L
   }
   for (const id of Object.keys(groups)) if (!children.has(id)) visit(id)
   const nodes: any[] = [], endpoint = new Map<string, string>()
+  const portData = (name: string, direction: string, port: string, desc: any, label = port) => ({
+    name: label, port, component: name, endpoint: name + '.' + port, root: desc.root,
+    kind: inputKind(desc), mode: inputMode(desc), description: desc,
+    label: inputLabel(desc), connectable: direction !== 'inputs' || inputKind(desc) !== 'timer',
+    ...(direction === 'inputs' && inputKind(desc) !== 'timer' ? { reception: receptionFor(model, name + '.' + port) } : {}),
+  })
   for (const [name, raw] of Object.entries(components)) {
     const component = raw as any, id = collapsed.get(name) || 'component:' + name
     for (const direction of ['inputs', 'outputs']) for (const port of Object.keys(component[direction] || {})) endpoint.set(name + '.' + port, id)
     if (collapsed.has(name)) continue
-    const ports = (direction: string) => Object.entries(component[direction] || {}).map(([port, type]: any) => ({ name: port, endpoint: name + '.' + port, root: type.root, required: type.required !== false, ...(direction === 'inputs' ? { reception: receptionFor(model, name + '.' + port) } : {}) }))
-    nodes.push({ id, type: 'component', position: workspace?.positions?.[name] || { x: nodes.length % 4 * 340, y: Math.floor(nodes.length / 4) * 260 },
-      data: { name, kind: 'component', trigger: component.trigger, inputs: ports('inputs'), outputs: ports('outputs') } })
+    const ports = (direction: string) => Object.entries(component[direction] || {}).map(([port, desc]) => portData(name, direction, port, desc))
+    nodes.push({ id, type: 'component', position: workspace?.positions?.[name] || { x: nodes.length % 4 * 440, y: Math.floor(nodes.length / 4) * 400 },
+      data: { name, kind: 'component', showActivations,
+        activations: activationLinks(component), inputs: ports('inputs'), outputs: ports('outputs') } })
   }
   // A collapsed group exposes crossing connections and free ports, while
   // ports used exclusively by hidden internal links stay inside the group.
@@ -51,7 +60,7 @@ export function topology(model: any, workspace: any, labels = true, linkStyle: L
       const internal = direction === 'inputs' ? internalInputs : internalOutputs, crossing = direction === 'inputs' ? crossingInputs : crossingOutputs
       return members.flatMap((name: string) => Object.entries(components[name]?.[direction] || {})
         .filter(([port]) => !internal.has(name + '.' + port) || crossing.has(name + '.' + port))
-        .map(([port, type]: any) => ({ name: name + '.' + port, endpoint: name + '.' + port, root: type.root, required: type.required !== false, ...(direction === 'inputs' ? { reception: receptionFor(model, name + '.' + port) } : {}) })))
+        .map(([port, desc]) => portData(name, direction, port, desc, name + '.' + port)))
     }
     nodes.push({ id: 'group:' + id, type: 'component', position: workspace?.positions?.['group:' + id] || { x: 0, y: nodes.length * 200 }, data: { name: id, kind: 'group', inputs: ports('inputs'), outputs: ports('outputs') } })
   }

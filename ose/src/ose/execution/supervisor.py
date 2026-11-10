@@ -1,4 +1,5 @@
 """Launch isolated adapter/component processes and coordinate readiness."""
+from ose.execution.plan import read_plan
 import asyncio
 import json
 import os
@@ -10,7 +11,7 @@ from ose.execution.broker import Broker
 
 async def run(plan_path, duration=None, port=0, *, working_directory=None):
     plan_path = Path(plan_path).resolve()
-    plan = json.loads(plan_path.read_text())
+    plan = read_plan(plan_path)
     from ose.execution.identity import identify
     identify("broker", plan)
     broker = Broker(plan)

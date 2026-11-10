@@ -76,7 +76,7 @@ errors. NaN and infinities are rejected. The C callback API returns 1 on success
 0 on failure and marks the callback runtime as failed; Python/Java/Ada raise and
 Rust returns an error. No activation or declaration type argument is needed.
 
-These calls use ordinary CH/1 IPC flow control; they do not contact a dashboard
+These calls use ordinary CH/2 IPC flow control; they do not contact a dashboard
 or wait for a CLI reader. An emission means the update was sent to the adapter,
 not that a particular reader has observed it. While a status reader is active,
 local and distributed reports coalesce changes over 500 ms, with a full heartbeat

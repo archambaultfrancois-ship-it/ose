@@ -11,6 +11,35 @@ running OSE application; the console remains the runtime observation tool.
 Its [validation record](../ose-editor/docs/validation.md) describes the current
 authoring milestone and remaining complete-release qualification.
 
+## Application and protocol compatibility
+
+This release requires the v2 execution model. Upgrade engines, component SDKs
+and external clients together, then rebuild application plans and containers.
+There is no v1 execution adapter or network fallback. Application sources follow
+the [model migration guide](../ose/docs/model-v2-migration.md).
+
+| Boundary | Supported form |
+| --- | --- |
+| Application models and compiled plans | Version 2; each compiled component uses execution model 2. |
+| Component stdio protocol | CH/2; one activating input reference per callback, explicit timers and passive Pull access. |
+| Engine/client network envelope | CENV/2 exclusively; CENV/1 is rejected. |
+| SDL message bodies and contracts | S2PS/2 bodies unchanged; per-message catalogue exchange, discovery and compatibility checks stay dynamic. |
+| Deployment and scenario documents | Their independent version 1 is retained. |
+| Diagnostic observation metadata | Its independent version 1 is retained. |
+| Existing recordings | Remain readable; absent application IDs remain absent. New IDs are optional uint64 values, including zero. |
+
+All five component SDKs are qualified in local execution and parallel simulation.
+Distributed qualification covers Python/C workers, broker/direct routes, TLS,
+retries and generation fencing on loopback. It does not qualify physical
+multi-machine execution or Ada-specific distributed worker runs. Linux checks use
+GNAT 12 and JDK 17 targeting Java 7 APIs/bytecode; execution on an actual JVM 7
+is deferred. Android has no GNAT in the qualification environment, and JDK 21
+requires an explicit `OSE_JAVA_LOCAL_RELEASE=8` override for local Java builds;
+that override does not qualify the default Java 7 target.
+
+See the [transition qualification record](../ose/docs/cenv2-transition.md) for
+tested environments, commands and remaining deferred work.
+
 ## Build an archive
 
 From the repository root:
@@ -221,3 +250,8 @@ the installed console and creates a filtered capture in the launch directory.
 It also starts the installed editor, previews/applies a component rename in an
 external source project, validates the unsaved revision and saves ordinary OSE
 files using only installed framework resources.
+The capture check verifies preservation of application ID zero, and installed
+Rust component/client SDK unit tests run offline against the bundled resources.
+Separately, `ose/tests/installed_sdk.py` checks the installed wheel outside the
+source path, builds selected language SDKs and executes one CH/2 timer callback
+per selected language. Its default selection includes all five languages.

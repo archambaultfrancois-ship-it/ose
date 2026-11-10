@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "execution": "distributed",
+  "components": {
+    "a": {"container": {"language": "python", "handler": "a.py"}},
+    "b": {"container": {"language": "python", "handler": "b.py"}}
+  },
+  "subscriptions": {
+    "forward": {"routing": "direct"},
+    "feedback": {"routing": "broker"}
+  }
+}

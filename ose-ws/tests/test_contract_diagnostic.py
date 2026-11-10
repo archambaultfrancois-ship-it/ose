@@ -114,10 +114,10 @@ class DiagnosticAPITests(unittest.IsolatedAsyncioTestCase):
     until = test_api.APITests.until
 
     async def runtime(self, distributed=False):
-        node = {"inputs": {}, "outputs": {"value": {"root": "Root", "catalogue": "SDL2|Root{1:uint8:old;2:string:extra;}"}},
-                "trigger": {"mode": "periodic", "period_ms": 100}}
+        node = {"execution_model": 2, "inputs": {"clock": {"kind": "timer", "timer": {"mode": "periodic", "delay": .1},
+                "activates": {"timeout": ["value"]}}}, "outputs": {"value": {"root": "Root", "catalogue": "SDL2|Root{1:uint8:old;2:string:extra;}"}}}
         sink = {"inputs": {"input": {"root": "Root", "catalogue": "SDL2|Root{1:uint8:renamed;3?:string:label;}"}},
-                "outputs": {}, "trigger": {"mode": "on_change"}}
+                "outputs": {}, "execution_model": 2}
         policy = SubscriptionPolicy.resolve().to_dict()
         plan = dict(self.broker.plan, execution="distributed" if distributed else "local", components={"source": node, "sink": sink},
             external_topics={"source.external": copy.deepcopy(node["outputs"]["value"])},
@@ -177,12 +177,15 @@ class DiagnosticAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_epoch_changes_during_the_contract_read_are_rejected(self):
         runtime = await self.runtime()
-        collector = self.app.state.collector
+        epoch = runtime.epoch
         def changed(plan, sub, side="source"):
             result = subscription_schema(plan, sub, side)
             if side == "destination":
-                collector.snapshot = dict(collector.snapshot, epoch="replacement")
+                # Change the runtime generation itself: a concurrent status poll
+                # must not be able to restore the original epoch in this fixture.
+                runtime.epoch = "replacement"
             return result
         with patch("ose.execution.broker.subscription_schema", side_effect=changed):
-            response = await self.client.get("/api/v1/flow/diagnostic", params={"subscription": "value/#1", "epoch": runtime.epoch})
+            response = await self.client.get("/api/v1/flow/diagnostic", params={"subscription": "value/#1", "epoch": epoch})
         self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["error"]["code"], "APPLICATION_CHANGED")

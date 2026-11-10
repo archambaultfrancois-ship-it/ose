@@ -161,7 +161,8 @@ class AdapterShutdownTests(unittest.IsolatedAsyncioTestCase):
         adapter = Adapter.__new__(Adapter)
         adapter.closing = False
         adapter.activity = Activity()
-        adapter.scheduler = SimpleNamespace(select=lambda: None, wait_timeout=lambda: None)
+        adapter._input_now = lambda: 0
+        adapter.scheduler = SimpleNamespace(select=lambda now: None, next_event=lambda now: None)
         task = asyncio.create_task(adapter._work())
         await entered.wait()
         adapter.closing = True

@@ -14,13 +14,15 @@ class ModelTests(unittest.TestCase):
     def test_example_and_graph_rejections(self):
         validate_graph(self.model, self.deployment)
         bad = copy.deepcopy(self.model)
-        bad["components"]["acquisition"]["inputs"] = {"input": {"root": "Measurement"}}
+        bad["components"]["acquisition"]["inputs"]["input"] = {"root": "Measurement", "activates": {"message": ["measure"]}}
         bad["subscriptions"].append({"id": "cycle", "from": "analyse.result", "to": "acquisition.input"})
         with self.assertRaisesRegex(ValueError, "cycle"):
             validate_graph(bad, self.deployment)
         bad = copy.deepcopy(self.model)
         bad["components"]["analyse"]["inputs"]["extra"] = {"root": "Measurement"}
-        with self.assertRaisesRegex(ValueError, "unconnected"):
+        validate_graph(bad, self.deployment)
+        bad["components"]["analyse"]["inputs"]["extra"]["required"] = True
+        with self.assertRaisesRegex(ValueError, "invalid fields"):
             validate_graph(bad, self.deployment)
 
     def test_multiple_producers_share_reception_but_not_delivery_settings(self):
@@ -47,11 +49,11 @@ class ModelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exactly one"):
             validate_graph(self.model, bad)
         bad = copy.deepcopy(self.model)
-        bad["components"]["observation"]["inputs"]["tick"] = {"root": "Measurement", "required": False}
+        bad["components"]["observation"]["inputs"]["tick"] = {"root": "Measurement"}
         with self.assertRaisesRegex(ValueError, "reserved callback"):
             validate_graph(bad, self.deployment)
 
-    def test_required_input_timeout_validation(self):
+    def test_push_inactivity_timeout_validation(self):
         for value in (.5, 1, 1e-6):
             model = copy.deepcopy(self.model)
             model["components"]["analyse"]["inputs"]["input"]["timeout"] = value
@@ -60,17 +62,18 @@ class ModelTests(unittest.TestCase):
             with self.subTest(value=str(value)[:30]):
                 model = copy.deepcopy(self.model)
                 model["components"]["analyse"]["inputs"]["input"]["timeout"] = value
-                with self.assertRaisesRegex(ValueError, "finite positive"):
+                with self.assertRaisesRegex(ValueError, "finite nonnegative"):
                     validate_graph(model, self.deployment)
-        for direction in ("inputs", "outputs"):
-            model = copy.deepcopy(self.model)
-            model["components"]["analyse"][direction]["optional"] = dict(root="Measurement", required=False, timeout=.5)
-            with self.assertRaisesRegex(ValueError, "only supported on required inputs"):
-                validate_graph(model, self.deployment)
         model = copy.deepcopy(self.model)
-        model["components"]["analyse"]["outputs"]["result"]["timeout"] = .5
-        with self.assertRaisesRegex(ValueError, "only supported on required inputs"):
+        model["components"]["analyse"]["inputs"]["input"]["mode"] = "pull"
+        model["components"]["analyse"]["inputs"]["input"]["timeout"] = .5
+        with self.assertRaisesRegex(ValueError, "passive Pull"):
             validate_graph(model, self.deployment)
+        for field, value in (("required", False), ("timeout", .5)):
+            model = copy.deepcopy(self.model)
+            model["components"]["analyse"]["outputs"]["result"][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "invalid fields"):
+                validate_graph(model, self.deployment)
 
     def test_native_container_languages_and_port_identifiers(self):
         for language, suffix in (("c", ".c"), ("rust", ".rs")):
@@ -78,7 +81,7 @@ class ModelTests(unittest.TestCase):
             deployment["components"]["observation"]["container"] = {"language": language, "handler": "logic" + suffix}
             validate_graph(self.model, deployment)
             model = copy.deepcopy(self.model)
-            model["components"]["observation"]["inputs"]["match"] = {"root": "Measurement", "required": False}
+            model["components"]["observation"]["inputs"]["match"] = {"root": "Measurement"}
             with self.assertRaisesRegex(ValueError, "non-reserved ASCII"):
                 validate_graph(model, deployment)
 

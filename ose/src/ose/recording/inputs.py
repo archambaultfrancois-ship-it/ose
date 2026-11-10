@@ -18,6 +18,8 @@ def input_points(plan, component, generation, available, endpoint=None):
             incoming.setdefault(sub["to"].split(".")[1], []).append(sub)
     result = {}
     for port, desc in plan["components"][component]["inputs"].items():
+        if desc.get("kind") == "timer":
+            continue
         topic = f"{component}.{port}"
         subscriptions = incoming.get(port, [])
         policy = SubscriptionPolicy.from_dict(subscriptions[0]["policy"]) if subscriptions else SubscriptionPolicy()
@@ -49,4 +51,5 @@ class InputRecording:
             else:
                 adapter = self.adapters.get(record["catalogue"], desc["catalogue"], desc["root"])
                 envelope = adapter.adapt(record["payload"])
-            self.emit(port, desc, envelope, tick_index)
+            extra = {"app_id": record["app_id"]} if "app_id" in record else {}
+            self.emit(port, desc, envelope, tick_index, **extra)

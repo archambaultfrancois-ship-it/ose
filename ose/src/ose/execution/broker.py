@@ -9,6 +9,7 @@ from ose.execution.sessions import Sessions, ClientError
 from ose.delivery.engine import DeliveryEngine
 from ose.delivery.policies import SubscriptionPolicy
 from ose.delivery.stores import MemoryStore
+from ose.delivery.messages import validate_app_id
 from ose.transport.tcp import TCP, start_server
 from ose.transport.udp import UDP
 from ose.transport.protocol import encode
@@ -42,6 +43,8 @@ class Broker(Sessions):
         for name, node in plan["components"].items():
             for direction in ("inputs", "outputs"):
                 for port_name, port in node[direction].items():
+                    if port.get("kind") == "timer":
+                        continue
                     self.register(port["catalogue"])
                     if direction == "outputs":
                         self.topics[f"{name}.{port_name}"] = port
@@ -98,13 +101,14 @@ class Broker(Sessions):
             port = header["port"]
             desc = self.plan["components"][node]["inputs"][port]
             sequence = header["sequence"]
+            extra = {"app_id": validate_app_id(header["app_id"])} if "app_id" in header else {}
             if node not in self.ready or type(sequence) is not int or sequence < 1:
                 raise ValueError("input recording requires a ready component and positive tick index")
             key = input_key(self.plan, node, port)
             if key in self.recording.active_points():
                 self.codec.validate_only(desc["catalogue"], desc["root"], body)
                 self.recording.observe(key, body, generation=self.generations[node], sequence=sequence,
-                                       catalogue=desc["catalogue"], root=desc["root"])
+                                       catalogue=desc["catalogue"], root=desc["root"], **extra)
             return {}
         name = validate_name(header["name"])
         topic = prefix + name
@@ -457,7 +461,10 @@ class Broker(Sessions):
                         raise ClientError("ownership", "declare publisher before publication")
                 elif node is None or topic not in {f"{node}.{p}" for p in self.plan["components"][node]["outputs"]}:
                     raise ClientError("ownership", "publication is not enabled for this component")
-                result = await self.publish(header["topic"], body)
+                if "app_id" in header:
+                    validate_app_id(header["app_id"])
+                result = await self.publish(header["topic"], body,
+                    **({"app_id": header["app_id"]} if "app_id" in header else {}))
                 await self._reply(peer, header["request"], result)
             except (ValueError, KeyError) as error:
                 await self._reply(peer, header.get("request"), error=str(error), error_code=getattr(error, "code", "invalid_request"))
@@ -485,7 +492,9 @@ class Broker(Sessions):
                 return
         raise ValueError("unknown UDP peer")
 
-    async def publish(self, topic, envelope):
+    async def publish(self, topic, envelope, *, app_id=None):
+        if app_id is not None:
+            validate_app_id(app_id)
         port = self.topics[topic]
         try:
             self.codec.validate_only(port["catalogue"], port["root"], envelope)
@@ -494,9 +503,11 @@ class Broker(Sessions):
         self.sequence += 1
         self.recording.observe(topic, envelope,
             generation=self.publisher_owners.get(topic, self.epoch), sequence=self.sequence,
-            catalogue=port["catalogue"], root=port["root"])
+            catalogue=port["catalogue"], root=port["root"], app_id=app_id)
         record = {"id": f"{self.epoch}:{self.sequence}", "epoch": self.epoch, "sequence": self.sequence,
                   "topic": topic, "body": bytes(envelope), "published_at": time.time()}
+        if app_id is not None:
+            record["app_id"] = app_id
         self.retained[topic] = record
         self.topic_counts[topic] += 1
         results = {}
@@ -533,7 +544,8 @@ class Broker(Sessions):
 
     def _header(self, identity, record):
         return {"op": "data", "subscription": identity, "id": record["id"], "epoch": record["epoch"],
-                "sequence": record["sequence"], "topic": record["topic"]}
+                "sequence": record["sequence"], "topic": record["topic"],
+                **({"app_id": record["app_id"]} if "app_id" in record else {})}
 
     def _fits(self, identity, record, envelope):
         engine = self.engines[identity]

@@ -1,6 +1,7 @@
 """SDL2 MCAP/PCAPNG recording profiles (require the Python mcap package)."""
 
 import io
+import json
 import math
 import operator
 import os
@@ -25,6 +26,7 @@ ENCODING = 'sdl2'
 MAX_RECORD_SIZE = 64 * 1024 * 1024
 MAX_CATALOGUE_SIZE = 1024 * 1024
 MAGIC = b'\x89MCAP0\r\n'
+MESSAGE_METADATA = 'sdl.recording.message.v1'
 
 
 class RecordingError(ValueError):
@@ -46,6 +48,14 @@ def _metadata(value):
    if any(not isinstance(k, str) or not isinstance(v, str) for k, v in result.items()):
       raise RecordingError('metadata keys and values must be strings')
    return result
+
+
+def _message_metadata(index, values):
+   # MCAP may buffer messages in chunks while emitting Metadata immediately.
+   # A file-order ordinal associates metadata without relying on adjacency,
+   # timestamps, channel IDs or the wrapping uint32 publication sequence.
+   return Metadata(MESSAGE_METADATA, {'index': str(index),
+      'values': json.dumps(dict(values), sort_keys=True, separators=(',', ':'))})
 
 
 def _catalogue(text):
@@ -93,6 +103,7 @@ class RecordingRecord:
    log_time_ns: int
    publish_time_ns: int
    sequence: int
+   metadata: object = field(default_factory=lambda: MappingProxyType({}))
 
    def decode(self, *, dynamic=True):
       """Decode with the recorded catalogue and the reader's optional local types."""
@@ -117,6 +128,7 @@ class RecordingWriter:
       self._channels = {}
       self._schemas = {}
       self._emission_contexts = {}
+      self._message_index = 0
       self._max_payload = _uint(max_payload_size, 32, 'max_payload_size')
       chunk_size = _uint(chunk_size, 32, 'chunk_size')
       if not self._max_payload or not 0 < chunk_size <= MAX_RECORD_SIZE - 1024:
@@ -170,6 +182,8 @@ class RecordingWriter:
       self._open()
       if not isinstance(name, str):
          raise RecordingError('metadata name must be a string')
+      if name == MESSAGE_METADATA:
+         raise RecordingError('reserved per-message metadata name')
       self._writer.add_metadata(name, _metadata(metadata))
 
    def _channel(self, channel):
@@ -178,7 +192,8 @@ class RecordingWriter:
          raise RecordingError('channel does not belong to this writer')
 
    def write_encoded(self, channel, payload, *, log_time_ns=None,
-                     publish_time_ns=None, sequence=0):
+                     publish_time_ns=None, sequence=0, metadata=None):
+      """Preserve SDL bytes; optional string metadata belongs to this message."""
       self._channel(channel)
       if not isinstance(payload, (bytes, bytearray, memoryview)):
          raise RecordingError('payload must be bytes')
@@ -195,8 +210,13 @@ class RecordingWriter:
       log_time_ns = _uint(time.time_ns() if log_time_ns is None else log_time_ns, 64, 'log_time_ns')
       publish_time_ns = _uint(log_time_ns if publish_time_ns is None else publish_time_ns, 64, 'publish_time_ns')
       sequence = _uint(sequence, 32, 'sequence')
+      values = _metadata(metadata)
+      if values:
+         record = _message_metadata(self._message_index, values)
+         self._writer.add_metadata(record.name, record.metadata)
       self._writer.add_message(channel_id=channel.id, data=payload,
          log_time=log_time_ns, publish_time=publish_time_ns, sequence=sequence)
+      self._message_index += 1
 
    def write(self, channel, message, **timestamps):
       self._channel(channel)
@@ -312,6 +332,7 @@ class RecordingReader:
 
    def _scan(self):
       schemas, channels = {}, {}
+      message_index, metadata_bytes, pending_metadata = 0, 0, {}
       header_seen = False
       data_end = False
       consumer = description(self.local_types) if self.local_types else None
@@ -378,8 +399,11 @@ class RecordingReader:
                      channel = channels[record.channel_id][1]
                      if _root(channel.context, record.data) != channel.root_type:
                         raise RecordingError('payload root does not match channel root_type')
+                     values, size = pending_metadata.pop(message_index, ({}, 0))
+                     metadata_bytes -= size
+                     message_index += 1
                      yield RecordingRecord(channel, record.data, record.log_time,
-                        record.publish_time, record.sequence)
+                        record.publish_time, record.sequence, MappingProxyType(values))
                   elif isinstance(record, DataEnd):
                      if data_end:
                         raise RecordingError('duplicate MCAP DataEnd')
@@ -388,7 +412,28 @@ class RecordingReader:
                      if not data_end:
                         raise RecordingError('missing MCAP DataEnd')
                   elif isinstance(record, Metadata):
-                     yield record
+                     if record.name != MESSAGE_METADATA:
+                        yield record
+                        continue
+                     try:
+                        index = int(record.metadata['index'])
+                        decoded = json.loads(record.metadata['values'])
+                        if not isinstance(decoded, dict):
+                           raise ValueError('metadata values must be an object')
+                        values = _metadata(decoded)
+                        if (data_end or set(record.metadata) != {'index', 'values'}
+                            or str(index) != record.metadata['index'] or index < message_index
+                            or index in pending_metadata or not values):
+                           raise ValueError('invalid index or values')
+                     except (KeyError, TypeError, ValueError) as error:
+                        raise RecordingError('invalid per-message metadata') from error
+                     size = len(record.metadata['values'].encode('utf-8')) + 64
+                     metadata_bytes += size
+                     if metadata_bytes > self.max_record_size:
+                        raise RecordingError('pending per-message metadata size limit exceeded')
+                     pending_metadata[index] = values, size
+            if pending_metadata:
+               raise RecordingError('per-message metadata references a missing message')
             if stream.read(1):
                raise RecordingError('data after MCAP trailing magic')
       except RecordingError:
@@ -558,7 +603,8 @@ def convert_recording(source, output, *, format='pcapng', overwrite=False):
             writer.write_metadata(record.name, record.metadata)
          elif isinstance(record, RecordingRecord):
             writer.write_encoded(channels[record.channel.id], record.payload,
-               log_time_ns=record.log_time_ns, publish_time_ns=record.publish_time_ns, sequence=record.sequence)
+               log_time_ns=record.log_time_ns, publish_time_ns=record.publish_time_ns,
+               sequence=record.sequence, metadata=record.metadata)
             count += 1
    return count
 

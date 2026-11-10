@@ -7,7 +7,8 @@ def writable_manifest(sdk, destination):
     staged = Path(destination) / 'native-sdk'
     # Cargo writes a lockfile beside the root manifest. Installed SDK assets may
     # be read-only, so only the application build directory is ever mutated.
-    for path in [source / 'Cargo.toml', *sorted((source / 'src').rglob('*.rs'))]:
+    for path in [source / 'Cargo.toml', *sorted((source / 'src').rglob('*.rs')),
+                 *sorted((source / 'tests/fixtures').glob('*.json'))]:
         target = staged / path.relative_to(source)
         content = path.read_bytes()
         if not target.is_file() or target.read_bytes() != content:

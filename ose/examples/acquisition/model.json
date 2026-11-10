@@ -1,15 +1,101 @@
 {
-  "version": 1,
+  "version": 2,
   "schemas": "schemas",
   "components": {
-    "acquisition": {"inputs": {}, "outputs": {"measure": {"root": "Measurement"}}, "trigger": {"mode": "periodic", "period_ms": 20}},
-    "analyse": {"inputs": {"input": {"root": "Measurement"}}, "outputs": {"result": {"root": "Measurement"}}, "trigger": {"mode": "on_change"}},
-    "observation": {"inputs": {"input": {"root": "Measurement"}}, "outputs": {}, "trigger": {"mode": "on_change"}},
-    "affichage": {"inputs": {"input": {"root": "Measurement"}}, "outputs": {}, "trigger": {"mode": "periodic", "period_ms": 100}}
+    "acquisition": {
+      "inputs": {
+        "clock": {
+          "kind": "timer",
+          "timer": {
+            "mode": "periodic",
+            "delay": 0.02
+          },
+          "activates": {
+            "timeout": [
+              "measure"
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "measure": {
+          "root": "Measurement"
+        }
+      }
+    },
+    "analyse": {
+      "inputs": {
+        "input": {
+          "root": "Measurement",
+          "activates": {
+            "message": [
+              "result"
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "root": "Measurement"
+        }
+      }
+    },
+    "observation": {
+      "inputs": {
+        "input": {
+          "root": "Measurement"
+        }
+      },
+      "outputs": {}
+    },
+    "affichage": {
+      "inputs": {
+        "input": {
+          "root": "Measurement",
+          "mode": "pull"
+        },
+        "clock": {
+          "kind": "timer",
+          "timer": {
+            "mode": "periodic",
+            "delay": 0.1
+          },
+          "activates": {
+            "timeout": []
+          }
+        }
+      },
+      "outputs": {}
+    }
   },
   "subscriptions": [
-    {"id": "source-analyse", "from": "acquisition.measure", "to": "analyse.input", "qos": {"buffer": "fifo", "ack": "received", "retry": {}}},
-    {"id": "analyse-observation", "from": "analyse.result", "to": "observation.input", "qos": {"buffer": "fifo", "ack": "received", "retry": {}}},
-    {"id": "analyse-affichage", "from": "analyse.result", "to": "affichage.input", "qos": {"buffer": "latest"}}
+    {
+      "id": "source-analyse",
+      "from": "acquisition.measure",
+      "to": "analyse.input",
+      "qos": {
+        "buffer": "fifo",
+        "ack": "received",
+        "retry": {}
+      }
+    },
+    {
+      "id": "analyse-observation",
+      "from": "analyse.result",
+      "to": "observation.input",
+      "qos": {
+        "buffer": "fifo",
+        "ack": "received",
+        "retry": {}
+      }
+    },
+    {
+      "id": "analyse-affichage",
+      "from": "analyse.result",
+      "to": "affichage.input",
+      "qos": {
+        "buffer": "latest"
+      }
+    }
   ]
 }

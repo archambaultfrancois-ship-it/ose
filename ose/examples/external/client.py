@@ -14,9 +14,9 @@ with Client.connect(port=args.port,client_id='external-python') as client:
     input('Press Enter to continue: ')
     done=threading.Event()
     def receive(message,info):
-        print(info.publication_id,message.value,flush=True)
+        print(info.publication_id,info.app_id,message.value,flush=True)
         done.set()
     sub=client.subscribe(f'{args.language}.result',Measurement,receive,qos=Latest())
-    print(publisher.publish(Measurement(sequence=1,value=3.5)))
+    print(publisher.publish(Measurement(sequence=1,value=3.5),id=42))
     if not done.wait(5):
         raise TimeoutError('no result received')

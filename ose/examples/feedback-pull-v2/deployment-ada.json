@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "components": {
+    "a": {"container": {"language": "ada", "handler": "a_handler.adb", "unit": "A_Handler"}},
+    "b": {"container": {"language": "ada", "handler": "b_handler.adb", "unit": "B_Handler"}}
+  }
+}

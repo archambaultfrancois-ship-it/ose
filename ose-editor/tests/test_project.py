@@ -1,5 +1,6 @@
 """Compound commands, disk isolation, conflicts, recovery and representative load."""
 from pathlib import Path
+from decimal import Decimal
 import shutil
 import tempfile
 import time
@@ -90,7 +91,7 @@ class ProjectTests(unittest.TestCase):
                       'literal': '{"root":"Analysis"}'})
         self.command({'action': 'set', 'file': self.project.model,
                       'path': ['components', 'sensor_1', 'inputs', 'loop'],
-                      'literal': '{"root":"SignalBlock"}'})
+                      'literal': '{"root":"SignalBlock","activates":{"message":["signal"]}}'})
         cases.extend([({'to': 'alarm.free'}, 'same logical name'),
                       ({'to': 'sensor_1.loop'}, 'cycle')])
         for overrides, message in cases:
@@ -192,8 +193,106 @@ class ProjectTests(unittest.TestCase):
     def test_port_and_subscription_renames(self):
         self.command({'action': 'rename', 'kind': 'port', 'direction': 'outputs', 'old': 'sensor_1.signal', 'name': 'samples'})
         self.assertEqual(self.model()['subscriptions'][0]['from'], 'sensor_1.samples')
+        self.assertEqual(self.model()['components']['sensor_1']['inputs']['clock']['activates']['timeout'], ['samples'])
         self.command({'action': 'rename', 'kind': 'subscription', 'old': 'signal_1', 'name': 'samples_1'})
         self.assertEqual(self.model()['subscriptions'][0]['id'], 'samples_1')
+
+    def test_new_v2_component_uses_a_timer_instead_of_a_trigger(self):
+        self.command({'action': 'add_component', 'name': 'new_component'})
+        component = self.model()['components']['new_component']
+        self.assertNotIn('trigger', component)
+        self.assertEqual(component['inputs']['clock'], {'kind': 'timer', 'timer': {'mode': 'periodic', 'delay': Decimal('0.1')}})
+
+    def test_new_project_defaults_to_model_v2_and_deployment_v1(self):
+        root = self.root / 'new-project'
+        root.mkdir()
+        project = Project(root, create=True)
+        self.addCleanup(project.close)
+        self.assertEqual(loads(project.document(project.model).text)['version'], 2)
+        self.assertEqual(loads(project.document(project.deployments[0]).text)['version'], 1)
+
+    def test_legacy_model_stays_editable_as_source_without_structured_fallback(self):
+        self.command({'action': 'set', 'file': 'model.json', 'path': ['version'], 'literal': '1'})
+        before = self.project.snapshot()
+        state = self.project.projection()
+        self.assertFalse(state['documents']['model.json']['stale'])
+        self.assertTrue(any('Application model v2 is required' in item['message'] for item in state['diagnostics']))
+        for command in ({'action': 'add_component', 'name': 'legacy'},
+                        {'action': 'rename', 'kind': 'component', 'old': 'sensor_1', 'name': 'renamed'},
+                        {'action': 'connect', 'subscription': {'id': 'legacy', 'from': 'sensor_1.signal', 'to': 'analyzer_1.input'}}):
+            with self.subTest(action=command['action']), self.assertRaisesRegex(ValueError, 'Application model v2'):
+                self.project.prepare(command, self.project.revision)
+            self.assertEqual(self.project.snapshot(), before)
+        with self.assertRaisesRegex(ValueError, 'Draft has errors'):
+            self.project.save(self.project.revision)
+        self.project.save(self.project.revision, allow_invalid=True)
+        self.assertEqual(loads((self.root / 'model.json').read_text())['version'], 1)
+        self.command({'action': 'set', 'file': 'model.json', 'path': ['version'], 'literal': '2'})
+        self.command({'action': 'add_component', 'name': 'migrated'})
+        self.assertIn('clock', self.model()['components']['migrated']['inputs'])
+
+    def test_input_execution_configuration_is_atomic_reversible_and_preserves_other_sources(self):
+        before = self.project.document(self.project.model).text
+        disk = {key: doc.path.read_bytes() for key, doc in self.project.documents.items()}
+        desc = {'kind': 'timer', 'timer': {'mode': 'one_shot', 'delay': .25, 'start': 'manual'},
+                'activates': {'timeout': ['signal']}}
+        prepared = self.command({'action': 'configure_input', 'component': 'sensor_1', 'port': 'clock', 'description': desc})
+        self.assertEqual([change['file'] for change in prepared['changes']], ['model.json'])
+        self.assertTrue(prepared['handlers_to_review'])
+        timer = self.model()['components']['sensor_1']['inputs']['clock']
+        self.assertEqual(timer['timer']['mode'], 'one_shot')
+        self.assertEqual(timer['timer']['delay'], Decimal('0.25'))
+        self.assertEqual(timer['activates'], {'timeout': ['signal']})
+        self.assertEqual(disk, {key: doc.path.read_bytes() for key, doc in self.project.documents.items()})
+        self.project.undo(self.project.revision)
+        self.assertEqual(self.project.document(self.project.model).text, before)
+        self.project.undo(self.project.revision, redo=True)
+        self.assertEqual(self.model()['components']['sensor_1']['inputs']['clock']['timer']['start'], 'manual')
+
+    def test_input_configuration_rejects_connected_timers_invalid_events_and_reserved_names(self):
+        cases = [('analyzer_1', 'input', {'kind': 'timer', 'timer': {'mode': 'periodic', 'delay': .1}}, 'Disconnect'),
+                 ('sensor_1', 'clock', {'kind': 'timer', 'timer': {'mode': 'periodic', 'delay': 0}}, 'positive'),
+                 ('sensor_1', 'extra', {'root': 'SignalBlock', 'mode': 'pull', 'timeout': .1}, 'passive Pull'),
+                 ('sensor_1', 'extra', {'root': 'SignalBlock', 'activates': {'message': ['missing']}}, 'invalid'),
+                 ('sensor_1', 'tick', {'root': 'SignalBlock'}, 'reserved callback')]
+        for component, port, desc, message in cases:
+            with self.subTest(component=component, port=port):
+                before = self.project.snapshot()
+                with self.assertRaisesRegex(ValueError, message):
+                    self.project.prepare({'action': 'configure_input', 'component': component, 'port': port,
+                                          'description': desc}, self.project.revision)
+                self.assertEqual(before, self.project.snapshot())
+
+    def test_input_configuration_uses_event_dependencies_and_never_adds_implicit_permissions(self):
+        self.command({'action': 'configure_input', 'component': 'sensor_1', 'port': 'feedback',
+                      'description': {'root': 'Analysis', 'mode': 'pull'}})
+        self.command({'action': 'connect', 'name': 'feedback', 'from': 'analyzer_1.result', 'to': 'sensor_1.feedback'})
+        before = self.project.snapshot()
+        with self.assertRaisesRegex(ValueError, 'activation graph contains a cycle'):
+            self.project.prepare({'action': 'configure_input', 'component': 'sensor_1', 'port': 'feedback',
+                                  'description': {'root': 'Analysis', 'mode': 'push', 'activates': {'message': ['signal']}}},
+                                 self.project.revision)
+        self.assertEqual(before, self.project.snapshot())
+        self.command({'action': 'configure_input', 'component': 'sensor_1', 'port': 'feedback',
+                      'description': {'root': 'Analysis', 'mode': 'push', 'timeout': .2, 'activates': {'timeout': ['signal']}}})
+        desc = self.model()['components']['sensor_1']['inputs']['feedback']
+        self.assertNotIn('message', desc['activates'])
+        self.command({'action': 'configure_input', 'component': 'sensor_1', 'port': 'feedback', 'description': {'root': 'Analysis'}})
+        self.assertNotIn('activates', self.model()['components']['sensor_1']['inputs']['feedback'])
+
+    def test_v2_connections_accept_passive_feedback_and_reject_activation_cycles_and_timers(self):
+        for port, desc in (('feedback', '{"root":"SignalBlock","mode":"pull"}'),
+                           ('activating', '{"root":"SignalBlock","activates":{"message":["signal"]}}')):
+            self.command({'action': 'set', 'file': self.project.model,
+                          'path': ['components', 'sensor_1', 'inputs', port], 'literal': desc})
+        self.command({'action': 'duplicate_subscription', 'copy': 'signal_1', 'name': 'feedback', 'to': 'sensor_1.feedback'})
+        for name, destination, message in (('bad_cycle', 'sensor_1.activating', 'cycle'),
+                                            ('bad_timer', 'sensor_1.clock', 'Timer inputs')):
+            before = self.project.snapshot()
+            with self.assertRaisesRegex(ValueError, message):
+                self.project.prepare({'action': 'duplicate_subscription', 'copy': 'signal_1',
+                                      'name': name, 'to': destination}, self.project.revision)
+            self.assertEqual(self.project.snapshot(), before)
 
     def test_prepare_failure_restores_all_documents(self):
         before = self.project.snapshot()
@@ -207,7 +306,7 @@ class ProjectTests(unittest.TestCase):
             name += '_copy'
         self.command({'action': 'add_component', 'name': name, 'copy': 'sensor_1'})
         self.assertEqual(self.model()['components'][name], self.model()['components']['sensor_1'])
-        self.assertIn('    "' + name + '": {\n      "inputs": {},\n      "outputs": {\n', self.project.document(self.project.model).text)
+        self.assertIn('    "' + name + '": {\n      "inputs": {\n        "clock": {', self.project.document(self.project.model).text)
         for key in self.project.deployments:
             self.assertIn('    "' + name + '": {\n      "container": {\n', self.project.document(key).text)
         self.command({'action': 'remove_component', 'name': 'sensor_1'})
@@ -216,20 +315,20 @@ class ProjectTests(unittest.TestCase):
 
     def test_stale_revisions_and_concurrent_writer(self):
         old = self.project.revision
-        self.command({'action': 'set', 'file': 'model.json', 'path': ['components', 'sensor_1', 'trigger', 'period_ms'], 'literal': '200'})
+        self.command({'action': 'set', 'file': 'model.json', 'path': ['components', 'sensor_1', 'inputs', 'clock', 'timer', 'delay'], 'literal': '0.2'})
         with self.assertRaises(Conflict):
             self.project.prepare({'action': 'workspace', 'positions': {}}, old)
         with self.assertRaises(Conflict):
             Project(self.root)
 
     def test_external_file_change_keeps_disk_and_draft(self):
-        self.command({'action': 'set', 'file': 'model.json', 'path': ['components', 'sensor_1', 'trigger', 'period_ms'], 'literal': '200'})
-        changed = (self.root / 'model.json').read_text().replace('"period_ms": 100', '"period_ms": 300')
+        self.command({'action': 'set', 'file': 'model.json', 'path': ['components', 'sensor_1', 'inputs', 'clock', 'timer', 'delay'], 'literal': '0.2'})
+        changed = (self.root / 'model.json').read_text().replace('"delay": 0.1', '"delay": 0.3')
         (self.root / 'model.json').write_text(changed)
         with self.assertRaises(Conflict) as raised:
             self.project.save(self.project.revision)
         self.assertEqual(raised.exception.conflicts[0]['disk'], changed)
-        self.assertEqual(self.model()['components']['sensor_1']['trigger']['period_ms'], 200)
+        self.assertEqual(self.model()['components']['sensor_1']['inputs']['clock']['timer']['delay'], Decimal('0.2'))
         self.assertEqual((self.root / 'model.json').read_text(), changed)
 
     def test_syntax_invalid_source_retains_stale_projection_and_can_save_draft(self):
@@ -263,8 +362,7 @@ class ProjectTests(unittest.TestCase):
             self.assertEqual(self.project.documents[key].path.read_bytes(), baseline)
 
     def test_recovery_never_overwrites_subsequent_external_changes(self):
-        self.command({'action': 'set', 'file': 'model.json', 'path': ['version'], 'literal': '1'})
-        self.command({'action': 'set', 'file': 'model.json', 'path': ['components', 'sensor_1', 'trigger', 'period_ms'], 'literal': '200'})
+        self.command({'action': 'set', 'file': 'model.json', 'path': ['components', 'sensor_1', 'inputs', 'clock', 'timer', 'delay'], 'literal': '0.2'})
         with self.assertRaises(OSError):
             self.project.save(self.project.revision, replace=lambda *args: (_ for _ in ()).throw(OSError('disk')))
         (self.root / 'model.json').write_text('external data')
@@ -312,15 +410,15 @@ class ProjectTests(unittest.TestCase):
         self.assertTrue((self.root / 'schemas/new.sdl').exists())
 
     def test_unsaved_draft_is_recovered_explicitly_without_changing_sources(self):
-        self.command({'action': 'set', 'file': 'model.json', 'path': ['components', 'sensor_1', 'trigger', 'period_ms'], 'literal': '250'})
+        self.command({'action': 'set', 'file': 'model.json', 'path': ['components', 'sensor_1', 'inputs', 'clock', 'timer', 'delay'], 'literal': '0.25'})
         self.project.close()
         self.project = Project(self.root)
         self.addCleanup(self.project.close)
         self.assertTrue(self.project.projection()['draft_recovery'])
-        self.assertEqual(self.model()['components']['sensor_1']['trigger']['period_ms'], 100)
+        self.assertEqual(self.model()['components']['sensor_1']['inputs']['clock']['timer']['delay'], Decimal('0.1'))
         self.project.recover_draft(self.project.revision, True)
-        self.assertEqual(self.model()['components']['sensor_1']['trigger']['period_ms'], 250)
-        self.assertIn('"period_ms": 100', (self.root / 'model.json').read_text())
+        self.assertEqual(self.model()['components']['sensor_1']['inputs']['clock']['timer']['delay'], .25)
+        self.assertIn('"delay": 0.1', (self.root / 'model.json').read_text())
         self.project.save(self.project.revision)
         self.assertFalse((self.root / '.ose-editor/draft.json').exists())
 

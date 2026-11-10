@@ -26,33 +26,26 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
     expected = identity.lower().replace('.', '-') + '.adb'
     if handler.name != expected:
         raise ValueError(f'Ada handler filename must follow lowercase GNAT unit naming: {expected}')
+    if node.get('execution_model') != 2:
+        raise ValueError('Ada containers require execution model 2')
     types = merge_schemas(name, 'ada', schemas, destination / 'types')
     api = 'Ose_' + name; stem = api.lower(); packages = sorted({p for p, _ in types.values()})
-    if any(p.lower() in (api.lower(), identity.lower(), 'ose_component', 'ose_recording', 'ose_measurements') for p in packages):
+    if any(p.lower() in (api.lower(), identity.lower(), 'ose_component', 'ose_recording', 'ose_measurements', 'ose_inputs') for p in packages):
         raise ValueError('Ada schema package conflicts with component API')
     def typ(desc): return '.'.join(types[desc['root']])
     spec = ['-- Generated typed component API.', 'with Ada.Strings.Unbounded;', 'with Ada.Task_Identification;',
-            'with Interfaces;', 'with SDL_Runtime;', 'with Ose_Component;', 'with Ose_Recording;', 'with Ose_Measurements;', *(f'with {p};' for p in packages), f'package {api} is',
+            'with Interfaces;', 'with SDL_Runtime;', 'with Ose_Component;', 'with Ose_Recording;', 'with Ose_Measurements;',
+            'with Ose_Inputs;', *(f'with {p};' for p in packages), f'package {api} is',
             '   type Context is limited private;', '   function Name (Ctx : Context) return String;',
             '   function Config_JSON (Ctx : Context) return String;',
             '   function Time_Ns (Ctx : Context) return Interfaces.Unsigned_64;',
             '   function Tick_Index (Ctx : Context) return Interfaces.Unsigned_64;',
             '   function Now (Ctx : Context) return Long_Float;']
-    for port, desc in node['inputs'].items():
-        spec += [f'   type Input_{port} is access constant {typ(desc)};']
-    spec += ['   type Inputs is ' + ('record' if node['inputs'] else 'null record;')]
-    for port in node['inputs']:
-        spec += [f'      {port} : Input_{port} := null;']
-    if node['inputs']: spec += ['   end record;']
-    spec += ['   type Handler is tagged limited null record;',
-             '   procedure On_Start (Self : in out Handler; Ctx : in out Context);',
-             '   procedure On_Stop (Self : in out Handler; Ctx : in out Context);',
-             '   procedure On_Tick (Self : in out Handler; Ctx : in out Context; Selected : Inputs);']
-    for port, desc in node['inputs'].items():
-        nullable = '' if 'timeout' in desc else 'not null '
-        spec += [f'   procedure On_{port} (Self : in out Handler; Ctx : in out Context; Message : {nullable}Input_{port});']
+    from ose.modeling import ada_inputs
+    spec += ada_inputs.declarations(node, typ)
     for port, desc in node['outputs'].items():
-        spec += [f'   procedure Publish_{port} (Ctx : in out Context; Message : {typ(desc)});']
+        spec += [f'   procedure Publish_{port} (Ctx : in out Context; Message : {typ(desc)}; Id : Ose_Inputs.Optional_Id := Ose_Inputs.No_Id);',
+                 f'   procedure Publish_{port} (Ctx : in out Context; Message : {typ(desc)}; Id : Interfaces.Unsigned_64);']
     recording_symbols = {}
     for root in node.get('recording_catalogues', {}):
         symbol = types[root][1].removeprefix('T_')
@@ -84,9 +77,10 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
             spec += [f'      Parameter_Value_{alias} : {typ(desc)};', f'      Parameter_Present_{alias} : Boolean := False;']
     if node.get('parameter_bindings'):
         spec += ['      Parameter_Writes : Boolean := False;']
+    spec += ada_inputs.context_fields(node)
     spec += ['   end record;', f'end {api};', '']
     (destination / (stem + '.ads')).write_text('\n'.join(spec))
-    body = ['with Ada.Unchecked_Deallocation;', 'with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;',
+    body = ['with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;',
             'with Ose_Component; use Ose_Component;', f'package body {api} is',
             '   use type Ada.Task_Identification.Task_Id;']
     recording_catalogues = {text: index for index, text in enumerate(dict.fromkeys(node.get('recording_catalogues', {}).values()))}
@@ -100,23 +94,8 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
             '   function Now (Ctx : Context) return Long_Float is (Long_Float (Ctx.Time) / 1.0E9);',
             '   procedure On_Start (Self : in out Handler; Ctx : in out Context) is begin null; end;',
             '   procedure On_Stop (Self : in out Handler; Ctx : in out Context) is begin null; end;']
-    for port, desc in node['inputs'].items():
-        nullable = '' if 'timeout' in desc else 'not null '
-        body += [f'   procedure On_{port} (Self : in out Handler; Ctx : in out Context; Message : {nullable}Input_{port}) is',
-                 f'   begin raise Program_Error with "missing On_{port}"; end;']
-    body += ['   procedure On_Tick (Self : in out Handler; Ctx : in out Context; Selected : Inputs) is', '   begin']
-    for port, desc in node['inputs'].items():
-        if 'timeout' not in desc: body += [f'      if Selected.{port} /= null then']
-        body += [f'         On_{port} (Handler\'Class (Self), Ctx, Selected.{port});']
-        if 'timeout' not in desc: body += ['      end if;']
-    if not node['inputs']: body += ['      raise Program_Error with "missing On_Tick";']
-    body += ['   end On_Tick;']
-    for port, desc in node['outputs'].items():
-        package = types[desc['root']][0]
-        body += [f'   procedure Publish_{port} (Ctx : in out Context; Message : {typ(desc)}) is', '   begin',
-                 '      if not Ctx.Active or else Ctx.Owner /= Ada.Task_Identification.Current_Task then',
-                 '         raise Program_Error with "publication requires the active tick callback";', '      end if;',
-                 f'      Publish ({literal(port)}, {package}.Encode (Ctx.Output_{port}, Message));', '   end;']
+    body += ['   use type Interfaces.Unsigned_64;', '   use type Interfaces.Unsigned_32;', '   use type Ose_Inputs.Event_Kind;']
+    body += ada_inputs.callbacks(node) + ada_inputs.publications(node, types, typ)
     body += ['   function Recording_Enabled (Ctx : Context; Name : String) return Boolean is',
              '     (Ose_Recording.Is_Enabled (Ctx.Recordings, Name));']
     body += ['   procedure Log (Ctx : in out Context; Level : Ose_Component.Log_Level; Logger, Message : String) is',
@@ -129,7 +108,7 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
              '   end Declare_Measurement;',
              '   procedure Measure (Ctx : in out Context; Name : String; Value : SDL_Runtime.Float64) is',
              '   begin',
-             '      if not Ctx.Active or else Ctx.Owner /= Ada.Task_Identification.Current_Task then raise Program_Error with "measurement requires the active tick callback"; end if;',
+             '      if not Ctx.Active or else Ctx.Owner /= Ada.Task_Identification.Current_Task then raise Program_Error with "measurement requires the active input callback"; end if;',
              '      Ose_Measurements.Measure (Ctx.Measurements, Name, Value);',
              '   end Measure;']
     for root, symbol in recording_symbols.items():
@@ -142,7 +121,7 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
                  '   end;',
                  f'   function Record_{symbol} (Ctx : in out Context; Name : String; Value : {package}.{value_type}) return Ose_Recording.Emit_Result is',
                  '   begin',
-                 '      if not Ctx.Active or else Ctx.Owner /= Ada.Task_Identification.Current_Task then raise Program_Error with "recording requires the active tick callback"; end if;',
+                 '      if not Ctx.Active or else Ctx.Owner /= Ada.Task_Identification.Current_Task then raise Program_Error with "recording requires the active input callback"; end if;',
                  f'      Ose_Recording.Check_Type (Ctx.Recordings, Name, {literal(root)});',
                  '      if not Recording_Enabled (Ctx, Name) then return Ose_Recording.Disabled; end if;',
                  "      if Ctx.Recordings.Tick_Bytes + Name'Length + 2 >= 256 * 1024 then return Ose_Recording.Dropped; end if;",
@@ -156,84 +135,12 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
             body += [f'   procedure Set_Parameters_{alias} (Ctx : in out Context; Value : {typ(desc)}) is', '   begin',
                      '      if not Ctx.Parameter_Writes or else Ctx.Owner /= Ada.Task_Identification.Current_Task then raise Program_Error with "parameter writes require an active callback"; end if;',
                      f'      Set_Parameters ({literal(alias)}, {package}.Encode (Ctx.Parameter_Codec_{alias}, Value));', '   end;']
-    body += ['   procedure Run (Self : in out Handler\'Class) is', '      Ctx : Context;', '      E : Event;',
-             '      Selected : Inputs;', '      Started : Boolean := False;']
-    for port, desc in node['inputs'].items():
-        body += [f'      Present_{port} : Boolean := False;', f'      type Owned_{port} is access all {typ(desc)};', f'      Value_{port} : Owned_{port};', f'      procedure Free_{port} is new Ada.Unchecked_Deallocation ({typ(desc)}, Owned_{port});',
-                 f'      Remote_{port} : Unbounded_String;', f'      Decoder_{port} : SDL_Runtime.Context;']
-    if node.get('parameter_bindings'):
-        body += ['      procedure Parameter_Update (Event_Value : Event; Initial : Boolean := False) is',
-                 '         Port, Cat : Unbounded_String;', '         Data : SDL_Runtime.Buffer;', '      begin',
-                 '         if Op (Event_Value) /= \'U\' then raise Protocol_Error with "expected parameter update"; end if;',
-                 '         Input (Event_Value, Port, Cat, Data);']
-        readable = [(a, d) for a, d in node['parameter_bindings'].items() if 'read' in d['access']]
-        for i, (alias, desc) in enumerate(readable):
-            package = types[desc['root']][0]
-            body += [f'         {"if" if i == 0 else "elsif"} To_String (Port) = {literal(alias)} then',
-                     f'            if To_String (Cat) /= {literal(desc["catalogue"])} or else (Initial and Ctx.Parameter_Present_{alias}) then',
-                     '               raise Protocol_Error with "invalid parameter catalogue or duplicate initial value";', '            end if;',
-                     f'            Ctx.Parameter_Value_{alias} := {package}.Decode (Ctx.Parameter_Codec_{alias}, SDL_Runtime.To_Bytes (Data));',
-                     f'            Ctx.Parameter_Present_{alias} := True;']
-        if readable: body += ['         else']
-        body += ['            raise Protocol_Error with "unknown readable parameter";']
-        if readable: body += ['         end if;']
-        body += ['      end Parameter_Update;']
-    body += ['      procedure Clear is' , '      begin']
-    for port in node['inputs']:
-        body += [f'         Selected.{port} := null; Free_{port} (Value_{port}); Present_{port} := False;']
-    if not node['inputs']: body += ['         null;']
-    body += ['      end Clear;', '   begin', '      Read_Event (E);',
-             '      if Op (E) /= \'I\' then raise Protocol_Error with "expected INIT"; end if;',
-             '      Ctx.Config := To_Unbounded_String (Body_Text (E));']
-    for port, desc in node['outputs'].items():
-        body += [f'      Ctx.Output_{port} := {types[desc["root"]][0]}.Prepare ({literal(desc["catalogue"])});']
-    for alias, desc in node.get('parameter_bindings', {}).items():
-        body += [f'      Ctx.Parameter_Codec_{alias} := {types[desc["root"]][0]}.Prepare ({literal(desc["catalogue"])});']
-    for alias, desc in node.get('parameter_bindings', {}).items():
-        if 'read' in desc['access']:
-            body += ['      Read_Event (E); Parameter_Update (E, True);']
-    if node.get('parameter_bindings'): body += ['      Ctx.Parameter_Writes := True; Ctx.Owner := Ada.Task_Identification.Current_Task;']
-    body += ['      Ctx.Owner := Ada.Task_Identification.Current_Task;',
-             '      Started := True; On_Start (Self, Ctx);',
-             '      Ctx.Recordings.Frozen := True; Ctx.Measurements.Frozen := True; Ctx.Owner := Ada.Task_Identification.Null_Task_Id;']
-    if node.get('parameter_bindings'): body += ['      Ctx.Parameter_Writes := False;']
-    body += ['      Ready (' + ('True' if node.get('parameter_bindings') else 'False') + ');' , '      loop', '         Read_Event (E);', '         case Op (E) is',
-             "         when 'X' =>", '            if Body_Size (E) /= 0 then raise Protocol_Error with "invalid STOP"; end if;', '            exit;',
-             *(["         when 'U' => Parameter_Update (E);"] if node.get('parameter_bindings') else []),
-             "         when 'E' => Ose_Recording.Update (Ctx.Recordings, Body_Text (E));",
-             "         when 'D' =>", '            declare', '               Port, Cat : Unbounded_String;', '               Data : SDL_Runtime.Buffer;',
-             '            begin', '               Input (E, Port, Cat, Data);']
-    for i, (port, desc) in enumerate(node['inputs'].items()):
-        package = types[desc['root']][0]
-        body += [f'               {"if" if i == 0 else "elsif"} To_String (Port) = {literal(port)} then',
-                 f'                  if Present_{port} then raise Protocol_Error with "duplicate input"; end if;',
-                 '                  if Length (Cat) = 0 and Data.Is_Empty then']
-        body += ['                     null;' if 'timeout' in desc else '                     raise Protocol_Error with "unexpected null input";']
-        body += ['                  else', '                     if Length (Cat) = 0 or Data.Is_Empty then raise Protocol_Error with "incomplete input"; end if;',
-                 f'                     if Cat /= Remote_{port} then',
-                 f'                        if not SDL_Runtime.Is_Compatible (SDL_Runtime.Compare_Catalogues (To_String (Cat), {literal(desc["catalogue"])}, {literal(desc["root"])}, True)) then',
-                 '                           raise Protocol_Error with "incompatible input catalogue";', '                        end if;',
-                 f'                        Decoder_{port} := {package}.Prepare (To_String (Cat)); Remote_{port} := Cat;', '                     end if;',
-                 f'                     Value_{port} := new {typ(desc)}\'({package}.Decode (Decoder_{port}, SDL_Runtime.To_Bytes (Data)));', f"                     Selected.{port} := Value_{port}.all'Unchecked_Access;",
-                 '                  end if;', f'                  Present_{port} := True;']
-    if node['inputs']: body += ['               else']
-    body += ['                  raise Protocol_Error with "unknown input port";']
-    if node['inputs']: body += ['               end if;']
-    body += ['            end;', "         when 'T' =>"]
-    for port, desc in node['inputs'].items():
-        if desc.get('required', True): body += [f'            if not Present_{port} then raise Protocol_Error with "missing required input"; end if;']
-    if node.get('parameter_bindings'): body += ['            Ctx.Parameter_Writes := True;']
-    body += ['            Tick (E, Ctx.Time, Ctx.Index); Ctx.Active := True; Ctx.Owner := Ada.Task_Identification.Current_Task;',
-             '            Ctx.Recordings.Tick_Bytes := 0;',
-             '            On_Tick (Self, Ctx, Selected); Ctx.Active := False;',
-             *(['            Ctx.Parameter_Writes := False;'] if node.get('parameter_bindings') else []),
-             '            Clear; Finish;',
-             '         when others => raise Protocol_Error with "unexpected opcode";', '         end case;', '      end loop;',
-             '      Clear; Started := False; On_Stop (Self, Ctx);', '   exception when others =>',
-             '      Ctx.Active := False; Ctx.Recordings.Frozen := True; Ctx.Measurements.Frozen := True; Clear;', *(['      Ctx.Parameter_Writes := False;'] if node.get('parameter_bindings') else []), '      if Started then',
-             '         begin On_Stop (Self, Ctx); exception when others => null; end;', '      end if;', '      raise;',
-             '   end Run;', f'end {api};', '']
+    body += ada_inputs.context_methods(node, types, typ) + ada_inputs.runtime(node, types, api)
     (destination / (stem + '.adb')).write_text('\n'.join(body))
+    return _finish(destination, sdl_root, handler, identity, api, types)
+
+
+def _finish(destination, sdl_root, handler, identity, api, types):
     (destination / 'main.adb').write_text(f'''with {api};
 with {identity};
 with Ada.Exceptions;
@@ -266,6 +173,8 @@ end Main;
 
 
 def scaffold(node, container):
+    if node.get('execution_model') != 2:
+        raise ValueError('Ada containers require execution model 2')
     handler = Path(container['handler']); spec = handler.with_suffix('.ads')
     if handler.exists() and spec.exists(): return
     if handler.exists() or spec.exists(): raise ValueError('Ada handler requires both .ads and .adb; refusing to overwrite a partial pair')
@@ -273,12 +182,12 @@ def scaffold(node, container):
     lines = [f'with {api};', f'package {unit} is', f'   type Object is new {api}.Handler with null record;']
     bodies = [f'package body {unit} is']
     for port, desc in node['inputs'].items():
-        nullable = '' if 'timeout' in desc else 'not null '
-        signature = f'procedure On_{port} (Self : in out Object; Ctx : in out {api}.Context; Message : {nullable}{api}.Input_{port})'
-        lines += ['   overriding ' + signature + ';']; bodies += ['   overriding ' + signature + ' is', '   begin', '      -- Implement message processing here.', '      null;', '   end;']
-    if not node['inputs']:
-        signature = f'procedure On_Tick (Self : in out Object; Ctx : in out {api}.Context; Selected : {api}.Inputs)'
-        lines += ['   overriding ' + signature + ';']; bodies += ['   overriding ' + signature + ' is', '   begin', '      -- Construct a typed message and call Publish_<port>.', '      null;', '   end;']
+        if desc.get('mode', 'push') == 'pull':
+            continue
+        signature = f'procedure On_{port} (Self : in out Object; Ctx : in out {api}.Context; Input : {api}.Input_{port})'
+        lines += ['   overriding ' + signature + ';']
+        placeholder = '      raise Program_Error with "Implement input processing";'
+        bodies += ['   overriding ' + signature + ' is', '   begin', '      -- Implement message processing here.', placeholder, '   end;']
     lines += [f'end {unit};', '']; bodies += [f'end {unit};', '']
     handler.parent.mkdir(parents=True, exist_ok=True)
     # GNAT requires parent specs for child handler units.

@@ -16,20 +16,21 @@ from unittest.mock import patch
 from ose.codec.sdl2 import SDL2
 from ose.delivery.policies import SubscriptionPolicy as Policy
 from ose.execution.simulation import Simulation
-from ose.execution.ipc import frame, port_data
+from ose.execution.ipc import frame
 from ose.modeling.compiler import build
 
 SDL_ROOT = os.environ.get("SDL_ROOT")
 SCHEMA = "message Measurement {1: required uint64 sequence;2: required fl64 value;}"
 SOURCE = '''from measurement import Measurement
-def on_tick(ctx):
+def on_clock(ctx, input):
     ctx.publish_out(Measurement(sequence=ctx.tick_index, value=ctx.now()))
 '''
 LEFT = '''#define _POSIX_C_SOURCE 200809L
 #include "component.h"
 #include <stdlib.h>
 #include <time.h>
-static int on_input(OseContext *ctx, const Measurement *message) {
+static int on_input(OseContext *ctx, const Input_input *input) {
+    const Measurement *message = input->message;
     const char *delay = getenv("TEST_DELAY_NS");
     if (delay) { struct timespec wait = {0, atol(delay)}; nanosleep(&wait, NULL); }
     if (message->sequence != ose_tick_index(ctx)) return ose_fail(ctx, "wrong tick index");
@@ -41,11 +42,12 @@ static int on_input(OseContext *ctx, const Measurement *message) {
 }
 const ComponentCallbacks component_callbacks = { .on_input = on_input };
 '''
-RIGHT = '''use crate::container::{Callbacks, Context, Result};
+RIGHT = '''use crate::container::{Callbacks, Context, InputReference, Result};
 use crate::types::measurement::Measurement;
 #[derive(Default)] pub struct Handler;
 impl Callbacks for Handler {
-    fn on_input(&mut self, ctx: &mut Context, message: &Measurement) -> Result {
+    fn on_input(&mut self, ctx: &mut Context, input: &InputReference<Measurement>) -> Result {
+        let message = input.message.as_ref().unwrap();
         if let Ok(delay) = std::env::var("TEST_DELAY_NS") {
             std::thread::sleep(std::time::Duration::from_nanos(delay.parse()?));
         }
@@ -56,34 +58,43 @@ impl Callbacks for Handler {
 }
 '''
 JOIN = '''from measurement import Measurement
-def on_tick(ctx, inputs):
-    assert inputs["left"].sequence == inputs["right"].sequence == ctx.tick_index
-    ctx.publish_out(Measurement(sequence=ctx.tick_index, value=inputs["left"].value + inputs["right"].value))
+def on_right(ctx, input):
+    left = ctx.inbox("left").pull()
+    assert left is not None
+    assert left.message.sequence == input.message.sequence == ctx.tick_index
+    ctx.publish_out(Measurement(sequence=ctx.tick_index, value=left.message.value + input.message.value))
 '''
 RAW = '''import os, signal, struct, time
-from ose.execution.component import ComponentSession
-s = ComponentSession(auto_ready=False, timed_ticks=True)
+from ose.execution.input_process import InputSession
+from ose.execution.input_ipc import publication_data
+from ose.codec.sdl2 import SDL2
+s = InputSession(auto_ready=False)
 p = s.config.get("parameters", {})
 if p.get("stderr_path"):
     with open(p["stderr_path"], "wb") as errors: os.dup2(errors.fileno(), 2)
-if p.get("legacy"): s.timed_ticks = False
 if p.get("hang"): signal.signal(signal.SIGTERM, signal.SIG_IGN)
 if p.get("init_fail"): raise RuntimeError("injected initialization failure")
-s.ready()
-for inputs in s.ticks():
+if p.get("first_timer_ns"): s.input_request("arm", "clock", delay_ns=p["first_timer_ns"])
+if p.get("legacy"): s.send("R")
+else: s.ready()
+codec = SDL2(os.environ["SDL_ROOT"])
+for input in s.activations():
     if p.get("hang"):
         while True: time.sleep(1)
     if p.get("delay"): time.sleep(p["delay"])
-    if inputs:
-        values = [(-10.0 if raw is None else struct.unpack(">Qd", raw[1][1:])[1]) for raw in inputs.values()]
+    ports = [port for port, desc in s.config["inputs"].items() if desc.get("kind") != "timer"]
+    if ports:
+        records = ([s.input_request("get" if p.get("peek") else "pull", port) for port in ports]
+                   if input.port == "clock" else [input.record])
+        values = [(-10.0 if raw is None else struct.unpack(">Qd", codec.api.unpack_envelope(raw["body"])[1][1:])[1]) for raw in records]
         messages = [(s.tick_index, sum(values))]
     else:
         messages = [(i, float(i)) for i in p.get("values", [s.tick_index])]
     for port in s.config["outputs"]:
         if p.get("flood"):
-            while True: s.publish(port, b"\\x01" + struct.pack(">Qd", 1, 1.))
+            while True: s.send("P", publication_data(port, b"\\x01" + struct.pack(">Qd", 1, 1.)))
         for sequence, value in messages:
-            s.publish(port, b"\\x01" + struct.pack(">Qd", sequence, value))
+            s.send("P", publication_data(port, b"\\x01" + struct.pack(">Qd", sequence, value)))
     if p.get("fail"): raise RuntimeError("injected callback failure")
 '''
 
@@ -100,12 +111,12 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
             (cls.root / filename).write_text(source)
         desc = {"root": "Measurement"}
         nodes = {
-            "source": dict(inputs={}, outputs={"out": dict(desc)}, trigger=dict(mode="periodic", period_ms=100)),
-            "left": dict(inputs={"input": dict(desc)}, outputs={"out": dict(desc)}, trigger=dict(mode="on_change")),
-            "right": dict(inputs={"input": dict(desc)}, outputs={"out": dict(desc)}, trigger=dict(mode="on_change")),
-            "join": dict(inputs={"left": dict(desc), "right": dict(desc)}, outputs={"out": dict(desc)}, trigger=dict(mode="on_change")),
+            "source": dict(inputs={"clock": dict(kind="timer", timer=dict(mode="periodic", delay=.1), activates={"timeout": ["out"]})}, outputs={"out": dict(desc)}),
+            "left": dict(inputs={"input": dict(desc, activates={"message": ["out"]})}, outputs={"out": dict(desc)}),
+            "right": dict(inputs={"input": dict(desc, activates={"message": ["out"]})}, outputs={"out": dict(desc)}),
+            "join": dict(inputs={"left": dict(desc, mode="pull"), "right": dict(desc, activates={"message": ["out"]})}, outputs={"out": dict(desc)}),
         }
-        model = dict(version=1, schemas="measurement.sdl", components=nodes, subscriptions=[
+        model = dict(version=2, schemas="measurement.sdl", components=nodes, subscriptions=[
             dict(id="source-left", **{"from": "source.out", "to": "left.input"}),
             dict(id="source-right", **{"from": "source.out", "to": "right.input"}),
             dict(id="left-join", **{"from": "left.out", "to": "join.left"}),
@@ -117,14 +128,24 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
         (cls.root / "deployment.json").write_text(json.dumps(deployment))
         cls.plan_path = build(cls.root / "model.json", cls.root / "deployment.json", SDL_ROOT, cls.root / "build")
         cls.diamond = json.loads(cls.plan_path.read_text())
-        cls.desc = cls.diamond["components"]["left"]["inputs"]["input"]
+        cls.desc = {key: value for key, value in cls.diamond["components"]["left"]["inputs"]["input"].items()
+                    if key in ("root", "schema", "catalogue", "catalogue_id")}
         cls.codec = SDL2(SDL_ROOT)
 
     def node(self, inputs=(), *, source=False, parameters=None, period=None, outputs=True):
         ports = inputs if isinstance(inputs, dict) else {port: {} for port in inputs}
-        return dict(inputs={port: dict(self.desc, **desc) for port, desc in ports.items()},
+        inputs = {port: dict(self.desc, **desc) for port, desc in ports.items()}
+        allowed = ["out"] if outputs else []
+        for desc in inputs.values():
+            if period:
+                desc["mode"] = "pull"
+            if desc.get("mode") != "pull":
+                desc["activates"] = {"message": allowed, **({"timeout": allowed} if "timeout" in desc else {})}
+        if source or period:
+            inputs["clock"] = dict(kind="timer", timer=dict(mode="periodic" if period else "one_shot", delay=period / 1000 if period else .01),
+                                   activates={"timeout": allowed})
+        return dict(execution_model=2, inputs=inputs,
                     outputs={"out": dict(self.desc)} if outputs else {},
-                    trigger=dict(mode="periodic", period_ms=period or 1000) if source or period else dict(mode="on_change"),
                     parameters=parameters or {}, cwd=str(self.root), env={}, command=[sys.executable, str(self.root / "raw.py")])
 
     def plan(self, nodes, links=(), external=()):
@@ -168,8 +189,8 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
             plan = copy.deepcopy(self.diamond)
             plan["components"][slow]["env"]["TEST_DELAY_NS"] = "10000000"
             summary, events = await self.simulate(plan, workers=workers)
-            self.assertEqual(summary["ticks"], 16)
-            self.assertEqual(summary["waves"], 12)
+            self.assertEqual(summary["ticks"], 12)
+            self.assertEqual(summary["waves"], 9)
             self.assertEqual(summary["stop_reason"], "duration")
             self.assertEqual([e["components"] for e in events if e["event"] == "wave"][:3], [["source"], ["left", "right"], ["join"]])
             if reference is None:
@@ -177,7 +198,7 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(events, reference)
             pubs = [e for e in events if e["event"] == "publication" and e["topic"] == "join.out"]
             for index, event in enumerate(pubs, 1):
-                t = (index - 1) / 10
+                t = index / 10
                 value = (t + 1 + t) + (t + 2 + t)
                 expected = self.codec.wrap(self.desc["catalogue"], b"\x01" + struct.pack(">Qd", index, value))
                 self.assertEqual(event["sha256"], hashlib.sha256(expected).hexdigest())
@@ -187,7 +208,7 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
         reference = None
         for workers in (1, 2, 8):
             active, peak = 0, 0
-            async def calculations(process, node, selected, time_ns, tick_index):
+            async def calculations(process, node, reference, index, services, **options):
                 nonlocal active, peak
                 active += 1
                 peak = max(active, peak)
@@ -197,7 +218,7 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
                         yield None
                 finally:
                     active -= 1
-            with patch("ose.execution.simulation.coordinator.tick_events", calculations):
+            with patch("ose.execution.simulation.coordinator.input_events", calculations):
                 summary, events = await self.simulate(plan, .1, workers=workers)
             self.assertEqual(peak, min(3, workers))
             self.assertEqual(summary["waves"], 1)
@@ -216,18 +237,21 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["time_ns"], 300_000_000)
         self.assertEqual(sum(e["event"] == "publication" and e["topic"] == "external" for e in events), 1)
 
-    async def test_multiple_required_timeouts_and_mixed_snapshot(self):
-        plan = self.plan({"sink": self.node({"a": dict(timeout=.1), "b": dict(timeout=.2), "optional": dict(required=False)})},
+    async def test_multiple_inputs_expire_independently_with_passive_input(self):
+        plan = self.plan({"sink": self.node({"a": dict(timeout=.1), "b": dict(timeout=.2), "passive": dict(mode="pull")})},
                          [("a", "sink.a"), ("b", "sink.b")], ["a", "b"])
         scenario = self.scenario([(.1, "a", 5.)])
         _, events = await self.simulate(plan, .5, scenario=scenario)
         ticks = [e for e in events if e["event"] == "tick"]
-        self.assertEqual([e["time_ns"] for e in ticks], [200_000_000, 400_000_000])
-        self.assertEqual(ticks[0]["inputs"], {"a": "scenario:0", "b": None})
-        self.assertEqual(ticks[1]["inputs"], {"a": None, "b": None})
+        self.assertEqual([(e["time_ns"], e["inputs"]) for e in ticks], [
+            (100_000_000, {"a": "scenario:0"}), (200_000_000, {"a": None}),
+            (200_000_000, {"b": None}), (300_000_000, {"a": None}),
+            (400_000_000, {"a": None}), (400_000_000, {"b": None})])
 
     async def test_latest_retained_state_and_quiescent_waiting_inputs(self):
-        plan = self.plan({"sink": self.node({"input": dict(timeout=.1)})},
+        sink = self.node({"input": dict(mode="pull")}, source=True, parameters=dict(peek=True))
+        sink["inputs"]["clock"]["timer"]["delay"] = .1
+        plan = self.plan({"sink": sink},
                          [("external", "sink.input", dict(buffer="latest"))], ["external"])
         summary, _ = await self.simulate(plan, 1000, scenario=self.scenario([(.1, "external", 1.)]))
         self.assertEqual(summary["ticks"], 1)
@@ -249,13 +273,14 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(summary["ticks"], 3)
 
     async def test_virtual_wait_unblocks_and_expires_without_blocking_consumers(self):
-        plan = self.plan({"source": self.node(source=True, parameters=dict(values=[1, 2, 3])), "sink": self.node(["input"], period=200)},
+        plan = self.plan({"source": self.node(source=True, parameters=dict(values=[1, 2, 3])),
+                          "sink": self.node(["input"], period=200, parameters=dict(first_timer_ns=50_000_000))},
                          [("source.out", "sink.input", dict(capacity=1, overflow="wait", wait_timeout_ms=100))])
         reference = None
         for workers in (1, 8):
             summary, events = await self.simulate(plan, workers=workers)
             admissions = [e for e in events if e["event"] == "admission"]
-            self.assertEqual([(e["result"], e["time_ns"]) for e in admissions], [("accepted", 0), ("accepted", 0), ("full", 100_000_000)])
+            self.assertEqual([(e["result"], e["time_ns"]) for e in admissions], [("accepted", 10_000_000), ("accepted", 50_000_000), ("full", 150_000_000)])
             self.assertEqual(summary["ticks"], 3)
             if reference is None:
                 reference = events
@@ -285,20 +310,28 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(events, reference)
 
     async def test_wait_fanout_does_not_block_fast_branch(self):
-        plan = self.plan({"source": self.node(source=True, parameters=dict(values=[1, 2])), "slow": self.node(["a", "b"]), "fast": self.node(["input"])},
+        plan = self.plan({"source": self.node(source=True, parameters=dict(values=[1, 2])), "slow": self.node({"a": dict(mode="pull"), "b": {}}), "fast": self.node(["input"])},
             [("source.out", "slow.a", dict(capacity=1, overflow="wait", wait_timeout_ms=100)),
              ("source.out", "fast.input"), ("external", "slow.b")], ["external"])
         _, events = await self.simulate(plan)
         ticks = [e for e in events if e["event"] == "tick" and e["component"] == "fast"]
-        self.assertEqual([e["time_ns"] for e in ticks], [0, 0])
-        self.assertTrue(any(e["event"] == "admission" and e["result"] == "full" and e["time_ns"] == 100_000_000 for e in events))
+        self.assertEqual([e["time_ns"] for e in ticks], [10_000_000, 10_000_000])
+        self.assertTrue(any(e["event"] == "admission" and e["result"] == "full" and e["time_ns"] == 110_000_000 for e in events))
 
-    async def test_input_data_from_ancestor_wins_at_timeout(self):
+    async def test_computed_publication_follows_already_selected_same_time_timeout(self):
         plan = self.plan({"source": self.node(source=True, period=100), "sink": self.node({"input": dict(timeout=.1)})}, [("source.out", "sink.input")])
-        _, events = await self.simulate(plan, .31)
-        ticks = [e for e in events if e["event"] == "tick" and e["component"] == "sink"]
-        self.assertEqual(len(ticks), 4)
-        self.assertTrue(all(e["inputs"]["input"] is not None for e in ticks))
+        reference = None
+        for workers in (1, 4):
+            _, events = await self.simulate(plan, .31, workers=workers)
+            ticks = [e for e in events if e["event"] == "tick" and e["component"] == "sink"]
+            self.assertEqual([(e["time_ns"], e["activation_event"]) for e in ticks], [
+                (100_000_000, "timeout"), (100_000_000, "message"),
+                (200_000_000, "timeout"), (200_000_000, "message"),
+                (300_000_000, "timeout"), (300_000_000, "message")])
+            self.assertTrue(all((e["inputs"]["input"] is None) == (e["activation_event"] == "timeout") for e in ticks))
+            if reference is None:
+                reference = events
+            self.assertEqual(events, reference)
 
     async def test_wave_failure_discards_all_outputs_and_reaps_every_child(self):
         errors = self.root / "expected-callback-error.log"
@@ -315,14 +348,14 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_legacy_component_is_refused_and_cleaned_up(self):
         engine = Simulation(self.plan({"source": self.node(source=True, parameters=dict(legacy=True))}), .1)
-        with self.assertRaisesRegex(ValueError, "requires timestamped ticks"):
+        with self.assertRaisesRegex(ValueError, "requires a CH/2 component SDK"):
             await engine.execute()
         self.assertTrue(all(p.returncode is not None for p in engine.processes.values()))
 
     async def test_flooded_tick_fails_with_bounded_output_collection(self):
         engine = Simulation(self.plan({"source": self.node(source=True, parameters=dict(flood=True))}), .1,
                             max_tick_output_bytes=128)
-        with self.assertRaisesRegex(ValueError, "tick outputs exceed"):
+        with self.assertRaisesRegex(ValueError, "callback outputs exceed"):
             await engine.execute()
         self.assertEqual(engine.summary["publications"], 0)
         self.assertTrue(all(p.returncode is not None for p in engine.processes.values()))
@@ -378,14 +411,13 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary, saved)
         self.assertEqual(summary["mode"], "simulated")
 
-    async def test_malformed_tick_contexts_are_rejected_by_all_generated_languages(self):
+    async def test_old_and_malformed_activations_are_rejected_by_all_generated_languages(self):
         for name in ("source", "left", "right"):
             node = self.diamond["components"][name]
-            inputs = b"" if name == "source" else frame("D", port_data("input", b"\x01" + struct.pack(">Qd", 1, 0.), self.desc["catalogue"]))
-            for body in (b"x", struct.pack(">QQ", 1, 0)):
+            for body in (b"", b"x", struct.pack(">QQ", 1, 0)):
                 with self.subTest(component=name, body=body):
                     result = await asyncio.to_thread(subprocess.run, node["command"],
-                        input=frame("I", json.dumps(node).encode()) + inputs + frame("T", body) + frame("X"),
+                        input=frame("I", json.dumps(node).encode()) + frame("T", body) + frame("X"),
                         capture_output=True, timeout=5)
                     self.assertNotEqual(result.returncode, 0)
 
@@ -409,7 +441,7 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(p.returncode is not None for p in engine.processes.values()))
 
     async def test_pending_external_payload_budget_is_enforced_incrementally(self):
-        plan = self.plan({"sink": self.node(["a", "b"])},
+        plan = self.plan({"sink": self.node({"a": dict(mode="pull"), "b": {}})},
                          [("external", "sink.a", dict(capacity=1, overflow="wait")), ("other", "sink.b")], ["external", "other"])
         scenario = self.scenario([(0, "external", float(index)) for index in range(20)])
         engine = Simulation(plan, .1, scenario=scenario, max_tick_output_bytes=48)
@@ -452,6 +484,10 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
                 "--duration", ".5", "--workers", str(workers), "--scenario", "build/simulated-scenario/scenario.json", "--trace", f"build/w{workers}.jsonl"],
                 cwd=project, env=environment, capture_output=True, timeout=15)
             self.assertEqual(result.returncode, 0, result.stderr.decode())
-            self.assertEqual(json.loads(result.stdout)["ticks"], 20)
+            summary = json.loads(result.stdout)
+            # Timers first expire after their delay; the duration bound is
+            # exclusive. Four sequences each activate two join callbacks.
+            self.assertEqual(summary["ticks"], 4 * (1 + 1 + 1 + 2))
+            self.assertEqual(summary["publications"], 4 * 4 + 2)  # Two external offsets.
         self.assertEqual((project / "build/w1.jsonl").read_bytes(), (project / "build/w4.jsonl").read_bytes())
         self.assertFalse((project / "build/endpoint.json").exists())

@@ -9,11 +9,14 @@
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t changed = PTHREAD_COND_INITIALIZER;
 static Measurement received;
+static int received_has_app_id;
+static uint64_t received_app_id;
 static int done;
 static int on_message(void *user, const void *value, const CenvMessageInfo *info) {
-    (void)user; (void)info;
+    (void)user;
     pthread_mutex_lock(&lock);
     received = *(const Measurement *)value;
+    received_has_app_id = info->has_app_id; received_app_id = info->app_id;
     done = 1; pthread_cond_signal(&changed);
     pthread_mutex_unlock(&lock);
     return 1;
@@ -45,7 +48,8 @@ int main(int argc, char **argv) {
     }
     pthread_mutex_unlock(&lock);
     received.value *= 2.;
-    result = cenv_publish(publisher, &received);
+    result = received_has_app_id ? cenv_publish_with_id(publisher, &received, received_app_id)
+                                 : cenv_publish(publisher, &received);
     if (!result) goto error;
     puts(result); cenv_string_free(result);
     cenv_unsubscribe(sub);

@@ -1,4 +1,5 @@
 """Export immutable per-component deployments; no Kubernetes client dependency."""
+from ose.execution.plan import read_plan
 import json
 from pathlib import Path
 import re
@@ -84,7 +85,7 @@ def resources(plan, images, namespace, image_pull_secrets=()):
 
 
 def export(plan_path, images_path, namespace, output, image_pull_secrets=()):
-    manifest = resources(json.loads(Path(plan_path).read_text()), json.loads(Path(images_path).read_text()), namespace, image_pull_secrets)
+    manifest = resources(read_plan(plan_path), json.loads(Path(images_path).read_text()), namespace, image_pull_secrets)
     destination = Path(output)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(manifest, indent=2) + "\n")

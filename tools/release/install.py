@@ -63,6 +63,8 @@ def included(name, profile, languages, features):
     if path.startswith('ose/sdk/'):
         if profile != 'sdk':
             return False
+        if path.endswith('.md'):
+            return True
         # sdk_root currently uses these two files to recognize an SDK installation.
         if path in ('ose/sdk/c/ose_callbacks.c', 'ose/sdk/rust/Cargo.toml'):
             return True

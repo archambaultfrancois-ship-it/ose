@@ -11,13 +11,12 @@ package Ose_Component is
    function Op (E : Event) return Character;
    function Body_Text (E : Event) return String;
    function Body_Size (E : Event) return Natural;
+   function Body_Bytes (E : Event) return SDL_Runtime.Bytes;
+   procedure Send_Event (Code : Character; Data : SDL_Runtime.Bytes);
    procedure Input (E : Event; Port, Catalogue : out Ada.Strings.Unbounded.Unbounded_String;
                     Payload : out SDL_Runtime.Buffer);
-   procedure Tick (E : Event; Time_Ns, Tick_Index : in out Interfaces.Unsigned_64);
-   procedure Ready (Parameters : Boolean := False);
    procedure Set_Parameters (Name : String; Payload : SDL_Runtime.Bytes);
    procedure Finish;
-   procedure Publish (Port : String; Payload : SDL_Runtime.Bytes);
    procedure Declare_Recording (Name, Root, Catalogue, Description : String);
    procedure Record_Bytes (Name : String; Payload : SDL_Runtime.Bytes);
    procedure Declare_Measurement (Name : String);

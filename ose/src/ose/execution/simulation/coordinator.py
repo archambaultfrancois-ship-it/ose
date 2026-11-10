@@ -2,7 +2,6 @@
 import asyncio
 from collections import deque
 from dataclasses import dataclass, field
-import heapq
 import hashlib
 import json
 from pathlib import Path
@@ -10,10 +9,10 @@ import signal
 from ose.codec.sdl2 import SDL2
 from ose.parameters.service import ParameterService
 from ose.parameters.bindings import LocalBindings
-from ose.execution.process import start_component, tick_events, stop_component
+from ose.execution.process import start_component, input_events, stop_component
+from ose.execution.plan import require_v2, read_plan
 from ose.recording.component import ComponentRecording
-from ose.execution.scheduler import reserve_snapshot
-from ose.execution.simulation.clock import MAX_NS, VirtualClock, Schedule, seconds_ns
+from ose.execution.simulation.clock import MAX_NS, VirtualClock, InputSchedule, seconds_ns
 from ose.execution.simulation.router import Router
 from ose.execution.simulation.scenario import read_scenario, ParameterEvent
 from ose.execution.simulation.trace import Trace
@@ -22,25 +21,9 @@ DEFAULT_OUTPUT_LIMIT = 16 * 1024 * 1024
 
 
 def topology(plan):
-    parents = {name: set() for name in plan["components"]}
-    for sub in plan["subscriptions"]:
-        if "from_topic" not in sub:
-            parents[sub["to"].split(".")[0]].add(sub["from"].split(".")[0])
-    remaining, ordered, ancestors = {name: set(values) for name, values in parents.items()}, [], {}
-    available = [name for name in parents if not parents[name]]
-    heapq.heapify(available)
-    while available:
-        name = heapq.heappop(available)
-        ordered.append(name)
-        ancestors[name] = set().union(*(ancestors[p] | {p} for p in parents[name]))
-        for child in sorted(remaining):
-            if name in remaining[child]:
-                remaining[child].remove(name)
-                if not remaining[child]:
-                    heapq.heappush(available, child)
-    if len(ordered) != len(parents):
-        raise ValueError("simulation graph contains a cycle")
-    return ordered, ancestors
+    from ose.modeling.activation import activation_order
+    activation_order(plan)
+    return sorted(plan["components"])
 
 
 @dataclass
@@ -53,6 +36,7 @@ class PendingTick:
 class Simulation:
     def __init__(self, plan, duration, *, workers=1, scenario=None, events=None, trace=None,
                  max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT, working_directory=None):
+        require_v2(plan)
         if type(workers) is not int or workers <= 0:
             raise ValueError("workers must be a positive integer")
         if type(max_tick_output_bytes) is not int or max_tick_output_bytes <= 0:
@@ -60,7 +44,7 @@ class Simulation:
         self.plan, self.workers, self.limit = plan, workers, max_tick_output_bytes
         self.working_directory = working_directory
         self.horizon, self.clock = seconds_ns(duration, positive=True), VirtualClock()
-        self.order, self.ancestors = topology(plan)
+        self.order = topology(plan)
         self.codec = SDL2(plan["sdl_root"])
         self.parameter_service = ParameterService(plan, self.codec)
         self.parameter_bindings = {name: LocalBindings(node, self.parameter_service) for name, node in plan["components"].items()}
@@ -85,7 +69,10 @@ class Simulation:
             raise ValueError("trace cannot overwrite scenario inputs")
         # Validate virtual deadlines before opening diagnostics or spawning processes.
         for node in plan["components"].values():
-            Schedule(node, {}, self.clock)
+            from ose.modeling.activation import component_inputs
+            if node.get("execution_model") != 2:
+                raise ValueError("v2 plans require CH/2 components")
+            component_inputs(node, compiled=True)
         for sub in plan["subscriptions"]:
             if sub["policy"]["overflow"] == "wait" and sub["policy"]["wait_timeout_ms"] * 1_000_000 > MAX_NS:
                 raise ValueError("simulation admission wait exceeds uint64 nanoseconds")
@@ -95,8 +82,13 @@ class Simulation:
         except BaseException:
             self.trace.close()
             raise
-        self.schedules = {name: Schedule(plan["components"][name], self.router.buffers[name], self.clock)
+        self.schedules = {name: InputSchedule(plan["components"][name], self.router.buffers[name], self.clock)
                           for name in self.order}
+        self.input_services = {}
+        from ose.execution.input_ipc import InputServices
+        self.router.schedulers = {name: schedule.core for name, schedule in self.schedules.items()}
+        self.input_services = {name: InputServices(schedule.core, lambda: self.clock.time_ns, trace=True)
+                               for name, schedule in self.schedules.items()}
         self.processes, self.busy, self.external = {}, {}, []
         self.external_bytes = 0
         self.cursor, self.waves, self.ticks = 0, 0, 0
@@ -105,38 +97,51 @@ class Simulation:
         self.parameter_scenario_events = 0
 
     async def _start(self, name):
-        process, capable = await start_component(self.plan["components"][name], self.parameter_bindings[name],
+        process = await start_component(self.plan["components"][name], self.parameter_bindings[name],
             ComponentRecording(self.codec),
-            **({"working_directory": self.working_directory} if self.working_directory is not None else {}))
+            **({"working_directory": self.working_directory} if self.working_directory is not None else {}),
+            inputs=self.input_services[name])
         self.processes[name] = process
-        if not capable:
-            raise ValueError(f"{name}: simulated execution requires timestamped ticks; rebuild the container or update its SDK")
 
     async def _calculate(self, name, selected, semaphore):
         async with semaphore:
-            outputs, size = deque(), 0
-            schedule = self.schedules[name]
-            async for port, payload in tick_events(self.processes[name], schedule.node, selected,
-                                                  self.clock.time_ns, schedule.tick_index,
-                                                  **({"parameters": self.parameter_bindings[name]} if schedule.node.get("parameter_bindings") else {})):
-                size += len(payload) + len(port.encode()) + 3
+            return await self._calculate_input(name, selected)
+
+    async def _calculate_input(self, name, reference):
+        outputs, size, success = deque(), 0, False
+        schedule = self.schedules[name]
+        try:
+            async for port, payload, app_id in input_events(self.processes[name], schedule.node, reference,
+                    schedule.tick_index, self.input_services[name],
+                    **({"parameters": self.parameter_bindings[name]} if schedule.node.get("parameter_bindings") else {})):
+                size += len(payload) + len(port.encode()) + 12
                 if size > self.limit:
-                    raise ValueError(f"{name}: tick outputs exceed max_tick_output_bytes={self.limit}")
+                    raise ValueError(f"{name}: callback outputs exceed max_tick_output_bytes={self.limit}")
                 desc = schedule.node["outputs"][port]
                 body = self.codec.wrap(desc["catalogue"], payload)
                 self.codec.validate_only(desc["catalogue"], desc["root"], body)
-                outputs.append((port, body))
-            return outputs
+                outputs.append((port, body, app_id))
+            success = True
+        finally:
+            schedule.complete(reference, success=success)
+        return outputs
+
+    def _input_operations(self, name):
+        for operation in self.input_services[name].operations:
+            self.trace.emit("input_operation", component=name, **operation)
+        self.input_services[name].operations.clear()
 
     async def _wave(self, selected):
-        names = [name for name in self.order if name in selected and not (self.ancestors[name] & selected.keys())]
+        names = [name for name in self.order if name in selected]
         self.waves += 1
         self.trace.emit("wave", components=names)
         for name in names:
-            reserve_snapshot(self.router.buffers[name], selected[name])
             self.schedules[name].tick_index += 1
+            snapshot = {selected[name].port: selected[name].record}
             self.trace.emit("tick", component=name, tick_index=self.schedules[name].tick_index,
-                            inputs={port: None if record is None else record["id"] for port, record in selected[name].items()})
+                            inputs={port: None if record is None else record["id"] for port, record in snapshot.items()},
+                            activation_event=selected[name].event, due_ns=selected[name].due_ns,
+                            elapsed=selected[name].elapsed)
         for name in names:
             self.parameter_bindings[name].staged = {}
         semaphore = asyncio.Semaphore(self.workers)
@@ -149,6 +154,7 @@ class Simulation:
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
         for name in names:
+            self._input_operations(name)
             bindings = self.parameter_bindings[name]
             for path, payload in bindings.staged.items():
                 self.parameter_service.set(path, payload)
@@ -173,9 +179,11 @@ class Simulation:
                 continue
             while True:
                 if tick.publication is None and tick.outputs:
-                    index, (port, body) = tick.outputs.popleft()
+                    index, output = tick.outputs.popleft()
+                    port, body = output[:2]
                     identity = f"{name}:{self.schedules[name].tick_index}:{index}"
-                    tick.publication = self.router.publish(f"{name}.{port}", body, identity)
+                    tick.publication = self.router.publish(f"{name}.{port}", body, identity,
+                        app_id=output[2])
                     changed = True
                     processed += 1
                     if processed % 64 == 0:
@@ -186,7 +194,6 @@ class Simulation:
                         break
                     tick.publication = None
                 if not tick.outputs:
-                    self.schedules[name].complete(tick.selected)
                     del self.busy[name]
                     self.ticks += 1
                     self.trace.emit("finished", component=name, tick_index=self.schedules[name].tick_index)
@@ -206,7 +213,7 @@ class Simulation:
                 if self.cursor % 64 == 0:
                     await asyncio.sleep(0)
                 continue
-            publication = self.router.publish(event.topic, event.read(), f"scenario:{event.index}")
+            publication = self.router.publish(event.topic, event.read(), f"scenario:{event.index}", app_id=event.app_id)
             self.router.advance(publication)
             if publication.pending:
                 self.external_bytes += len(publication.record["body"])
@@ -232,7 +239,8 @@ class Simulation:
     def _snapshot(self):
         waiting = [f"{name}.{port}" for name, schedule in self.schedules.items()
                    for port, desc in schedule.node["inputs"].items()
-                   if desc.get("required", True) and (port not in schedule.buffers or schedule.buffers[port].take() is None)]
+                   if desc.get("kind") != "timer" and desc.get("mode", "push") != "pull"
+                   and (port not in schedule.buffers or schedule.buffers[port].take() is None)]
         return dict(mode="simulated", functional=True, transport_simulation=False, running=False,
                     time_ns=self.clock.time_ns, ticks=self.ticks, waves=self.waves, publications=self.router.sequence,
                     stop_reason=self.reason, waiting_inputs=waiting, pending_ticks=len(self.busy),
@@ -250,6 +258,8 @@ class Simulation:
                 starting = [asyncio.create_task(self._start(name)) for name in self.order]
                 await asyncio.wait_for(asyncio.gather(*starting), 20)
             self.trace.emit("start", duration_ns=self.horizon, functional=True)
+            for name in self.order:
+                self._input_operations(name)
             for path, payload in sorted(self.parameter_service.values.items()):
                 self.trace.emit('parameter_initial', path=path, sha256=hashlib.sha256(payload).hexdigest())
             while self.clock.time_ns < self.horizon:
@@ -306,7 +316,7 @@ async def run(plan_path, duration, **options):
     plan_path = Path(plan_path).resolve()
     if options.get("trace") is not None and Path(options["trace"]).resolve() == plan_path:
         raise ValueError("trace cannot overwrite the compiled plan")
-    engine = Simulation(json.loads(plan_path.read_text()), duration, **options)
+    engine = Simulation(read_plan(plan_path), duration, **options)
     from ose.execution.identity import identify
     identify("sim", engine.plan)
     loop, interrupted = asyncio.get_running_loop(), False

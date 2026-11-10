@@ -36,13 +36,14 @@ class DeliveryLimitTests(unittest.IsolatedAsyncioTestCase):
         self.codec = SDL2(SDL_ROOT)
         self.clients, self.tasks, self.brokers = [], [], []
         port = {"root": "Measurement", "catalogue": CATALOGUE, "catalogue_id": self.codec.identity(CATALOGUE)}
-        self.plan = {"version": 1, "sdl_root": str(Path(SDL_ROOT).resolve()), "max_frame": 1024 * 1024,
+        self.plan = {"version": 2, "sdl_root": str(Path(SDL_ROOT).resolve()), "max_frame": 1024 * 1024,
             "max_datagram": 1200, "components": {
-                "source": {"inputs": {}, "outputs": {"output": port}, "env": {}, "cwd": self.directory.name,
-                    "trigger": {"mode": "periodic", "period_ms": 10},
-                    "command": [sys.executable, "-c", "import struct\nfrom ose.execution.component import ComponentSession\n"
-                        "s=ComponentSession()\nfor inputs in s.ticks(): s.publish('output',b'\\x01'+struct.pack('>Qd',1,1.0))\n"]},
-                "sink": {"inputs": {"input": copy.deepcopy(port)}, "outputs": {}}},
+                "source": {"execution_model": 2, "inputs": {"clock": {"kind": "timer", "timer": {"mode": "periodic", "delay": .01},
+                    "activates": {"timeout": ["output"]}}}, "outputs": {"output": port}, "env": {}, "cwd": self.directory.name,
+                    "command": [sys.executable, "-c", "import struct\nfrom ose.execution.input_process import InputSession\n"
+                        "from ose.execution.input_ipc import publication_data\n"
+                        "s=InputSession()\nfor input in s.activations(): s.send('P',publication_data('output',b'\\x01'+struct.pack('>Qd',1,1.0)))\n"]},
+                "sink": {"execution_model": 2, "inputs": {"input": copy.deepcopy(port)}, "outputs": {}}},
             "subscriptions": [{"id": "link", "from": "source.output", "to": "sink.input", "policy": Policy().to_dict()}]}
 
     async def asyncTearDown(self):
@@ -138,7 +139,7 @@ class DeliveryLimitTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_tcp_publish_fits_but_oversize_data_is_refused_before_admission(self):
         self.plan["max_frame"] = 256
-        text = "SDL2|Large{1:fl64[12]:values;}"
+        text = "SDL2|Large{1:fl64[20]:values;}"
         port = {"root": "Large", "catalogue": text, "catalogue_id": self.codec.identity(text)}
         self.plan["components"]["source"]["outputs"]["output"] = port
         self.plan["components"]["sink"]["inputs"]["input"] = copy.deepcopy(port)
@@ -149,7 +150,7 @@ class DeliveryLimitTests(unittest.IsolatedAsyncioTestCase):
         broker.enabled = True
         client = await self.client(broker, limit=256)
         await client.request("hello", node="source", udp_port=1)
-        envelope = self.codec.wrap(text, b"\x01" + struct.pack(">12d", *range(12)))
+        envelope = self.codec.wrap(text, b"\x01" + struct.pack(">20d", *range(20)))
         encode({"op": "publish", "request": 2, "topic": "source.output"}, envelope, 256)
         response, _ = await client.request("publish", envelope, topic="source.output")
         self.assertEqual(response["delivery"], {"link": "oversize", "last": "oversize"})
@@ -182,8 +183,9 @@ class DeliveryLimitTests(unittest.IsolatedAsyncioTestCase):
     async def test_large_status_body_and_small_startup_state(self):
         source = self.plan["components"]["source"]
         source["outputs"] = {f"output_{number:04d}": copy.deepcopy(source["outputs"]["output"]) for number in range(1000)}
-        source["command"] = [sys.executable, "-c", "from ose.execution.component import ComponentSession\n"
-                            "s=ComponentSession()\nfor inputs in s.ticks(): pass\n"]
+        source["inputs"]["clock"]["activates"] = {}
+        source["command"] = [sys.executable, "-c", "from ose.execution.input_process import InputSession\n"
+                            "s=InputSession()\nfor input in s.activations(): pass\n"]
         self.plan["components"] = {"source": source}
         self.plan["subscriptions"] = []
         broker = await self.start()

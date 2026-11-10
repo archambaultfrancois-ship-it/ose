@@ -104,8 +104,9 @@ an exclusive lock refuses another console using the same state directory.
   configuration can be duplicated into a new one-shot object.
 
 Recording inputs use their natural `component.port` names and an `input` category.
-They capture the values selected at tick start, after FIFO overflow or latest-state
-selection. Input/output points with the same name can be selected, filtered and
+They capture the activating message at callback start, after FIFO overflow or
+latest-state selection. Timer/timeout activations carry no message; passive Pull
+reads are not combined into a callback snapshot. Input/output points with the same name can be selected, filtered and
 duplicated independently; counters remain separate in the capture details.
 The category selector filters the catalogue and additional name/type/glob patterns;
 explicitly checked points remain selected across categories. Source names and

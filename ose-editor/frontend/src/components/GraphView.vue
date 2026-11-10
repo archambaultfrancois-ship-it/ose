@@ -14,6 +14,7 @@ import { layoutGraph } from '../layout'
 import { assessConnection, inputs, publishers, statusLabel, type Publisher } from '../connections'
 const store = useProject(), nodes = ref<any[]>([]), edges = ref<any[]>([]), search = ref(''), labels = ref(true), scope = ref('all'), layoutBusy = ref(false)
 const linkStyle = ref<LinkStyle>('default')
+const showActivations = ref(false)
 const linkStyles = [{ label: 'Curved', value: 'default' }, { label: 'Straight', value: 'straight' }, { label: 'Right-angle', value: 'smoothstep' }]
 const model = computed(() => store.project?.documents[store.project.model]?.value)
 const drag = ref<{ endpoint: string; type: string; external: boolean } | null>(null)
@@ -30,14 +31,15 @@ const assessment = computed(() => chosenSource.value && target.value ? assessCon
 const { fitView, getSelectedNodes, selectionKeyCode } = useVueFlow()
 selectionKeyCode.value = ['Shift', 'Control', 'Meta']
 const selectedGroups = computed(() => getSelectedNodes.value.filter(node => node.data.kind === 'group').map(node => node.data.name))
+const hasGroups = computed(() => Object.keys(store.project?.workspace.groups || {}).length > 0)
 const hasExpandedGroups = computed(() => Object.values(store.project?.workspace.groups || {}).some((group: any) => !group.collapsed))
 const selectedComponents = computed(() => getSelectedNodes.value.filter(node => node.data.kind === 'component').map(node => node.data.name))
 // Inspector focus is a single object; Vue Flow owns the graph's multiple selection.
 let graphInspection: typeof store.selection = null
 const worker = new Worker(new URL('../layout.worker.ts', import.meta.url), { type: 'module' })
 watch(() => store.project?.revision, () => { connectionFeedback.value = '' })
-watch(() => [store.project?.revision, store.project?.validation, labels.value, search.value, scope.value, linkStyle.value, store.selection, drag.value], () => {
-  const graph = topology(model.value, store.project?.workspace, labels.value, linkStyle.value)
+watch(() => [store.project?.revision, store.project?.validation, labels.value, search.value, scope.value, linkStyle.value, showActivations.value, store.selection, drag.value], () => {
+  const graph = topology(model.value, store.project?.workspace, labels.value, linkStyle.value, showActivations.value)
   const inspectionChanged = store.selection !== graphInspection
   const selectedIds = new Set(getSelectedNodes.value.map(node => node.id))
   const chosen = store.selection?.path?.[0] === 'components' ? store.selection.path[1] : ''
@@ -110,15 +112,20 @@ function selected(event: any) {
   store.select(store.project.model, data.kind === 'external' ? ['external_topics', data.name] : ['components', data.name])
   graphInspection = store.selection
 }
+function inspectInput(component: string, port: string) {
+  store.select(store.project.model, ['components', component, 'inputs', port])
+  graphInspection = store.selection
+}
 function expand(event: any) {
   if (event.node.data.kind !== 'group') return
   const groups = JSON.parse(JSON.stringify(store.project.workspace.groups))
   groups[event.node.data.name].collapsed = false
   store.command({ action: 'workspace', groups })
 }
-function collapseAll() {
+function toggleGroups() {
   const groups = JSON.parse(JSON.stringify(store.project.workspace.groups))
-  Object.values(groups).forEach((group: any) => { group.collapsed = true })
+  const collapsed = hasExpandedGroups.value
+  Object.values(groups).forEach((group: any) => { group.collapsed = collapsed })
   store.command({ action: 'workspace', groups })
 }
 function position(event: any) { const positions = { ...store.project.workspace.positions }; const node = event.node; positions[node.data.kind === 'component' ? node.data.name : node.id] = node.position; store.command({ action: 'workspace', positions }, false) }
@@ -142,7 +149,7 @@ onBeforeUnmount(() => worker.terminate())
 </script>
 <template>
   <div class="graph-workspace">
-    <div class="graph-toolbar"><InputText v-model="search" placeholder="Find a component…" aria-label="Find a component" /><Select v-model="scope" :options="['all', 'upstream', 'downstream', 'both']" aria-label="Dependency highlighting" /><Button ref="connectButton" label="Connect ports" severity="secondary" :disabled="!!store.pending" @click="openAssistant()" /><Button label="Auto layout" severity="secondary" :loading="layoutBusy" @click="layout" /><Button label="Group selection" severity="secondary" :disabled="!selectedComponents.length && !selectedGroups.length" @click="group" /><Button label="Collapse all groups" severity="secondary" :disabled="!hasExpandedGroups" @click="collapseAll" /><div class="link-display-controls"><label class="inline"><input type="checkbox" v-model="labels"> Link labels</label><Select v-model="linkStyle" :options="linkStyles" option-label="label" option-value="value" size="small" class="link-style-select" aria-label="Link style" /></div></div>
+    <div class="graph-toolbar"><InputText v-model="search" placeholder="Find a component…" aria-label="Find a component" /><Select v-model="scope" :options="['all', 'upstream', 'downstream', 'both']" aria-label="Dependency highlighting" /><Button ref="connectButton" label="Connect ports" severity="secondary" :disabled="!!store.pending" @click="openAssistant()" /><Button label="Auto layout" severity="secondary" :loading="layoutBusy" @click="layout" /><Button label="Group selection" severity="secondary" :disabled="!selectedComponents.length && !selectedGroups.length" @click="group" /><Button :label="hasExpandedGroups ? 'Collapse all groups' : 'Expand all groups'" severity="secondary" :disabled="!hasGroups" @click="toggleGroups" /><div class="link-display-controls"><label class="inline"><input type="checkbox" v-model="labels"> Link labels</label><label v-if="model?.version === 2" class="inline"><input type="checkbox" v-model="showActivations" aria-label="Show activation links"> Activation links</label><Select v-model="linkStyle" :options="linkStyles" option-label="label" option-value="value" size="small" class="link-style-select" aria-label="Link style" /></div></div>
     <form v-if="assistant" class="connection-assistant" aria-label="Connect ports" @submit.prevent="previewConnection" @keydown.esc.stop="closeAssistant">
       <label>Publisher<select ref="sourceSelect" v-model="sourceKey" aria-label="Connection publisher"><option value="" disabled>Choose an output</option><option v-for="source in sourceOptions" :key="source.key" :value="source.key">{{ source.endpoint }}{{ source.external ? ' (external topic)' : '' }}</option></select></label>
       <label>Destination input<select v-model="target" aria-label="Connection destination" aria-describedby="connection-assessment"><option value="" disabled>Choose an input</option><option v-for="option in targetOptions" :key="option.endpoint" :value="option.endpoint">{{ option.endpoint }}{{ option.assessment ? ' — ' + statusLabel[option.assessment.status] : '' }}</option></select></label>
@@ -152,7 +159,7 @@ onBeforeUnmount(() => worker.terminate())
     </form>
     <p v-if="connectionFeedback" class="connection-feedback" role="status">{{ connectionFeedback }}</p>
     <VueFlow v-model:nodes="nodes" v-model:edges="edges" fit-view-on-init :is-valid-connection="validConnection" :multi-selection-key-code="['Shift', 'Control', 'Meta']" :delete-key-code="null" :min-zoom="0.15" :max-zoom="2" @node-click="selected" @node-double-click="expand" @edge-click="event => store.select(store.project.model, ['subscriptions', String(event.edge.data.index)])" @connect-start="startConnection" @connect-end="drag = null" @connect="connect" @node-drag-stop="position">
-      <template #node-component="nodeProps"><ComponentNode v-bind="nodeProps" @port-hover="message => connectionFeedback = message" /></template>
+      <template #node-component="nodeProps"><ComponentNode v-bind="nodeProps" @port-hover="message => connectionFeedback = message" @input-select="inspectInput" /></template>
       <Background :gap="24" pattern-color="#c8d5e5" /><MiniMap pannable zoomable /><Controls />
     </VueFlow>
     <p class="graph-caption">{{ Object.keys(model?.components || {}).length }} components · {{ model?.subscriptions?.length || 0 }} subscriptions · {{ selectedComponents.length }} components selected · {{ selectedGroups.length }} groups selected · Shift/Ctrl/Cmd + click to select multiple · Shift + drag to select an area · drag between ports to connect</p>
@@ -167,7 +174,7 @@ onBeforeUnmount(() => worker.terminate())
 .connection-assistant [data-status=incompatible] { color: #a63838; }
 .connection-assistant [data-status=compatible] { color: #187452; }
 .connection-feedback { margin: 0; padding: 10px 16px; font-size: 12px; background: #f3f6fc; border-bottom: 1px solid #dce4ef; }
-.link-display-controls { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.link-display-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; max-width: 100%; }
 .link-display-controls .inline { height: 20px; line-height: 14px; }
 .link-display-controls input { margin: 0; }
 .link-style-select { width: 94px; height: 20px; align-items: center; font-size: 10px !important; }

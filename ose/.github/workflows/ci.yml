@@ -66,5 +66,7 @@ jobs:
       - name: Prepare recording dependencies for replay tests
         run: make -C "$SDL_ROOT" recording-deps
       - run: make test-java
+      - name: Verify CH2 input callbacks on Java 7
+        run: make test-java-inputs-v2
       - name: Verify shared parameters on Java 7
         run: PYTHONPATH="$PWD/src" TEST_LANGUAGES=java python -m unittest discover -s tests/integration -p 'test_parameters.py' -k java -v

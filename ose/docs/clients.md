@@ -1,7 +1,7 @@
 # External clients
 
 A Python, C, Rust, Java or Ada program can publish and subscribe directly to an application's
-CENV/1 broker without a client-side model or a second broker. Generated message
+CENV/2 broker without a client-side model or a second broker. Generated message
 types and the SDL runtime remain application dependencies. The existing component
 SDKs that use stdin/stdout remain independent of these network SDKs.
 
@@ -22,7 +22,7 @@ from ose.client import Client, Fifo, Latest, Retry
 from measurement import Measurement
 
 def receive(message, info):
-    print(info.topic, info.publication_id, message.value)
+    print(info.topic, info.publication_id, info.app_id, message.value)
 
 with Client.connect(host="127.0.0.1", port=7000, client_id="tool") as client:
     print(client.list_topics())
@@ -32,7 +32,7 @@ with Client.connect(host="127.0.0.1", port=7000, client_id="tool") as client:
         qos=Fifo(capacity=256, overflow="drop_oldest", ack="received",
                  retry=Retry(max_retries=3, ack_timeout_ms=100)), transport="tcp")
     publisher = client.publisher("sensor.measurement", Measurement)
-    result = publisher.publish(Measurement(sequence=1, value=3.5))
+    result = publisher.publish(Measurement(sequence=1, value=3.5), id=42)
     print(result.publication_id, result.delivery)
     client.run()
 ```
@@ -50,6 +50,34 @@ stops that subscription, `publisher.close()` releases its topic and
 `SchemaError`, `QoSError`, `PublicationRefused`, `ConnectionLost`, `CallbackFailed`.
 Callback and connection failures are reported by `run()`.
 
+## Application message IDs
+
+Publishers may attach an application ID in the range `0..2**64-1`. It is optional:
+absence and zero are distinct. The ID is envelope metadata, without changing the
+SDL message or its contract. It is exposed to receiving callbacks and retained
+with latest state. Several publications may use the same application ID; retries
+and deduplication still use the engine's unique `publication_id`, epoch and sequence.
+Publication receipts continue to report those technical identities.
+
+| Language | Publish with an ID | Read the received ID |
+| --- | --- | --- |
+| Python | `publisher.publish(message, id=42)` | `info.app_id`, `None` if absent |
+| Rust | `publisher.publish_with_id(&message, 42)` | `info.app_id: Option<u64>` |
+| C | `cenv_publish_with_id(publisher, message, 42)` | `info->has_app_id`, then `info->app_id` |
+| Java | `publisher.publish(message, BigInteger.valueOf(42))` | `info.appId`, `null` if absent |
+| Ada | `Messages.Publish(publisher, message, Id => 42)` | `Info.Has_App_Id`, then `Info.App_Id` |
+
+The existing publication call without an ID sends an absent ID. Python also
+accepts `id=None`, and Java accepts a null ID. Python rejects booleans, strings,
+floats, negative integers and integers above uint64 before encoding or sending.
+Java rejects negative or wider-than-64-bit `BigInteger` values. C/Rust/Ada use
+unsigned 64-bit types. Do not round IDs through floating-point values.
+
+Raw native codecs can use Rust `client.publish_envelope_with_id(topic, envelope,
+id)` or C `cenv_publish_envelope_with_id(client, topic, bytes, size, id)`. Rebuild
+the native library, C headers/wrapper, JNI/Ada bridge and application together:
+the callback metadata now includes the optional ID.
+
 ## C and Rust
 
 The network SDK sources are in `sdk/client/`. The Rust engine exposes a C ABI;
@@ -65,7 +93,8 @@ build/client-example/debug/ose-external-example 7000 udp
 ```
 
 Both examples wait for `external.input`, then publish twice the received value
-on `c.result` or `rust.result`. Declare `external.input` with a Python publisher
+on `c.result` or `rust.result`, preserving the optional application ID.
+Declare `external.input` with a Python publisher
 before starting them. The Python example in `examples/external/client.py` can
 drive either executable.
 

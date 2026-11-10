@@ -10,7 +10,8 @@ def on_stop(ctx):
     ctx.log('INFO', 'Observer stopped', 'lifecycle')
 
 
-def on_input(ctx, message):
+def on_input(ctx, input):
+    message = input.message
     settings = ctx.parameters_display()
     if settings.machine_ids and message.machine_id not in settings.machine_ids:
         return

@@ -86,6 +86,31 @@ settings. Selecting an input or subscription shows its incoming links and a
 shared FIFO/latest reception editor. Applying it updates every incoming link in
 one previewable, undoable operation. Incompatible policies (including UDP wait)
 are rejected without partial changes. Graph ports show their link count and mode.
+
+Model v2 components show their Push, passive Pull and timer inputs. Select an
+input name on a component card to open **Input execution** in the inspector.
+Choose message/Push/Pull or timer, edit inactivity or timer settings, and select
+the allowed output activations for each event. **Message received** and
+**Timeout** have independent output lists; both may select the same outputs.
+An empty list authorizes no publication from that event. Pull inputs have no
+activating callback or timeout, and timer inputs have no SDL message or incoming
+subscription handles. FIFO/latest reception remains a separate input policy.
+
+Use **Add input** in this panel to create a named input. **Preview input changes**
+prepares one source-preserving, undoable operation, with component handlers listed
+for review. Converting an input with incoming subscriptions to a timer is blocked
+until those subscriptions are disconnected. Switching to Pull explicitly removes
+its timeout and activation declarations in the preview. The authoritative OSE
+validator rejects invalid events, outputs, callback names and activation cycles.
+
+The **Activation links** checkbox displays internal input-event → output arrows:
+blue for received messages, amber dashed lines for timeouts. Display is optional
+and does not alter the model. The **activations** table provides the same links
+as selectable rows. Output renames update their activation references. Structured
+editing supports application model v2 only. An old model remains accessible as
+source for migration, with an explicit diagnostic; graph/table projections and
+structured model commands do not apply v2 semantics to it. Save draft can preserve
+that source. Deployment and scenario versions remain unchanged.
 In Graph, use **Shift**, **Ctrl**, or **Cmd + click** to add or remove components
 from the selection, or **Shift**, **Ctrl**, or **Cmd + drag** on the empty canvas
 to select an area. A plain drag on the canvas moves the view. The
@@ -103,7 +128,7 @@ Links are curved by default. Use **Link style** in the graph toolbar to switch
 between curved, straight and right-angle links for the current view.
 Dragging from an output or an input marks the opposite ports with **✓ Compatible**,
 **? Contract unchecked** or **× Unavailable**. Hover a marked port for the reason:
-different logical roots, a component cycle, conflicting shared reception settings,
+different logical roots, an activation cycle, conflicting shared reception settings,
 or a directional SDL contract mismatch. Full **Validate** resolves candidate
 contracts, including ports not yet connected, for the current applied revision.
 Before validation, or after an edit, structural checks remain available and SDL

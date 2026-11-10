@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "components": {
+    "a": {"container": {"language": "rust", "handler": "a.rs"}},
+    "b": {"container": {"language": "rust", "handler": "b.rs"}}
+  }
+}

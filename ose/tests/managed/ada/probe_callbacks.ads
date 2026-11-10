@@ -7,6 +7,7 @@ package Probe_Callbacks is
       "Measurement", SDL_measurement.Description, SDL_measurement.Encode, SDL_measurement.Decode);
    Fail : Boolean := False with Atomic;
    procedure Receive (Message : SDL_measurement.T_Measurement; Info : Ose_Client.Message_Info; User : System.Address);
+   procedure Receive_Id (Message : SDL_measurement.T_Measurement; Info : Ose_Client.Message_Info; User : System.Address);
    protected Received is
       procedure Signal;
       function Count return Natural;

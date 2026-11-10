@@ -1,12 +1,15 @@
 """Replay selection rejects ambiguous mappings before loading optional services."""
 import asyncio
 import itertools
+import json
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import Mock
 
 from ose.recording.pacing import PlaybackClock, playback_speed
 from ose.recording.replay import RepeatedEvents, loop_count, topic_mapping
-from ose.execution.simulation.scenario import Event
+from ose.execution.simulation.scenario import Event, read_scenario
 
 
 class ReplayMappingTests(unittest.TestCase):
@@ -19,6 +22,23 @@ class ReplayMappingTests(unittest.TestCase):
                          ["a=external.signal", "b=external.signal"]):
             with self.subTest(mappings=mappings), self.assertRaises(ValueError):
                 topic_mapping(mappings, {"external.signal": {}, "external.other": {}})
+
+    def test_scenario_ids_are_optional_uint64_and_independent_of_event_indices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'message.s2ps').write_bytes(b'opaque envelope')
+            path = root / 'scenario.json'
+            events = [dict(at=i, topic='external', envelope='message.s2ps', **extra)
+                      for i, extra in enumerate(({}, {'app_id': 0}, {'app_id': (1 << 64) - 1}, {'app_id': 0}))]
+            path.write_text(json.dumps(dict(version=1, events=events)))
+            result = read_scenario(path, {'external': dict(catalogue='catalogue', root='Value')}, Mock())
+            self.assertEqual([event.app_id for event in result], [None, 0, (1 << 64) - 1, 0])
+            self.assertEqual([event.index for event in result], [0, 1, 2, 3])
+            for value in (None, True, -1, 1 << 64, '1', 1.0):
+                events[0]['app_id'] = value
+                path.write_text(json.dumps(dict(version=1, events=events)))
+                with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'uint64'):
+                    read_scenario(path, {'external': dict(catalogue='catalogue', root='Value')}, Mock())
 
 
 class PlaybackClockTests(unittest.IsolatedAsyncioTestCase):
@@ -61,12 +81,13 @@ class PlaybackClockTests(unittest.IsolatedAsyncioTestCase):
 class ReplayLoopTests(unittest.TestCase):
     def setUp(self):
         self.events = [Event(0, 1, "external", Path("first"), "a"),
-                       Event(7, 0, "external", Path("second"), "b")]
+                       Event(7, 0, "external", Path("second"), "b", 0)]
 
     def test_passes_shift_timing_and_ids_while_reusing_envelopes(self):
         repeated = RepeatedEvents(self.events, 3)
         self.assertEqual([event.at for event in repeated], [0, 7, 8, 15, 16, 23])
         self.assertEqual([event.index for event in repeated], [1, 0, 3, 2, 5, 4])
+        self.assertEqual([event.app_id for event in repeated], [None, 0, None, 0, None, 0])
         self.assertEqual(repeated.input_paths, {Path("first"), Path("second")})
         self.assertEqual(repeated[4].path, self.events[0].path)
         self.assertEqual(repeated[4].digest, self.events[0].digest)

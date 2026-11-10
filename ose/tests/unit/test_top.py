@@ -11,7 +11,6 @@ import unittest
 from unittest.mock import patch
 
 from ose.execution.observation import TickTimings, describe
-from ose.execution.scheduler import Scheduler
 from ose.top import Keyboard, Observer, color_enabled, render, run
 from ose.transport.secure import RPCServer
 
@@ -20,7 +19,7 @@ def status():
     policy = dict(buffer="fifo", capacity=10, overflow="reject_new")
     return {"epoch": "epoch", "enabled": True,
             "observation": {"version": 1, "components": {
-                "sink": {"trigger": {"mode": "on_change"}, "inputs": {"input": {}},
+                "sink": {"inputs": {"input": {}},
                          "connected": True, "ready": True, "generation": "generation", "report_age_ms": 0}},
                 "subscriptions": {"link": {"from": "source.output", "to": "sink.input", "policy": policy}}},
             "components": {"sink": {"running": True, "ticks": 0, "publications": 0,
@@ -115,11 +114,11 @@ class ObserverTests(unittest.TestCase):
         metrics["direct"]["out"]["failed"] = 1
         self.assertEqual(observer.sample(data, now=1)["components"][0]["severity"], "error")
 
-    def test_period_overrun_and_connection_failure(self):
+    def test_aggregate_timings_do_not_infer_timer_overruns_and_disconnect_is_reported(self):
         observer, data = Observer(), status()
-        data["observation"]["components"]["sink"]["trigger"] = dict(mode="periodic", period_ms=1)
+        data["observation"]["components"]["sink"]["inputs"]["clock"] = dict(kind="timer", timer=dict(mode="periodic", delay=.001))
         row = observer.sample(data, now=0)["components"][0]
-        self.assertIn("exceeds period", row["alerts"][0]["message"])
+        self.assertEqual(row["alerts"], [])
         row = observer.sample(data, now=1, error="disconnected")["components"][0]
         self.assertEqual(row["state"], "UNAVAILABLE")
         self.assertIsNone(row["rates"]["ticks"])
@@ -150,7 +149,7 @@ class ObserverTests(unittest.TestCase):
 
     def test_observation_metadata_omits_secrets_and_commands(self):
         plan = {"components": {"a": dict(inputs={"x": dict(root="Value", catalogue="secret", timeout=1)},
-                    outputs={}, trigger={"mode": "on_change"}, command=["secret"], env={"SECRET": "secret"})}, "subscriptions": []}
+                    outputs={}, command=["secret"], env={"SECRET": "secret"})}, "subscriptions": []}
         self.assertNotIn("secret", json.dumps(describe(plan)))
 
 
@@ -224,19 +223,18 @@ class AsyncTopTests(unittest.IsolatedAsyncioTestCase):
     async def test_tick_timings_exclude_publication_wait_and_expire(self):
         now = [0.0]
         timer = TickTimings(lambda: now[0])
-        scheduler = Scheduler(dict(inputs={}, trigger={"mode": "periodic", "period_ms": 10}), {}, lambda: now[0])
         async def tick():
             now[0] += .002
             yield "output", b"value"
             now[0] += .003
         async for _ in timer.events(tick()):
             now[0] += 10  # Backpressure in the publisher must not enter tick p95.
-        snapshot = timer.snapshot(scheduler)
+        snapshot = timer.snapshot()
         self.assertAlmostEqual(snapshot["tick_p95_ms"], 5)
         self.assertEqual(snapshot["tick_samples"], 1)
         self.assertIsNone(snapshot["busy_ms"])
         now[0] += 6
-        self.assertIsNone(timer.snapshot(scheduler)["tick_p95_ms"])
+        self.assertIsNone(timer.snapshot()["tick_p95_ms"])
 
     async def test_keyboard_restores_terminal_and_handles_split_arrow(self):
         master, slave = pty.openpty()

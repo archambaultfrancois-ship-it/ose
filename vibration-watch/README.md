@@ -6,6 +6,9 @@ An SDL/OSE application in the [OSE repository](../README.md): two synthetic C se
 two Rust analyzers, Python alarm policy and a Python terminal observer. Each signal block contains
 16,384 float samples by default (64 KiB); results and alarm observations are small messages.
 The sensor uses the OSE clock and a seeded generator, so simulation is reproducible.
+The application uses model v2 with explicit sensor timers and single-input
+callbacks; deployment and scenario documents remain version 1. See the
+[migration guide](../ose/docs/model-v2-migration.md) for the execution changes.
 
 ## Requirements and first run
 
@@ -290,7 +293,7 @@ use `make run` or `ose app make run` to enable Vibration's managed synchronizer.
 - `schemas/`: contracts and units; `vibration_signal.sdl` avoids shadowing Python's `signal` module.
 - `components/`: reusable business implementations plus thin OSE handlers.
 - `config/`: machine definitions, block sizes, seeds and thresholds.
-- `model.json`: ports, graph, triggers and bounded QoS.
+- `model.json`: ports, timers, activation links and bounded QoS.
 - `deployment.local.json`: ordinary OSE execution through the broker.
 - `deployment.cluster.json`: distributed execution, direct signal routes, broker results and placement resources.
 - `scenarios/`: deterministic profiles; `tests/`: business, end-to-end and opt-in cluster tests.

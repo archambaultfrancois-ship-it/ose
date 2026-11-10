@@ -1,6 +1,6 @@
 # Component logs
 
-The component SDKs deposit structured logs into the CH/1 stream. The adapter
+The component SDKs deposit structured logs into the CH/2 stream. The adapter
 buffers them in memory and forwards bounded batches to the local broker or
 distributed coordinator. The runtime retains recent entries independently of
 application subscriptions. Logs are available even when no web console is open.
@@ -30,7 +30,7 @@ No SDL schema is needed.
 ```python
 ctx.log('INFO', 'Analyzer started', 'lifecycle')
 ctx.log('FATAL', 'Unable to process the signal', 'detection')
-# Raw Python components use the same method on ComponentSession.
+# Raw Python components use the same method on InputSession.
 ```
 
 ```c
@@ -118,7 +118,7 @@ format macro checks types during compilation. Every language retains the final
 Python and Ada's plain `log` APIs never interpret percent signs. In C, use
 `ose_logf(ctx, level, category, "%s", message)` for such text.
 
-Callbacks retain their existing threading rules. These APIs use normal CH/1
+Callbacks retain their existing threading rules. These APIs use normal CH/2
 pipe flow control; a successful call means the local stream accepted the frame,
 not that a remote reader received it. They are best effort, not a hard real-time
 or durable audit facility. Existing stderr output stays on stderr and is not

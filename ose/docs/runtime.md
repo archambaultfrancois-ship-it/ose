@@ -1,16 +1,13 @@
-# Runtime execution, ticks and message flow
+# Runtime execution and message flow
 
-This document describes the default `realtime` engine. The
-[simulated engine](simulation.md) runs the same component callbacks with a central
-virtual clock, deterministic publication barriers and optional parallel workers.
+This page describes the default `realtime` engine with application model v2.
+The [simulator](simulation.md) runs the same callbacks with virtual time and
+deterministic publication barriers.
 
-A **tick is one processing cycle of a modeled component**. Its adapter selects
-the input values for that cycle, sends them to the component, requests execution
-and waits for the component to report completion.
-
-Each component has its own ticks. The model determines whether they are triggered
-by input changes or a periodic deadline. Different components can process their
-ticks concurrently.
+A Push receipt, inactivity timeout or timer expiration activates one input
+callback. Other inputs do not gate it. Pull inputs are passive inboxes read
+explicitly during another activation. Each component processes one callback at
+a time; distinct components progress independently.
 
 ## Runtime actors
 
@@ -31,16 +28,16 @@ flowchart LR
     C1["Component A<br/>application code"] -->|"SDL2 publication<br/>stdin/stdout"| A1["Adapter A"]
     A1 -->|"PUBLISH over TCP"| B["Broker"]
     B -->|"DATA over TCP or UDP"| A2["Adapter B<br/>input queues"]
-    A2 -->|"Selected inputs<br/>then TICK"| C2["Component B<br/>callbacks"]
+    A2 -->|"Input reference<br/>ACTIVATE"| C2["Component B<br/>callbacks"]
     C2 -->|"FINISHED"| A2
 ```
 
-The local adapter/component exchange uses the binary CH/1 protocol over
-stdin/stdout. Broker exchanges use CENV/1, with an S2PS/2 envelope containing
+The local adapter/component exchange uses the binary [CH/2 protocol](../sdk/input-protocol.md) over
+stdin/stdout. Broker exchanges use [CENV/2](cenv2.md), with an S2PS/2 envelope containing
 the catalogue identity and SDL2 message bytes. The adapter adds or removes that
 envelope at the network boundary.
 
-TCP reception extracts complete CENV/1 frames directly from the stream receive
+TCP reception extracts complete CENV/2 frames directly from the stream receive
 buffer, including consecutive frames received together. The frame length is
 checked before waiting for its body. Metadata is decoded within that frame's
 bounds and the returned payload is immutable bytes, independent of later buffer
@@ -56,235 +53,127 @@ StreamReader to TCP retains the readexactly path.
 ## Startup
 
 1. The supervisor starts the broker and one adapter per component.
-2. Each adapter connects to the broker, prepares its subscription connections
-   and starts its component process.
-3. The adapter sends INIT with the component configuration, parameters and port
-   catalogues.
-4. A generated container initializes its codecs and application handler, runs
-   the optional `on_start` callback and sends READY after successful initialization.
-5. The adapter reports readiness to the broker.
-6. Once all modeled components are ready, the supervisor enables publications
-   and delivery. Adapters can then schedule their components' ticks.
+2. Each adapter connects its subscriptions and starts its component process.
+3. INIT supplies configuration and port catalogues, followed by initial readable
+   shared parameter blocks.
+4. The generated container initializes codecs, checks callback signatures and
+   invokes the optional start hook, then sends CH/2 READY byte 0x02.
+5. Once every modeled component is ready, the supervisor enables execution.
 
-A required input can still be empty at this point. It prevents processing until
-data is available or its configured timeout expires, but does not prevent
-initialization or READY. External client
-sessions do not participate in this startup barrier.
+Empty inputs do not prevent initialization. Automatic timer delays and Push
+inactivity waits begin at execution activation. Manual timers wait for explicit
+arming. External clients do not participate in this startup barrier.
 
-## From publication to an input queue
+## Publication and network admission
 
-Consider a measurement published by `acquisition` for `analyse`:
+During a callback, a generated publication method encodes a typed value with
+the declared output catalogue and sends PUBLISH to the adapter. The SDK and
+engine enforce the activating event's output permissions. An optional uint64
+application ID remains separate from the engine publication handle.
 
-1. During a tick, the acquisition callback creates a typed message and calls its
-   generated publication function.
-2. The container encodes the message with the output's SDL2 catalogue and sends
-   a local PUBLISH frame to its adapter.
-3. The adapter adds the S2PS/2 envelope and sends a TCP publication request to
-   the broker for the output topic, such as `acquisition.measure`.
-4. The broker validates the message and finds subscriptions to that topic.
-5. For each subscription, it attempts admission to an independent broker queue,
-   applying that subscription's buffer and overflow policy. A publication result
-   reports the admission outcome for each subscription.
-6. A send loop for each subscription transmits queued DATA messages over its
-   configured TCP or UDP transport. TCP subscriptions have separate data
-   connections so a blocked data receiver does not block control replies.
-7. The destination adapter checks the topic, catalogue identity, SDL compatibility
-   with the input contract and payload validity, then attempts admission to that
-   input's RAM buffer.
+The adapter collects outputs until successful FINISHED. It validates each
+payload, commits input withdrawals and then sends staged publications to the
+broker. A failing callback exposes none of those outputs.
 
-There are two main queues along this path: the broker's subscription queue and
-the destination adapter's input buffer. A bounded staging queue also separates
-network reception from input admission. Each input subscription has its own
-admission worker.
+For each publication:
 
-Several subscriptions can feed the same input buffer. Its capacity and reception
-policy are shared; see [shared input reception](delivery.md#shared-input-reception).
-Data from any connected source can satisfy that required input.
+1. The adapter wraps the SDL bytes in S2PS/2 and sends a CENV/2 TCP request.
+2. The broker validates the message and attempts admission independently for
+   each matching subscription, reporting each result.
+3. Subscription send loops transmit DATA over TCP or UDP. TCP uses separate
+   data connections so a blocked receiver does not block control replies.
+4. The destination adapter checks the topic, catalogue identity, dynamic SDL
+   compatibility and payload validity before input admission.
 
-Admission and sending run independently across subscriptions. Their progress
-can overlap with the publication reply; the reply and all recipients' processing
-do not form a single synchronized operation.
+The broker's subscription queue and destination input buffer are separate.
+A bounded staging queue separates network reception from input admission;
+each subscription has its own admission worker. Multiple producers feeding
+one input share its reception policy and capacity. See
+[shared input reception](delivery.md#shared-input-reception).
 
-A message admitted to an input buffer is available for a future tick. Its arrival
-alone does not invoke the modeled component's application callback.
+Catalogue discovery remains dynamic per message. CENV/2 does not freeze a route
+to one contract or change SDL compatibility and collision handling.
 
-## Building a tick's input snapshot
+## Selecting one activation
 
-The adapter's scheduler examines the input buffers and selects:
+The parent scheduler chooses one Push origin per component: a queued FIFO
+record, a new latest record, an inactivity expiration or a timer expiration.
+It passes a reference containing the input, event, logical time, due time,
+elapsed deadline count and optional message metadata. A timeout has no message.
 
-| Input | Value selected for a tick |
-| --- | --- |
-| FIFO | The first queued message, at most one per input. |
-| Latest state | The current value, which remains available across ticks. |
-| Empty optional input | No value; generated Python snapshot callbacks receive `None`. |
-| Empty required input with an expired `timeout` | An explicit null value passed to the existing processing callback. |
+Push FIFO origin records are protected while their callback is active, then
+consumed on success. A latest origin is processed once per publication identity;
+retaining that value does not repeatedly activate its Push callback.
 
-Every required input must have a value or an expired configured timeout before
-the tick can start. Without timeouts, two required FIFO inputs need at least one
-queued message in each. A required latest input needs an initial value or a
-timeout; once a value is present, later ticks can reuse it.
+There is no combined multi-input snapshot or `on_tick`. A component needing a
+join keeps explicit application state, for example correlating branch messages
+by sequence. For periodic sampling, declare an independent timer and a Pull
+input with a latest reception policy.
 
-For example, a component might combine a FIFO of measurements with a latest-state
-setpoint:
+Only outputs listed under the origin's `activates.message` or
+`activates.timeout` may be generated by that event. An input with no output
+links may still compute and update state. Validation checks the activation graph,
+allowing passive feedback while rejecting a cycle of activating messages.
 
-| Moment | Measurement FIFO | Latest setpoint | Tick snapshot |
-| --- | --- | --- | --- |
-| Tick 1 starts | M1, M2, M3 | C10 | M1 + C10 |
-| Tick 1 is running | M2 and M3 wait; M4 arrives | C11 arrives | Tick 1 keeps M1 + C10 |
-| Tick 2 starts | M2, M3, M4 | C11 | M2 + C11 |
-| Tick 3 starts | M3, M4 | C11 | M3 + C11 |
+## Pull access
 
-Selected input values remain stable for the duration of the tick. A newly received
-setpoint changes the buffer for a future tick, not the snapshot already passed
-to the component.
+During an active callback, `get` reads without reservation or consumption,
+`pull` reads and consumes, and `remove` consumes without returning a message.
+These operations never wait for future data. Selectors may specify application
+ID, exact engine handle and source topic; repeated application IDs select the
+oldest matching message.
 
-The snapshot groups values available at selection time. It does not match them
-by timestamp, measurement number or publication sequence. Applications that need
-such matching must implement the corresponding synchronization logic.
+Eligible handles are frozen at callback selection. Messages received while it
+runs become accessible at the next activation. Existing Pull records remain
+subject to overflow eviction; reading does not protect their queue slots.
 
-## Required-input timeouts
+Pull/remove hide their selected handles immediately within the callback and
+journal withdrawals. FINISHED commits them and releases capacity before outbound
+admission waits. Failure cancels the journal. Independent overflow evictions
+are not rolled back. Saved inbox references expire with the callback.
 
-Set `timeout` on a required input to bound its wait for usable data. The value is
-in seconds, accepts fractional values and must be finite and strictly positive:
+## Inactivity timeouts and timers
 
-```json
-{
-  "inputs": {
-    "a": {"root": "Measurement", "required": true, "timeout": 0.5},
-    "b": {"root": "Measurement", "required": true, "timeout": 1.0}
-  },
-  "outputs": {},
-  "trigger": {"mode": "on_change"}
-}
-```
+A Push message input may declare a finite positive `timeout` in seconds.
+It measures inactivity since new message reception, including callback execution
+time. New valid receptions reset the deadline even if a full buffer refuses them.
+Recognized retries do not reset inactivity within the receipt window.
 
-`required` defaults to `true`. Optional inputs and output ports cannot declare a
-timeout. Required inputs without `timeout` retain their existing unbounded wait
-and still need an explicit producer binding in the model. A timeout does not
-replace that binding requirement.
+The same input callback receives `event="timeout"`, no message and an elapsed
+deadline count. A new receipt cancels pending timeout activations that have not
+started; it never interrupts a running callback. Expirations repeat while
+inactivity continues. A retained latest value does not suppress the timeout.
 
-Each required input's deadline is armed when the adapter starts execution after
-the OSE's READY barrier. At selection time, an available record is used even
-if the deadline has already passed. An empty input whose deadline has expired
-contributes a null value. A tick becomes eligible once every required input has
-a value or an expired timeout. Other required inputs and a periodic trigger can
-therefore delay invocation beyond one input's individual deadline. In the example,
-if both inputs remain empty, the first tick becomes eligible after one second.
+Pull inputs have no activating timeout. Explicit timer inputs have no SDL
+message contract and support periodic or one-shot modes, a positive delay and
+automatic or manual start. They invoke their own input callback. The first
+expiration follows the delay; there is no implicit zero-time source activation.
+Periodic cadence is preserved and missed deadlines coalesce. Arming starts the
+delay; disarming cancels future expirations.
 
-The existing processing callback receives the null directly:
+Timeouts are local events, independent of ACK deadlines and admission waits.
+They create no network messages, acknowledgements or retries. See
+[model declarations](model-v2-migration.md#timers-and-output-permissions).
 
-```python
-def on_tick(ctx, inputs):
-    a, b = inputs["a"], inputs["b"]
-    if a is None:
-        handle_missing_a(ctx)
-    if b is None:
-        handle_missing_b(ctx)
-```
+## Completing a callback
 
-A named callback for a timed input is likewise called with `None` in Python,
-`NULL` in C or `None` through `Option<&Message>` in Rust. There is no separate
-timeout callback, timeout flag or event argument. Absent optional inputs keep
-their existing behavior: their named callbacks are skipped.
+~~~text
+Engine -> component: ACTIVATE one input reference
+    Application callback computes, reads Pull inboxes and stages outputs.
+Component -> engine: PUBLISH result
+Component -> engine: FINISHED
+    Engine commits withdrawals, then attempts outbound publication admissions.
+~~~
 
-After each successful tick, the adapter rearms the configured deadlines from the
-completion time. Callback execution and publication admission waits do not consume
-the next tick's timeout budget. If inputs remain empty, subsequent ticks can
-report null again after their new deadlines; the scheduler does not spin on an
-already expired deadline. Arrivals during a null tick stay queued for a later tick.
+Callbacks are synchronous. Python normal return, Rust Ok, C nonzero success
+without a marked SDK error, Java normal void return and Ada normal procedure
+completion send FINISHED. An exception, crash or missing FINISHED cancels
+withdrawals and staged outputs. There is no additional business result in
+FINISHED.
 
-The timeout bounds waiting for a value; it does not expire received records.
-An existing latest-state value stays usable indefinitely and is not replaced
-with null because no further publications arrive. A timeout is also independent
-of the subscription's ACK timeout and overflow admission wait.
-
-Null values are generated locally by the adapter. They are not SDL messages,
-are not published through the broker and do not create network ACKs or retries.
-The local INPUT frame has an empty catalogue and empty payload to represent the
-null. A missing required INPUT frame still fails, even on a timed input; generated
-containers also reject explicit nulls for inputs without a timeout.
-
-## Executing and completing a tick
-
-The local exchange for a two-input tick is:
-
-```text
-Adapter -> component: INPUT measurement = M1
-Adapter -> component: INPUT setpoint = C10
-Adapter -> component: TICK
-
-    The application callbacks run with the decoded inputs.
-    They can publish zero, one or several output messages.
-
-Component -> adapter: PUBLISH result = R1
-Component -> adapter: FINISHED
-```
-
-The adapter reserves all selected FIFO records before sending the first INPUT.
-They remain counted in the input buffers and cannot be evicted by `drop_oldest`
-while the tick is in flight. The adapter removes them after receiving FINISHED.
-Latest-state values remain available for subsequent ticks.
-
-A component executes one tick at a time. While its application code is running,
-the adapter continues receiving and admitting subsequent messages into its
-bounded buffers.
-
-Depending on the container implementation, input decoding happens while INPUT
-frames are collected or when TICK is received. Application callbacks start after
-TICK with the complete decoded snapshot.
-
-Generated containers handle callback dispatch and the completion protocol:
-
-- In Python and C, a supplied `on_tick` callback handles the complete snapshot;
-  otherwise, named `on_<port>` callbacks handle the available inputs in model
-  port order.
-- In Rust, the default snapshot callback dispatches to the named input methods;
-  the application can override it to process the whole snapshot.
-- A source with no inputs implements a tick callback and uses a periodic trigger.
-- Callbacks are synchronous. FINISHED is sent after the callbacks complete
-  successfully. A callback failure stops the component without FINISHED.
-
-Publication through the generated component context is allowed during tick/input
-callbacks. See [callback containers](callbacks.md) for language-specific signatures
-and input lifetimes.
-
-## When ticks start
-
-### Input changes: `on_change`
-
-An `on_change` component becomes eligible once every required input has a value
-or an expired configured timeout, and at least one selected input has work:
-
-- a FIFO has a pending message; or
-- a latest-state input has a different publication ID from the value processed
-  in the previous tick; or
-- an empty required input's configured timeout has expired.
-
-After a tick completes, the next can start immediately if these conditions still
-hold. With only latest-state inputs, unchanged values do not repeatedly trigger
-execution. With multiple required FIFOs, one nonempty queue cannot trigger a tick
-while another required queue is empty and still waiting for data or a timeout.
-
-### Periodic execution: `periodic`
-
-A periodic component becomes eligible when its deadline has been reached and
-all required inputs have a value or an expired timeout. It can process an
-unchanged latest value again on each tick.
-
-The current scheduler sets the next deadline when the adapter completes a tick:
-
-```text
-next_tick = completion_time + period_ms
-```
-
-A period of 20 ms therefore introduces a 20 ms wait after completion. If a tick
-takes 3 ms, the interval between successive tick starts is approximately 23 ms,
-plus other execution delays. Tick duration can include publication admission
-waits. This is a fixed delay after completion, not a fixed-rate clock.
-
-The first tick can run as soon as execution is enabled and its required inputs
-have values or expired timeouts. Missed periods do not accumulate into a backlog
-of timer events.
+Logs, measurements, recording, parameter writes and timer controls have their
+own service semantics and are outside the withdrawal journal. Their effects
+are not rolled back with a failed callback. See [callback containers](callbacks.md).
 
 ## Admission, acknowledgement and processing completion
 
@@ -294,7 +183,7 @@ These confirmations describe different stages:
 | --- | --- |
 | Publication result `accepted` | The broker admitted the publication into RAM for that subscription. |
 | ACK `received` | The destination adapter validated the message and admitted it into its input buffer in RAM. |
-| FINISHED | The component completed the application processing for its tick. |
+| FINISHED | The component completed the application processing for its callback. |
 
 An ACK can reach the broker before the application callback starts. It does not
 confirm completion of that callback or survival of a crash. Conversely, a
@@ -312,22 +201,17 @@ An admitted message can subsequently be replaced by an overflow policy or lost
 when its process stops. All queues, retained states, retry state and deduplication
 history are volatile.
 
-## Concurrent components and publication visibility
+## Concurrent components and output visibility
 
-Each component has its own execution cycle. After startup, there is no global
-barrier that waits for all components to complete a tick before starting the next
-one. Acquisition can produce a new measurement while analysis processes the
-previous one and display handles an earlier result.
+After startup, real-time execution has no global callback barrier. Outputs become
+eligible for delivery after their callback succeeds. Downstream components can
+then process them while the emitter waits for later output admissions or starts
+future work. Successful callbacks do not form a transaction across the graph.
 
-A tick can publish results before sending FINISHED. A downstream component may
-already process such a result while the upstream tick is still in flight.
-Publications already emitted are not rolled back if the upstream component later
-fails. A tick is a local processing cycle, not a transaction across the graph.
-
-The adapter waits for each publication's broker reply before continuing its
-output-reading loop. Admission refusals are recorded and reported; they do not
-automatically cause that tick to be retried or prevent a later FINISHED from
-consuming its selected FIFO inputs.
+Admission refusals are reported; they do not retry the application callback or
+undo committed withdrawals. All queues, retained states and deduplication
+histories are volatile. The [simulator](simulation.md) additionally holds outputs
+behind a deterministic wave barrier.
 
 ## Backpressure and ordering
 
@@ -336,11 +220,11 @@ When a consumer cannot keep up, its bounded queues apply their configured policy
 | Policy | Behavior |
 | --- | --- |
 | `reject_new` | Refuse a new message when the queue is full. |
-| `drop_oldest` | Evict the oldest record that is not reserved by a running tick. Refuse if no such record is available. |
+| `drop_oldest` | Evict the oldest record that is not reserved by a running Push callback. Refuse if no such record is available. |
 | `wait` | Wait for space up to a configured deadline, then refuse if the queue is still full. UDP does not support this policy. |
-| `latest` | Keep the most recent admitted state for subsequent selection. A running tick retains its previously selected value. |
+| `latest` | Keep the most recent admitted state for subsequent selection. A running callback retains its origin value. |
 
-Broker admission waits can delay an emitter's publication and prolong its tick.
+Broker admission waits can delay further output delivery and the emitter's next callback.
 Each subscription's admission and send loops remain independent, although an
 emitter's publication reply includes the outcomes of all matching subscriptions.
 
@@ -352,39 +236,26 @@ publication order.
 
 ## The acquisition example
 
-The model in [examples/acquisition/model.json](../examples/acquisition/model.json)
-uses these execution patterns:
+| Component | Inputs and runtime behavior |
+| --- | --- |
+| `acquisition` | A 20 ms timer creates each measurement. |
+| `analyse` | A Push FIFO callback transforms one measurement. |
+| `observation` | A Push FIFO callback observes each retained result. |
+| `affichage` | A 100 ms timer reads a Pull/latest input and may skip intermediate values. |
 
-| Component | Trigger and inputs | Runtime behavior |
-| --- | --- | --- |
-| `acquisition` | Periodic, 20 ms; no inputs | Produces a measurement during each tick. |
-| `analyse` | On change; measurement FIFO | Processes one measurement per tick and publishes a result. |
-| `observation` | On change; result FIFO | Processes each result admitted and retained in its FIFO. |
-| `affichage` | Periodic, 100 ms; latest result | Reads the latest available result and can skip intermediate values. |
+The [model](../examples/acquisition/model.json) sends acquisition-to-analysis
+over TCP. Result subscriptions use UDP with ACK/retry for observation and latest
+without ACK for display. These policies do not change callback activation rules.
 
-The acquisition-to-analysis link uses TCP. The two result subscriptions use UDP,
-with ACKs and retries for observation and latest-state delivery without ACKs for
-display. Their different policies do not change the component protocol.
+## External clients and implementation
 
-## External client callbacks
+[External client SDKs](clients.md) invoke callbacks serially per subscription,
+with independent workers across subscriptions. They do not exchange CH/2 frames.
+Publishing into a declared topic still feeds the modeled input's normal queue.
 
-The [external client SDKs](clients.md) use a separate execution interface. Their
-callbacks are invoked for admitted messages, sequentially per subscription, with
-independent workers across subscriptions. They do not use the modeled component
-tick scheduler or exchange local INPUT/TICK/FINISHED frames.
-
-An external client can still publish into a topic bound to a modeled input. That
-message then participates in the destination component's normal buffering and
-tick-selection rules.
-
-## Implementation references
-
-- [Scheduler](../src/ose/execution/scheduler.py): input selection, change
-  detection and periodic deadlines.
-- [Adapter](../src/ose/execution/adapter.py): network admission, snapshot
-  reservation, INPUT/TICK exchange, publications and completion.
-- [Broker](../src/ose/execution/broker.py): routing, per-subscription queues
-  and independent send loops.
-- [Delivery engine](../src/ose/delivery/engine.py): ACKs, retry deadlines
-  and exhaustion.
-- [Component protocol](../sdk/protocol.md): binary frame layout and lifecycle.
+- [Activation scheduler](../src/ose/execution/activation.py): origin selection,
+  inactivity, timer cadence and withdrawal commit.
+- [Adapter](../src/ose/execution/adapter.py): network admission, CH/2 and output staging.
+- [Input services](../src/ose/execution/input_ipc.py): nonblocking inbox/timer requests.
+- [Broker](../src/ose/execution/broker.py): routing and independent subscription queues.
+- [CH/2](../sdk/input-protocol.md): activation references, publication IDs and requests.

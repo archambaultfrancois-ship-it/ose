@@ -35,8 +35,9 @@ incarnations are rejected.
 Replacing an unsent state cancels its retries. No state TTL is applied.
 
 `reject_new` leaves existing entries intact. `drop_oldest` removes the oldest
-waiting entry, preserving a component's in-flight FIFO snapshot; if every entry
-is reserved it refuses the new entry. `wait` retries admission for at most the
+waiting entry that is not reserved; if every entry is reserved it refuses the
+new entry. A component reserves the FIFO record selected for an active Push
+callback. Pull reads do not reserve entries against overflow. `wait` retries admission for at most the
 configured delay and then refuses; it is supported only on TCP. Each subscription
 has separate admission and sending tasks so a slow subscriber does not block
 delivery to other subscribers. A publisher receives a per-subscription result
@@ -79,9 +80,11 @@ Callbacks and SDK protocols are unchanged: a tick supplies at most one message
 per input, without source metadata. These rules apply to local, distributed and
 simulated execution; simulation retains its deterministic admission order.
 
-## Network protocol CENV/1
+## Network protocol CENV/2
 
-Each packet is `"CE" | version 1 | u32 metadata length | JSON metadata | body`.
+Each packet is `"CE" | version 2 | u8 opcode | u32 metadata length | binary metadata | body`.
+The [CENV/2 specification](cenv2.md) defines compact operation fields and binary
+control objects. CENV/1 is obsolete and rejected; all peers must upgrade together.
 DATA metadata includes subscription, message ID, epoch, sequence and topic. DATA
 body is an unchanged S2PS/2 envelope. ACKs use the same transport as their DATA.
 Control and publisher ingress always use TCP. Catalogues are requested on cache
@@ -134,7 +137,8 @@ Disabling retry means no application retransmission. TCP's own reliability still
 operates. FIFO over UDP can contain gaps and preserve reordered arrivals. UDP
 with retry does not promise delivery after exhausted attempts.
 
-The v1 transport listens on loopback and does not implement remote deployment,
-authentication or TLS. Retry deadlines, buffer ages and scheduling use monotonic
+Local transport listens on loopback by default. Distributed deployments use the
+same CENV/2 envelope over their existing authenticated/TLS connections.
+Retry deadlines, buffer ages and scheduling use monotonic
 time. These improvements reduce overhead; the Python runtime does not provide
 a hard real-time latency guarantee.

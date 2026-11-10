@@ -9,9 +9,11 @@ import subprocess
 import tempfile
 import unittest
 from ose.codec.sdl2 import SDL2
-from ose.execution.component import read_exact
-from ose.execution.ipc import frame, port_data, unpack_port
+from ose.execution.component_io import read_exact
+from ose.execution.input_ipc import unpack_publication
+from ose.execution.ipc import frame
 from ose.modeling.compiler import build, validate
+from tests.component_driver import message_frame, timer_frame
 
 SDL_ROOT = os.environ.get("SDL_ROOT")
 SIMPLE = "message Measurement {1: required uint64 sequence; 2: required fl64 value;}"
@@ -31,7 +33,8 @@ static int start(OseContext *ctx) {
     }
     return 1;
 }
-static int tick(OseContext *ctx) {
+static int on_clock(OseContext *ctx, const Input_clock *input) {
+    (void)input;
     Measurement value = {0};
     if (strstr(ctx->config_json, "FAIL_TICK")) return ose_fail(ctx, "user failure");
     value.sequence = ++*(uint64_t *)ctx->user_data;
@@ -43,31 +46,36 @@ static int stop(OseContext *ctx) {
     fprintf(stderr, "STOP %s\n", ctx->name);
     return 1;
 }
-const ComponentCallbacks component_callbacks = { .on_start = start, .on_stop = stop, .on_tick = tick };
+const ComponentCallbacks component_callbacks = { .on_start = start, .on_stop = stop, .on_clock = on_clock };
 '''
 C_ECHO = r'''#include "component.h"
 #include <stdio.h>
-static int on_input(OseContext *ctx, const Measurement *message) {
-    Measurement value = *message;
+static int on_input(OseContext *ctx, const Input_input *input) {
+    Measurement value = *input->message;
     value.value *= 2;
-    return publish_result(ctx, &value);
+    return input->meta.has_app_id ? publish_result_with_id(ctx, &value, input->meta.app_id) : publish_result(ctx, &value);
 }
 static int stop(OseContext *ctx) { fprintf(stderr, "STOP %s\n", ctx->name); return 1; }
 const ComponentCallbacks component_callbacks = { .on_input = on_input, .on_stop = stop };
 '''
-C_SNAPSHOT = r'''#include "component.h"
+C_STATE = r'''#include "component.h"
 #include <stdio.h>
-static int tick(OseContext *ctx, const ComponentInputs *inputs) {
+static double second_value;
+static int on_second(OseContext *ctx, const Input_second *input) {
+    (void)ctx;
+    second_value = input->message->value;
+    return 1;
+}
+static int on_first(OseContext *ctx, const Input_first *input) {
     Measurement value = {0};
-    if (!inputs->first || !inputs->second || inputs->optional) return 0;
-    value.sequence = inputs->first->sequence;
-    value.value = inputs->first->value + inputs->second->value;
+    value.sequence = input->message->sequence;
+    value.value = input->message->value + second_value;
     return publish_result(ctx, &value);
 }
 static int stop(OseContext *ctx) { fprintf(stderr, "STOP %s\n", ctx->name); return 1; }
-const ComponentCallbacks component_callbacks = { .on_tick = tick, .on_stop = stop };
+const ComponentCallbacks component_callbacks = { .on_first = on_first, .on_second = on_second, .on_stop = stop };
 '''
-RUST_SOURCE = r'''use crate::container::{Callbacks, Context, Result};
+RUST_SOURCE = r'''use crate::container::{Callbacks, Context, InputReference, Result};
 use crate::types::measurement::Measurement;
 #[derive(Default)]
 pub struct Handler { counter: u64 }
@@ -78,7 +86,7 @@ impl Callbacks for Handler {
         if ctx.config_json.contains("OUTSIDE_TICK") { ctx.publish_out(&Measurement::default())?; }
         Ok(())
     }
-    fn on_tick(&mut self, ctx: &mut Context) -> Result {
+    fn on_clock(&mut self, ctx: &mut Context, _input: &InputReference<()>) -> Result {
         if ctx.config_json.contains("FAIL_TICK") { return Err("user failure".into()); }
         if ctx.config_json.contains("PANIC") { panic!("user panic"); }
         self.counter += 1;
@@ -87,27 +95,33 @@ impl Callbacks for Handler {
     fn on_stop(&mut self, ctx: &mut Context) -> Result { eprintln!("STOP {}", ctx.name); Ok(()) }
 }
 '''
-RUST_ECHO = r'''use crate::container::{Callbacks, Context, Result};
+RUST_ECHO = r'''use crate::container::{Callbacks, Context, InputReference, Result};
 use crate::types::measurement::Measurement;
 #[derive(Default)]
 pub struct Handler;
 impl Callbacks for Handler {
-    fn on_input(&mut self, ctx: &mut Context, message: &Measurement) -> Result {
-        let mut value = message.clone(); value.value *= 2.0;
-        ctx.publish_result(&value)
+    fn on_input(&mut self, ctx: &mut Context, input: &InputReference<Measurement>) -> Result {
+        let mut value = input.message.as_ref().unwrap().clone(); value.value *= 2.0;
+        match input.app_id {
+            Some(id) => ctx.publish_result_with_id(&value, id),
+            None => ctx.publish_result(&value),
+        }
     }
     fn on_stop(&mut self, ctx: &mut Context) -> Result { eprintln!("STOP {}", ctx.name); Ok(()) }
 }
 '''
-RUST_SNAPSHOT = r'''use crate::container::{Callbacks, Context, Inputs, Result};
+RUST_STATE = r'''use crate::container::{Callbacks, Context, InputReference, Result};
 use crate::types::measurement::Measurement;
 #[derive(Default)]
-pub struct Handler;
+pub struct Handler { second_value: f64 }
 impl Callbacks for Handler {
-    fn on_tick(&mut self, ctx: &mut Context, inputs: &Inputs<'_>) -> Result {
-        assert!(inputs.optional.is_none());
-        let first = inputs.first.unwrap(); let second = inputs.second.unwrap();
-        ctx.publish_result(&Measurement { sequence: first.sequence, value: first.value + second.value })
+    fn on_second(&mut self, _ctx: &mut Context, input: &InputReference<Measurement>) -> Result {
+        self.second_value = input.message.as_ref().unwrap().value;
+        Ok(())
+    }
+    fn on_first(&mut self, ctx: &mut Context, input: &InputReference<Measurement>) -> Result {
+        let first = input.message.as_ref().unwrap();
+        ctx.publish_result(&Measurement { sequence: first.sequence, value: first.value + self.second_value })
     }
     fn on_stop(&mut self, ctx: &mut Context) -> Result { eprintln!("STOP {}", ctx.name); Ok(()) }
 }
@@ -123,19 +137,20 @@ class NativeContainerTests(unittest.TestCase):
         cls.root = Path(temporary.name)
         cls.fixtures = {}
         cls.codec = SDL2(SDL_ROOT)
-        for language, suffix, handlers in (("c", ".c", (C_SOURCE, C_ECHO, C_SNAPSHOT)),
-                                           ("rust", ".rs", (RUST_SOURCE, RUST_ECHO, RUST_SNAPSHOT))):
+        for language, suffix, handlers in (("c", ".c", (C_SOURCE, C_ECHO, C_STATE)),
+                                           ("rust", ".rs", (RUST_SOURCE, RUST_ECHO, RUST_STATE))):
             root = cls.root / language
             root.mkdir()
             (root / "types.sdl").write_text(EVOLVED)
             (root / "consumer").mkdir()
             (root / "consumer/measurement.sdl").write_text(SIMPLE)
             port = {"root": "Measurement", "schema": "consumer/measurement.sdl"}
-            model = {"version": 1, "schemas": "types.sdl", "components": {
-                "source": {"inputs": {}, "outputs": {"out": {"root": "Measurement"}}, "trigger": {"mode": "periodic", "period_ms": 10}},
-                "echo": {"inputs": {"input": dict(port)}, "outputs": {"result": dict(port)}, "trigger": {"mode": "on_change"}},
-                "sink": {"inputs": {"first": dict(port), "second": dict(port), "optional": dict(port, required=False)},
-                         "outputs": {"result": dict(port)}, "trigger": {"mode": "on_change"}}},
+            model = {"version": 2, "schemas": "types.sdl", "components": {
+                "source": {"inputs": {"clock": {"kind": "timer", "timer": {"mode": "periodic", "delay": .01},
+                                              "activates": {"timeout": ["out"]}}}, "outputs": {"out": {"root": "Measurement"}}},
+                "echo": {"inputs": {"input": dict(port, activates={"message": ["result"]})}, "outputs": {"result": dict(port)}},
+                "sink": {"inputs": {"first": dict(port, activates={"message": ["result"]}), "second": dict(port),
+                                    "passive": dict(port, mode="pull")}, "outputs": {"result": dict(port)}}},
                 "subscriptions": [{"id": name, "from": "source.out", "to": target} for name, target in
                                   (("echo", "echo.input"), ("first", "sink.first"), ("second", "sink.second"))]}
             deployment = {"version": 1, "components": {name: {"container": {"language": language, "handler": name + suffix}}
@@ -163,19 +178,24 @@ class NativeContainerTests(unittest.TestCase):
         return result, messages
 
     def source_payload(self, language):
-        result, messages = self.run_node(language, "source", frame("T"))
+        result, messages = self.run_node(language, "source", timer_frame(1))
         self.assertEqual(result.returncode, 0, result.stderr.decode())
-        return unpack_port(messages[1][1])[1]
+        self.assertEqual(messages[0], ("R", b"\2"))
+        return unpack_publication(messages[1][1])[1]
+
+    def push(self, language, payload, *, port="input", index=1, app_id=None):
+        catalogue = self.fixtures[language]["plan"]["components"]["source"]["outputs"]["out"]["catalogue"]
+        return message_frame(index, port, catalogue, self.codec.wrap(catalogue, payload), app_id=app_id)
 
     def test_periodic_sources_publish_typed_values_and_stop(self):
         for language, fixture in self.fixtures.items():
             with self.subTest(language=language):
-                result, messages = self.run_node(language, "source", frame("T") + frame("T"))
+                result, messages = self.run_node(language, "source", timer_frame(1) + timer_frame(2))
                 self.assertEqual(result.returncode, 0, result.stderr.decode())
                 self.assertEqual([op for op, _ in messages], ["R", "P", "F", "P", "F"])
                 catalogue = fixture["plan"]["components"]["source"]["outputs"]["out"]["catalogue"]
                 decoder = self.codec.api.prepare(catalogue)
-                values = [self.codec.api.decode_dynamic(decoder, unpack_port(body)[1]).fields for op, body in messages if op == "P"]
+                values = [self.codec.api.decode_dynamic(decoder, unpack_publication(body)[1]).fields for op, body in messages if op == "P"]
                 self.assertEqual([value["sequence"] for value in values], [7, 8])
                 self.assertEqual(values[0]["extra"], 9)
                 self.assertIn(b"STOP source", result.stderr)
@@ -187,34 +207,40 @@ class NativeContainerTests(unittest.TestCase):
                 publisher = fixture["plan"]["components"]["source"]["outputs"]["out"]["catalogue"]
                 consumer = fixture["plan"]["components"]["echo"]["outputs"]["result"]["catalogue"]
                 self.assertNotEqual(self.codec.api.message_names(self.codec.api.prepare(publisher)), self.codec.api.message_names(self.codec.api.prepare(consumer)))
-                result, messages = self.run_node(language, "echo", frame("D", port_data("input", payload, publisher)) + frame("T"))
-                self.assertEqual(result.returncode, 0, result.stderr.decode())
-                self.assertEqual([op for op, _ in messages], ["R", "P", "F"])
-                output = self.codec.api.decode_dynamic(self.codec.api.prepare(consumer), unpack_port(messages[1][1])[1])
-                self.assertEqual(output.fields, {"sequence": 7, "value": 7.0})
-                self.assertIn(b"STOP echo", result.stderr)
+                for identity in (None, 0, 2**64 - 1):
+                    result, messages = self.run_node(language, "echo", self.push(language, payload, app_id=identity))
+                    self.assertEqual(result.returncode, 0, result.stderr.decode())
+                    self.assertEqual([op for op, _ in messages], ["R", "P", "F"])
+                    _, wire, actual_id = unpack_publication(messages[1][1])
+                    self.assertEqual(actual_id, identity)
+                    output = self.codec.api.decode_dynamic(self.codec.api.prepare(consumer), wire)
+                    self.assertEqual(output.fields, {"sequence": 7, "value": 7.0})
+                    self.assertIn(b"STOP echo", result.stderr)
 
-    def test_snapshot_callbacks_include_optional_absence(self):
+    def test_independent_callbacks_retain_owned_state_and_do_not_wait_for_passive_input(self):
         for language, fixture in self.fixtures.items():
             with self.subTest(language=language):
                 payload = self.source_payload(language)
                 catalogue = fixture["plan"]["components"]["source"]["outputs"]["out"]["catalogue"]
-                events = b"".join(frame("D", port_data(port, payload, catalogue)) for port in ("first", "second")) + frame("T")
+                events = self.push(language, payload, port="first") + self.push(language, payload, port="second", index=2) + \
+                         self.push(language, payload, port="first", index=3)
                 result, messages = self.run_node(language, "sink", events)
                 self.assertEqual(result.returncode, 0, result.stderr.decode())
-                self.assertEqual([op for op, _ in messages], ["R", "P", "F"])
+                self.assertEqual([op for op, _ in messages], ["R", "P", "F", "F", "P", "F"])
                 output_catalogue = fixture["plan"]["components"]["sink"]["outputs"]["result"]["catalogue"]
-                value = self.codec.api.decode_dynamic(self.codec.api.prepare(output_catalogue), unpack_port(messages[1][1])[1])
-                self.assertEqual(value.fields["value"], 7.0)
+                values = [self.codec.api.decode_dynamic(self.codec.api.prepare(output_catalogue), unpack_publication(body)[1]).fields["value"]
+                          for op, body in messages if op == "P"]
+                self.assertEqual(values, [3.5, 7.0])
 
-    def test_incomplete_duplicate_and_invalid_inputs_never_invoke_callbacks(self):
+    def test_old_frames_invalid_origins_and_payloads_never_invoke_callbacks(self):
         for language, fixture in self.fixtures.items():
             payload = self.source_payload(language)
             catalogue = fixture["plan"]["components"]["source"]["outputs"]["out"]["catalogue"]
-            first = frame("D", port_data("first", payload, catalogue))
-            for events in (first + frame("T"), first + first + frame("T"),
-                           first + frame("D", port_data("second", b"invalid", catalogue)) + frame("T"),
-                           frame("D", port_data("unknown", payload, catalogue)) + frame("T")):
+            for events in (frame("T"), frame("T", b"\0" * 16), frame("D", b"first"),
+                           self.push(language, payload, port="first", index=2),
+                           self.push(language, b"invalid", port="first"),
+                           self.push(language, payload, port="unknown"),
+                           self.push(language, payload, port="passive")):
                 with self.subTest(language=language, events=events[-10:]):
                     result, messages = self.run_node(language, "sink", events)
                     self.assertNotEqual(result.returncode, 0)
@@ -225,11 +251,11 @@ class NativeContainerTests(unittest.TestCase):
         for language in self.fixtures:
             for probe, expected in (("FAIL_INIT", []), ("OUTSIDE_TICK", []), ("FAIL_TICK", ["R"])):
                 with self.subTest(language=language, probe=probe):
-                    result, messages = self.run_node(language, "source", frame("T"), probe)
+                    result, messages = self.run_node(language, "source", timer_frame(1), probe)
                     self.assertNotEqual(result.returncode, 0)
                     self.assertEqual([op for op, _ in messages], expected)
                     self.assertIn(b"STOP source", result.stderr)
-        result, messages = self.run_node("rust", "source", frame("T"), "PANIC")
+        result, messages = self.run_node("rust", "source", timer_frame(1), "PANIC")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual([op for op, _ in messages], ["R"])
         self.assertIn(b"STOP source", result.stderr)
@@ -260,20 +286,21 @@ class NativeContainerTests(unittest.TestCase):
                 schemas.mkdir(parents=True)
                 (schemas / "point.sdl").write_text("package demo; message Point {1: int32 x;}")
                 (schemas / "packet.sdl").write_text("package demo; message Packet {1: Point point; 2: string label;}")
-                model = {"version": 1, "schemas": "schémas", "components": {
-                    "source": {"inputs": {}, "outputs": {"out": {"root": "demo.Packet"}}, "trigger": {"mode": "periodic", "period_ms": 10}},
-                    "echo": {"inputs": {"input": {"root": "demo.Packet"}}, "outputs": {"result": {"root": "demo.Packet"}},
-                             "trigger": {"mode": "on_change"}}},
+                model = {"version": 2, "schemas": "schémas", "components": {
+                    "source": {"inputs": {"clock": {"kind": "timer", "timer": {"mode": "periodic", "delay": .01},
+                                                  "activates": {"timeout": ["out"]}}}, "outputs": {"out": {"root": "demo.Packet"}}},
+                    "echo": {"inputs": {"input": {"root": "demo.Packet", "activates": {"message": ["result"]}}},
+                             "outputs": {"result": {"root": "demo.Packet"}}}},
                     "subscriptions": [{"id": "link", "from": "source.out", "to": "echo.input"}]}
                 suffix = self.fixtures[language]["suffix"]
                 deployment = {"version": 1, "components": {name: {"container": {"language": language, "handler": name + "-é" + suffix}}
                                                           for name in model["components"]}}
                 if language == "c":
-                    handlers = ['#include "component.h"\nstatic int tick(OseContext *ctx) { Output_out value = {0}; value.point.x = 12; value.label = "native"; return publish_out(ctx, &value); }\nconst ComponentCallbacks component_callbacks = { .on_tick = tick };\n',
-                                '#include "component.h"\nstatic int on_input(OseContext *ctx, const Input_input *value) { return publish_result(ctx, value); }\nconst ComponentCallbacks component_callbacks = { .on_input = on_input };\n']
+                    handlers = ['#include "component.h"\nstatic int on_clock(OseContext *ctx, const Input_clock *input) { (void)input; Output_out value = {0}; value.point.x = 12; value.label = "native"; return publish_out(ctx, &value); }\nconst ComponentCallbacks component_callbacks = { .on_clock = on_clock };\n',
+                                '#include "component.h"\nstatic int on_input(OseContext *ctx, const Input_input *input) { return publish_result(ctx, input->message); }\nconst ComponentCallbacks component_callbacks = { .on_input = on_input };\n']
                 else:
-                    handlers = ['use crate::container::{Callbacks, Context, Result};\nuse crate::types::demo::packet::Packet;\n#[derive(Default)] pub struct Handler;\nimpl Callbacks for Handler { fn on_tick(&mut self, ctx: &mut Context) -> Result { let mut value = Packet::default(); value.point.x = 12; value.label = "native".into(); ctx.publish_out(&value) } }\n',
-                                'use crate::container::{Callbacks, Context, Result};\nuse crate::types::demo::packet::Packet;\n#[derive(Default)] pub struct Handler;\nimpl Callbacks for Handler { fn on_input(&mut self, ctx: &mut Context, value: &Packet) -> Result { ctx.publish_result(value) } }\n']
+                    handlers = ['use crate::container::{Callbacks, Context, InputReference, Result};\nuse crate::types::demo::packet::Packet;\n#[derive(Default)] pub struct Handler;\nimpl Callbacks for Handler { fn on_clock(&mut self, ctx: &mut Context, _input: &InputReference<()>) -> Result { let mut value = Packet::default(); value.point.x = 12; value.label = "native".into(); ctx.publish_out(&value) } }\n',
+                                'use crate::container::{Callbacks, Context, InputReference, Result};\nuse crate::types::demo::packet::Packet;\n#[derive(Default)] pub struct Handler;\nimpl Callbacks for Handler { fn on_input(&mut self, ctx: &mut Context, input: &InputReference<Packet>) -> Result { ctx.publish_result(input.message.as_ref().unwrap()) } }\n']
                 for name, handler in zip(model["components"], handlers):
                     (root / (name + "-é" + suffix)).write_text(handler)
                 m, d = root / "model.json", root / "deployment.json"
@@ -289,10 +316,11 @@ class NativeContainerTests(unittest.TestCase):
                         data = read_exact(stream, size)
                         messages.append((chr(data[0]), data[1:]))
                     self.assertEqual([op for op, _ in messages], ["R", "P", "F"])
-                    return unpack_port(messages[1][1])[1]
-                payload = run("source", frame("T"))
+                    self.assertEqual(messages[0], ("R", b"\2"))
+                    return unpack_publication(messages[1][1])[1]
+                payload = run("source", timer_frame(1))
                 catalogue = plan["components"]["source"]["outputs"]["out"]["catalogue"]
-                output = run("echo", frame("D", port_data("input", payload, catalogue)) + frame("T"))
+                output = run("echo", message_frame(1, "input", catalogue, self.codec.wrap(catalogue, payload)))
                 decoded = self.codec.api.decode_dynamic(self.codec.api.prepare(catalogue), output)
                 self.assertEqual(decoded.fields["point"].fields["x"], 12)
                 self.assertEqual(decoded.fields["label"], "native")
@@ -311,8 +339,8 @@ class NativeContainerTests(unittest.TestCase):
                 validate(m, d, SDL_ROOT)
                 self.assertFalse(handler.exists())
                 path = build(m, d, SDL_ROOT, root / "new-build")
-                self.assertIn("on_tick", handler.read_text())
+                self.assertIn("on_clock", handler.read_text())
                 node = json.loads(path.read_text())["components"]["source"]
-                result = subprocess.run(node["command"], input=frame("I", json.dumps(node).encode()) + frame("T") + frame("X"), capture_output=True, timeout=10)
+                result = subprocess.run(node["command"], input=frame("I", json.dumps(node).encode()) + timer_frame(1) + frame("X"), capture_output=True, timeout=10)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn(b"implement the tick callback", result.stderr)
+                self.assertIn(b"implement the input callback", result.stderr)

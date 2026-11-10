@@ -112,7 +112,7 @@ read the current value after reconnecting rather than blindly retrying an old wr
 
 Limits: 4096 declared blocks, 256 bindings per component or paths per subscription,
 1024 subscriptions/external sessions and 64 MiB of current encoded values in total.
-Individual blocks and catalogues must fit the existing transport and 1 MiB CH/1
+Individual blocks and catalogues must fit the existing transport and 1 MiB CH/2
 frame limits. Status reports expose block roots, reader counts and storage bytes;
 reading values requires the block's read right.
 
@@ -228,7 +228,7 @@ Directory imports additionally limit the sum of selected file contents to 64 MiB
 Use `--max-json-size BYTES` and `--max-total-json-size BYTES` to override these
 positive limits on `set`. All blocks are still validated before the first write.
 These limits concern JSON text, not the encoded SDL frame size; the existing
-transport/CH/1 frame limits and service storage budget remain in effect.
+transport/CH/2 frame limits and service storage budget remain in effect.
 
 For `set`, `--file -` reads a complete JSON block from stdin instead of a file:
 
@@ -360,23 +360,26 @@ The synchronous native/Java/Ada channels serialize requests. A long-poll is boun
 to 250 ms; clients drive their own polling loop. Finish calls before closing their
 client. Reconnect explicitly and resubscribe to receive current state.
 
-## Wire operations and CH/1
+## Wire operations and CH/2
 
-Parameter RPCs use CENV/1 with ordinary SDL payloads, without S2PS envelopes.
+Parameter RPCs use CENV/2 with ordinary SDL payloads, without S2PS envelopes.
 `parameters_open` selects an authenticated client session. List/describe/get/set,
 subscribe/next/unsubscribe operations use exact paths; describe returns the
 catalogue as binary UTF-8. Subscribe supplies a `paths` array; next returns one
 `path` and SDL payload, or `empty: true`. Component sessions use existing identity
 and worker-generation checks instead of `parameters_open`.
 
-CH/1 adds `U` (adapter → component: alias/catalogue/payload, INPUT layout), `S`
-(component → adapter: alias/payload, PUBLISH layout) and `A` (adapter → component:
-byte 1 for success, or byte 0 plus UTF-8 error). Initial readable `U` frames follow
-INIT before `on_start`; their count comes from the bindings. READY byte `0x03`
-advertises timestamped ticks and shared parameters. Legacy empty/`0x01` READYs
-remain valid for components without shared bindings. Regenerate containers after
-adding bindings. A setter waits for its `A` while the engine handles `S` during
-initialization or the active tick. Updates never interrupt a callback.
+CH/2 shared services use `U` (engine → component: alias, catalogue, SDL payload),
+`S` (component → engine: alias, SDL payload) and `A` (engine → component: byte 1
+for success, or byte 0 plus UTF-8 error). Their layouts are specified in the
+[component service protocol](../sdk/protocol.md). Unlike CH/2 business
+publications, parameter SET has no application-ID field.
+
+Initial readable updates follow INIT before the start hook; their count comes
+from the bindings. Every CH/2 component sends READY byte 0x02, whether or not
+it uses shared parameters. A setter waits for its RESULT during initialization
+or an active input callback. Updates never interrupt a callback. Parameter
+writes are outside the deferred inbox withdrawal journal.
 
 ## Simulation
 

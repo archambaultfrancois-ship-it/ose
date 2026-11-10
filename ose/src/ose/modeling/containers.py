@@ -6,6 +6,8 @@ from ose.modeling.python_stdlib import STDLIB_MODULE_NAMES
 
 def generate_python(name, node, handler, sdl_root, schemas, destination):
     """Merge compatible generated modules and emit a typed executable context."""
+    if node.get("execution_model") != 2:
+        raise ValueError("Python containers require execution model 2")
     destination = Path(destination)
     bindings = destination / "types"
     bindings.mkdir(parents=True, exist_ok=True)
@@ -43,6 +45,8 @@ def generate_python(name, node, handler, sdl_root, schemas, destination):
     imports, aliases, mapped = [], {}, {"inputs": {}, "outputs": {}, "parameter_bindings": {}}
     for direction in mapped:
         for port, desc in node.get(direction, {}).items():
+            if desc.get("kind") == "timer":
+                continue
             module, symbol = roots[desc["root"]]
             key = (module, symbol)
             if key not in aliases:
@@ -54,13 +58,13 @@ def generate_python(name, node, handler, sdl_root, schemas, destination):
              "from pathlib import Path", "import sys",
              f"sys.path.insert(0, {str(Path(sdl_root) / 'runtime/python')!r})",
              "sys.path.insert(0, str(Path(__file__).resolve().parent / 'types'))",
-             "from ose.execution.callbacks import CallbackContext, run_callbacks",
-             *imports, "", "", "class Context(CallbackContext):"]
+             "from ose.execution.input_process import InputCallbackContext, run_input_callbacks",
+             *imports, "", "", "class Context(InputCallbackContext):"]
     if not mapped["outputs"] and not mapped["parameter_bindings"]:
         lines.append("    pass")
     for port, alias in mapped["outputs"].items():
-        lines += [f"    def publish_{port}(self, message: {alias}) -> None:",
-                  f"        self.publish({port!r}, message)", ""]
+        lines += [f"    def publish_{port}(self, message: {alias}, *, id=None) -> None:",
+                  f"        self.publish({port!r}, message, id=id)", ""]
     for alias, typ in mapped['parameter_bindings'].items():
         access = node['parameter_bindings'][alias]['access']
         if 'read' in access:
@@ -70,34 +74,27 @@ def generate_python(name, node, handler, sdl_root, schemas, destination):
     def mapping(direction):
         return "{" + ", ".join(f"{port!r}: {alias}" for port, alias in mapped[direction].items()) + "}"
     lines += ["", "if __name__ == '__main__':",
-              f"    run_callbacks(name={name!r}, handler={str(handler)!r}, sdl_root={str(sdl_root)!r},",
+              f"    run_input_callbacks(name={name!r}, handler={str(handler)!r}, sdl_root={str(sdl_root)!r},",
               f"                  input_types={mapping('inputs')}, output_types={mapping('outputs')}, context_type=Context, parameter_types={mapping('parameter_bindings')})", ""]
     path = destination / "container.py"
     path.write_text("\n".join(lines))
     return path
 
 
-def scaffold_handler(node, handler, types):
+def scaffold_handler(node, handler):
     """Create an editable starting point once; existing files are left untouched."""
+    if node.get("execution_model") != 2:
+        raise ValueError("Python containers require execution model 2")
     handler = Path(handler)
     if handler.exists():
         if not handler.is_file():
             raise ValueError(f"handler is not a file: {handler}")
         return
     lines = ['"""User callbacks. This file is never overwritten by the builder."""']
-    if len(node["inputs"]) == 1:
-        port, desc = next(iter(node["inputs"].items()))
-        module, symbol = types[desc["root"]]
-        annotation = "Optional[InputMessage]" if "timeout" in desc else "InputMessage"
-        if "timeout" in desc:
-            lines.append("from typing import Optional")
-        lines += [f"from {module} import {symbol} as InputMessage", "", "",
-                  f"def on_{port}(ctx, message: {annotation}):",
-                  '    raise NotImplementedError("Implement the input callback")']
-    else:
-        args = "ctx, inputs" if node["inputs"] else "ctx"
-        lines += ["", "", f"def on_tick({args}):",
-                  '    raise NotImplementedError("Implement the tick callback")']
+    for port, desc in node["inputs"].items():
+        if desc.get("mode", "push") != "pull":
+            lines += ["", "", f"def on_{port}(ctx, input):",
+                      '    raise NotImplementedError("Implement the input callback")']
     handler.parent.mkdir(parents=True, exist_ok=True)
     try:
         with handler.open("x") as stream:

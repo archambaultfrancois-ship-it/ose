@@ -71,6 +71,33 @@ When a publish time is unavailable, it equals log time. Zero is a timestamp, not
 missing-value marker. The writer's omitted log time defaults to `time.time_ns()`.
 Sequence is an unsigned 32-bit application counter; omitted sequence defaults to zero.
 
+### Optional per-message metadata
+
+The Python writer accepts `write_encoded(..., metadata={"key": "value"})` (and
+the same argument to `write`). Readers expose an immutable string map as
+`record.metadata`, empty for legacy recordings or messages without metadata.
+The catalogue and encoded SDL payload are unchanged. Python `convert` and
+`transform` preserve these maps, including filtering, rebasing and splitting;
+`inspect` displays them when present.
+
+The optional container extension uses a reserved Metadata record named
+`sdl.recording.message.v1`, with exactly two string fields: `index`, the canonical
+nonnegative decimal ordinal of the message in file order, starting at zero across
+all channels, and `values`, a JSON object of string keys and string values.
+There is one such record per message with a nonempty map. The metadata record
+precedes its target message in the logical record stream, but need not be adjacent:
+MCAP buffers messages in chunks while emitting Metadata immediately. Publication
+sequence, channel ID and timestamps do not identify the target. Converters and
+transformations regenerate ordinals for each output file.
+
+The Python reader rejects duplicate, late, malformed or orphaned associations,
+including outside topic/time selections, and bounds pending metadata by its
+configured record-size limit. The reserved records are consumed into messages;
+`info` lists only ordinary file metadata. The wire profiles remain version 1:
+older readers can ignore this optional metadata and read the unchanged payloads,
+but cannot expose it. Native binding APIs do not yet expose per-message maps;
+use the updated Python services when their preservation is required.
+
 Records are returned in file order, retaining timestamp ties. Time filters select
 log times in `[start, end)`. The Python API takes absolute nanosecond timestamps;
 CLI `--from` and `--to` take absolute timestamps (`1700000000s`) or, with a `+`

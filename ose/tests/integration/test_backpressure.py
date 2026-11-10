@@ -54,14 +54,13 @@ class BackpressureTests(unittest.IsolatedAsyncioTestCase):
         catalogues = catalogues or {port: CATALOGUE for port in policies}
         ports = {port: {"root": "Measurement", "catalogue": catalogues[port],
                        "catalogue_id": self.codec.identity(catalogues[port])} for port in policies}
-        return {"version": 1, "sdl_root": str(Path(SDL_ROOT).resolve()), "max_frame": 1024 * 1024,
+        return {"version": 2, "sdl_root": str(Path(SDL_ROOT).resolve()), "max_frame": 1024 * 1024,
                 "max_datagram": 1200, "components": {
-                    "source": {"inputs": {}, "outputs": ports},
-                    "sink": {"inputs": copy.deepcopy(ports), "outputs": {},
-                             "trigger": {"mode": "on_change"}, "env": {},
+                    "source": {"execution_model": 2, "inputs": {}, "outputs": ports},
+                    "sink": {"execution_model": 2, "inputs": copy.deepcopy(ports), "outputs": {}, "env": {},
                              "cwd": self.directory.name, "command": [sys.executable, "-c",
-                                 "from ose.execution.component import ComponentSession\n"
-                                 "s=ComponentSession()\nfor inputs in s.ticks(): pass\n"]}},
+                                 "from ose.execution.input_process import InputSession\n"
+                                 "s=InputSession()\nfor input in s.activations(): pass\n"]}},
                 "subscriptions": [{"id": port, "from": f"source.{port}", "to": f"sink.{port}",
                                    "policy": policy.to_dict()} for port, policy in policies.items()]}
 
@@ -109,7 +108,7 @@ class BackpressureTests(unittest.IsolatedAsyncioTestCase):
     def record(self, number):
         envelope = self.codec.wrap(CATALOGUE, b"\x01" + struct.pack(">Qd", number, float(number)))
         return {"id": f"e:{number}", "epoch": "e", "sequence": number,
-                "body": envelope, "payload": envelope[9:], "catalogue": CATALOGUE}
+                "body": envelope, "payload": envelope[9:], "catalogue": CATALOGUE, "topic": "source.input"}
 
     def packet(self, port, number):
         record = self.record(number)
@@ -149,11 +148,10 @@ class BackpressureTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_shutdown_kills_component_that_never_reads_stdin(self):
         plan = self.plan({})
-        plan["components"]["sink"]["trigger"] = {"mode": "periodic", "period_ms": 10}
         plan["components"]["sink"]["command"] = [sys.executable, "-c",
             "import signal,sys,time\n"
             "signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
-            "sys.stdout.buffer.write(b'\\x00\\x00\\x00\\x01R');sys.stdout.buffer.flush()\n"
+            "sys.stdout.buffer.write(b'\\x00\\x00\\x00\\x02R\\x02');sys.stdout.buffer.flush()\n"
             "while True: time.sleep(10)\n"]
         adapter, broker = self.adapter(plan), await self.broker(plan)
         blocked = asyncio.Event()
@@ -181,7 +179,7 @@ class BackpressureTests(unittest.IsolatedAsyncioTestCase):
                 adapter.process.stdin.transport.abort()
                 await adapter.process.wait()
 
-    async def test_entire_ram_snapshot_reserved_before_first_pipe_write(self):
+    async def test_only_activating_push_is_reserved_before_first_pipe_write(self):
         policy = Policy(capacity=1, overflow="drop_oldest")
         adapter = self.adapter(self.plan({"left": policy, "right": policy}))
         for buffer in adapter.buffers.values():
@@ -189,17 +187,19 @@ class BackpressureTests(unittest.IsolatedAsyncioTestCase):
         entered, release = asyncio.Event(), asyncio.Event()
         adapter.process = SimpleNamespace(stdin=object())
         async def blocked_send(writer, op, data=b""):
-            if op == "D":
+            if op == "T":
                 entered.set()
                 await release.wait()
         with patch("ose.execution.process.ipc.send", blocked_send):
             working = self.spawn(adapter._work())
             await asyncio.wait_for(entered.wait(), 1)
-            right = adapter.buffers["right"]
-            self.assertEqual(right.admit(self.record(2)), "full")
+            left, right = adapter.buffers["left"], adapter.buffers["right"]
+            self.assertEqual(left.admit(self.record(2)), "full")
+            self.assertEqual(right.admit(self.record(2)), "accepted")
             working.cancel()
             await asyncio.gather(working, return_exceptions=True)
-        self.assertEqual(right.take()["id"], "e:1")
+        self.assertEqual(left.take()["id"], "e:1")
+        self.assertEqual(right.take()["id"], "e:2")
 
     async def test_catalogue_cache_does_not_skip_second_input_contract(self):
         strict = "SDL2|Measurement{1:uint64:sequence;2:fl64:value;3:int32:required_extra;}"

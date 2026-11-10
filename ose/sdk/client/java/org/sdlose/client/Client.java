@@ -80,10 +80,15 @@ public final class Client implements AutoCloseable {
     public interface Callback<T> { void onMessage(T message, MessageInfo info) throws Exception; }
     public static final class MessageInfo {
         public final String publicationId, topic, epoch; public final BigInteger sequence;
-        MessageInfo(byte[] id, byte[] topic, byte[] epoch, long sequence) throws IOException {
+        /** Optional uint64 application ID; null denotes absence. */
+        public final BigInteger appId;
+        MessageInfo(byte[] id, byte[] topic, byte[] epoch, long sequence, boolean hasAppId, long appId) throws IOException {
             publicationId = Component.text(id); this.topic = Component.text(topic); this.epoch = Component.text(epoch);
-            byte[] bytes = new byte[8]; SdlCodec.putLong(bytes, 0, sequence); this.sequence = new BigInteger(1, bytes);
+            this.sequence = unsigned(sequence); this.appId = hasAppId ? unsigned(appId) : null;
         }
+    }
+    private static BigInteger unsigned(long value) {
+        byte[] bytes = new byte[8]; SdlCodec.putLong(bytes, 0, value); return new BigInteger(1, bytes);
     }
     private static String root(Class<?> type) throws IOException {
         try { return (String)type.getField("SDL_NAME").get(null); }
@@ -103,10 +108,16 @@ public final class Client implements AutoCloseable {
             owner.handle.call(1, this.topic, string(root(type)), string(catalogue));
         }
         public synchronized String publish(T message) throws IOException {
+            return publish(message, null);
+        }
+        public synchronized String publish(T message, BigInteger id) throws IOException {
             if (closed) throw new IOException("closed: publisher");
             if (!type.isInstance(message)) throw new IOException("argument: wrong message type");
+            if (id != null && (id.signum() < 0 || id.bitLength() > 64)) throw new IOException("argument: application ID must be uint64");
+            byte[] identity = EMPTY;
+            if (id != null) { identity = new byte[8]; SdlCodec.putLong(identity, 0, id.longValue()); }
             byte[] envelope = SdlCodec.packEnvelope(catalogueId, SdlCodec.encode(codec, message));
-            return Component.text(owner.handle.call(3, topic, envelope, EMPTY));
+            return Component.text(owner.handle.call(3, topic, envelope, identity));
         }
         public synchronized void close() throws IOException {
             if (closed) return; closed = true;
@@ -132,9 +143,9 @@ public final class Client implements AutoCloseable {
             if (envelope.catalogueId != SdlCodec.catalogueId(text)) throw new IOException("schema: catalogue identity mismatch");
             return type.cast(SdlCodec.decode(decoder, envelope.payload));
         }
-        void deliver(Object value, byte[] id, byte[] topic, byte[] epoch, long sequence) throws Exception {
+        void deliver(Object value, byte[] id, byte[] topic, byte[] epoch, long sequence, boolean hasAppId, long appId) throws Exception {
             ACTIVE.set(this);
-            try { callback.onMessage(type.cast(value), new MessageInfo(id, topic, epoch, sequence)); }
+            try { callback.onMessage(type.cast(value), new MessageInfo(id, topic, epoch, sequence, hasAppId, appId)); }
             finally { ACTIVE.remove(); }
         }
         void failed(Throwable failure) { if (owner.callbackFailure == null) owner.callbackFailure = failure; }

@@ -1,10 +1,20 @@
-export function keysFor(role: string, path: string[]): Record<string, string> {
+export function keysFor(role: string, path: string[], model?: any): Record<string, string> {
   const last = path.at(-1), depth = path.length
   if (role === 'model') {
-    if (!depth) return { version: '1', schemas: '"schemas"', components: '{}', subscriptions: '[]', external_topics: '{}', shared_parameters: '{}' }
-    if (path[0] === 'components' && depth === 2) return { inputs: '{}', outputs: '{}', trigger: '{"mode":"periodic","period_ms":100}', parameters: '{}', parameter_bindings: '{}', recording_types: '{}' }
-    if (['inputs', 'outputs', 'recording_types'].includes(path[2] || '') && depth === 4 || path[0] === 'external_topics' && depth === 2) return { root: '""', schema: '""', ...(path[2] !== 'recording_types' && path[0] !== 'external_topics' ? { required: 'true', timeout: '0.5' } : {}) }
-    if (last === 'trigger') return { mode: '"on_change"', period_ms: '100' }
+    if (!depth) return { version: '2', schemas: '"schemas"', components: '{}', subscriptions: '[]', external_topics: '{}', shared_parameters: '{}' }
+    if (path[0] === 'components' && depth === 2) return { inputs: '{}', outputs: '{}', parameters: '{}', parameter_bindings: '{}', recording_types: '{}' }
+    if (path[2] === 'inputs' && depth === 4) {
+      const desc = atPath(model, path)
+      return desc?.kind === 'timer' ? { kind: '"timer"', timer: '{"mode":"periodic","delay":0.1}', activates: '{"timeout":[]}' }
+        : { kind: '"message"', mode: '"push"', root: '""', schema: '""', ...(desc?.mode === 'pull' ? {} : { timeout: '0.5', activates: '{"message":[]}' }) }
+    }
+    if (path[0] === 'components' && ['outputs', 'recording_types'].includes(path[2]) && depth === 4) return { root: '""', schema: '""' }
+    if (path[2] === 'inputs' && last === 'timer') return { mode: '"periodic"', delay: '0.1', start: '"automatic"' }
+    if (path[2] === 'inputs' && last === 'activates') {
+      const desc = atPath(model, path.slice(0, 4))
+      return desc?.kind === 'timer' ? { timeout: '[]' } : desc?.mode === 'pull' ? {} : { message: '[]', ...(desc?.timeout !== undefined ? { timeout: '[]' } : {}) }
+    }
+    if (path[0] === 'external_topics' && depth === 2) return { root: '""', schema: '""' }
     if (path[2] === 'parameter_bindings' && depth === 4) return { path: '""', access: '"read"' }
     if (path[0] === 'shared_parameters' && depth === 2) return { root: '""', schema: '""', initial: '{}' }
     if (path[0] === 'subscriptions' && depth === 2) return { id: '""', from: '""', from_topic: '""', to: '""', qos: '{}' }
@@ -36,11 +46,19 @@ export function keysFor(role: string, path: string[]): Record<string, string> {
   return {}
 }
 export const choices: Record<string, string[]> = {
-  mode: ['on_change', 'periodic'], buffer: ['fifo', 'latest'], overflow: ['reject_new', 'drop_oldest', 'wait'], ack: ['none', 'received'],
+  buffer: ['fifo', 'latest'], overflow: ['reject_new', 'drop_oldest', 'wait'], ack: ['none', 'received'],
   access: ['read', 'write', 'read_write'], language: ['python', 'c', 'rust', 'java', 'ada'], execution: ['local', 'distributed'],
   transport: ['tcp', 'udp'], routing: ['broker', 'direct'], modifier: ['required', 'optional', 'repeated', 'packed'], encoding: ['varint', 'zigzag'],
 }
 export const scalarText = (value: any): string => value?.$number ?? String(value ?? '')
+export function choicesFor(role: string, path: string[], model?: any): string[] | undefined {
+  if (role === 'model' && path[2] === 'inputs') {
+    if (path.at(-1) === 'kind') return ['message', 'timer']
+    if (path.at(-1) === 'start') return ['automatic', 'manual']
+    if (path.at(-1) === 'mode') return path.includes('timer') ? ['periodic', 'one_shot'] : ['push', 'pull']
+  }
+  return choices[path.at(-1) || '']
+}
 export function nodeLabel(node: any): string {
   const fallback = node?.name || ''
   if (node?.path?.length !== 2 || node.path[0] !== 'subscriptions' || !/^\d+$/.test(node.path[1])) return fallback

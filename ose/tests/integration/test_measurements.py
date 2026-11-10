@@ -12,10 +12,11 @@ import unittest
 from ose.execution.adapter import Adapter
 from ose.execution.broker import Broker
 from ose.execution.distributed import Coordinator, Worker
-from ose.execution.process import start_component, stop_component, tick_events
+from ose.execution.process import stop_component
 from ose.measures import sample
 from ose.transport.tcp import Client
 from tests.measurement_components import build_component, check_component
+from tests.component_driver import ComponentDriver
 
 SDL_ROOT = os.environ.get('SDL_ROOT')
 
@@ -125,17 +126,17 @@ class MeasurementTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(final['components']['source']['ticks'], 1)
 
     async def test_engine_rejects_invalid_declarations_and_values(self):
-        code = '''from ose.execution.component import ComponentSession
+        code = '''from ose.execution.input_process import InputSession
 from ose.execution.ipc import port_data
 import struct
-s = ComponentSession(auto_ready=False)
+s = InputSession(auto_ready=False)
 case = s.config['parameters']['case']
 name = 'bad..name' if case == 'bad_name' else 'moteur.temperature'
 s.send('M', port_data(name, b''))
 if case == 'duplicate': s.send('M', port_data(name, b''))
 if case == 'early_value': s.send('V', port_data(name, struct.pack('>d', 1.)))
 s.ready()
-for _ in s.ticks():
+for input in s.activations():
     if case == 'late_declare': s.send('M', port_data('late', b''))
     else:
         payload = b'bad' if case == 'bad_size' else struct.pack('>d', float('nan') if case == 'nan' else 1.)
@@ -143,13 +144,16 @@ for _ in s.ticks():
 '''
         for kind in ('bad_name', 'duplicate', 'early_value', 'late_declare', 'bad_size', 'nan', 'unknown'):
             with self.subTest(kind=kind):
-                node = dict(command=[sys.executable, '-c', code], cwd=str(self.root), parameters={'case': kind})
+                node = dict(execution_model=2, command=[sys.executable, '-c', code], cwd=str(self.root),
+                            inputs={'clock': dict(kind='timer', timer=dict(mode='periodic', delay=.05))},
+                            outputs={}, parameters={'case': kind})
+                driver = ComponentDriver(node)
                 if kind in ('bad_name', 'duplicate', 'early_value'):
-                    with self.assertRaises(ValueError): await start_component(node)
+                    with self.assertRaises(ValueError): await driver.start()
                 else:
-                    process, _ = await start_component(node)
+                    process = await driver.start()
                     try:
                         with self.assertRaises(ValueError):
-                            _ = [item async for item in tick_events(process, node, {}, 0, 1)]
+                            _ = [item async for item in driver.events(process)]
                     finally:
                         await stop_component(process)

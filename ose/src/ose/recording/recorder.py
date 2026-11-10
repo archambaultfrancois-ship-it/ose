@@ -7,6 +7,7 @@ import time
 
 from ose.codec.runtime import Runtime
 from ose.recording import DEFAULT_LABEL, session_label
+from ose.delivery.messages import validate_app_id
 from ose.recording.filters import prepare_filter
 from ose.recording.rotation import OutputFiles, positive_setting
 from ose.transport.secure import connect, loopback, finish_cleanup
@@ -225,7 +226,9 @@ class Capture:
             self.prepare()
         now = time.time_ns()
         self.writer.write_encoded(self.channels[topic], payload, log_time_ns=now,
-                                  publish_time_ns=now, sequence=record["sequence"] % (2**32))
+                                  publish_time_ns=now, sequence=record["sequence"] % (2**32),
+                                  metadata=({"ose.app_id": str(validate_app_id(record["app_id"]))}
+                                            if "app_id" in record else None))
         self.counts["written"] += 1
         self.topic_counts[topic] += 1
         self.topic_bytes[topic] += len(payload)

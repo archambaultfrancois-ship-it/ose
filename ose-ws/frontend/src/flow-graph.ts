@@ -1,19 +1,38 @@
-export type Port = { root?: string }
-export type Component = { trigger?: { mode?: string; period_ms?: number }; inputs?: Record<string, Port>; outputs?: Record<string, Port> }
+export type Port = { root?: string; kind?: string; mode?: string; timeout?: number; timer?: { mode?: string; delay?: number; start?: string }; activates?: { message?: string[]; timeout?: string[] } }
+export type Component = { inputs?: Record<string, Port>; outputs?: Record<string, Port> }
 export type Subscription = { from: string; from_topic?: string; to: string; policy?: Record<string, any>; routing?: string }
 export type Topology = { version: number; components: Record<string, Component>; external_topics?: Record<string, Port>; subscriptions: Record<string, Subscription> }
-export type FlowNode = { id: string; name: string; kind: 'component' | 'external'; trigger?: Component['trigger']; root?: string; x: number; y: number }
+export type FlowNode = { id: string; name: string; kind: 'component' | 'external'; inputs?: Component['inputs']; root?: string; x: number; y: number }
 export type FlowEdge = Subscription & { id: string; source: string; target: string; root?: string; path: string; x: number; y: number }
 export const nodeWidth = 224, nodeHeight = 100
 const margin = 32, columnGap = 156, rowGap = 64
 
-/** Stable left-to-right layout of the DAG validated by OSE, including isolated nodes. */
+export function inputSummary(inputs?: Component['inputs']) {
+  if (!inputs) return 'Inputs unavailable'
+  const values = Object.values(inputs)
+  const timers = values.filter(port => port.kind === 'timer').length
+  const pull = values.filter(port => port.kind !== 'timer' && port.mode === 'pull').length
+  const push = values.length - timers - pull
+  return [timers ? `${timers} timer${timers === 1 ? '' : 's'}` : '', push ? `${push} Push` : '', pull ? `${pull} Pull` : ''].filter(Boolean).join(' · ') || 'No activating inputs'
+}
+
+export function inputDetails(inputs?: Component['inputs']) {
+  return Object.entries(inputs || {}).map(([name, port]) => {
+    const description = port.kind === 'timer'
+      ? `${port.timer?.mode === 'one_shot' ? 'One-shot' : 'Periodic'} timer · ${port.timer?.delay ?? '?'} s · ${port.timer?.start || 'automatic'}`
+      : `${port.mode === 'pull' ? 'Pull' : 'Push'}${port.timeout != null ? ` · inactivity ${port.timeout} s` : ''}`
+    const permissions = Object.entries(port.activates || {}).map(([event, outputs]) => `${event} → ${outputs.join(', ') || 'no outputs'}`)
+    return `${name}: ${description}${permissions.length ? ' · ' + permissions.join(' · ') : ''}`
+  }).join('\n')
+}
+
+/** Stable layout of data links, including isolated components and feedback. */
 export function layout(topology?: Topology | null) {
   const nodes: FlowNode[] = [], edges: FlowEdge[] = []
   const byId = new Map<string, FlowNode>()
   function add(node: FlowNode) { nodes.push(node); byId.set(node.id, node) }
   for (const [name, desc] of Object.entries(topology?.components || {}).sort(([a], [b]) => a.localeCompare(b))) {
-    add({ id: 'component:' + name, name, kind: 'component', trigger: desc.trigger, x: 0, y: 0 })
+    add({ id: 'component:' + name, name, kind: 'component', inputs: desc.inputs, x: 0, y: 0 })
   }
   for (const [name, desc] of Object.entries(topology?.external_topics || {}).sort(([a], [b]) => a.localeCompare(b))) {
     add({ id: 'external:' + name, name, kind: 'external', root: desc.root, x: 0, y: 0 })
@@ -42,7 +61,8 @@ export function layout(topology?: Topology | null) {
       if (!degree.get(edge.target)) ready.push(byId.get(edge.target)!)
     }
   }
-  // Compiled models reject cycles; still keep unexpected metadata finite and visible.
+  // Data feedback is valid when the activation graph is acyclic. Keep cycle
+  // members in finite columns without requiring a component-level DAG.
   const columns = new Map<number, FlowNode[]>()
   for (const node of nodes) {
     const level = rank.get(node.id)!

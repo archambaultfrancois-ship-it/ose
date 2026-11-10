@@ -119,8 +119,8 @@ class ParameterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service.bytes, len(self.payload))
 
     def test_model_bindings_and_external_rights(self):
-        model = dict(version=1, schemas='settings.sdl', components={'reader': dict(inputs={}, outputs={},
-            trigger=dict(mode='periodic', period_ms=10), parameter_bindings={
+        model = dict(version=2, schemas='settings.sdl', components={'reader': dict(inputs={}, outputs={},
+            parameter_bindings={
                 'detection': {'path': 'machine/detection', 'access': 'read'}})}, subscriptions=[],
             shared_parameters={'machine/detection': {'root': 'Settings', 'initial': self.value}})
         deployment = dict(version=1, components={'reader': {'command': ['unused']}},

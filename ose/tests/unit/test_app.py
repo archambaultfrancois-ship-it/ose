@@ -8,10 +8,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from ose.cli import create_parser, main
+from ose.app import Application
 
 
 class ApplicationTests(unittest.TestCase):
@@ -28,7 +30,19 @@ class ApplicationTests(unittest.TestCase):
     def command(self, *args):
         return main(['app', '--root', str(self.root), *args])
 
+    def test_context_can_be_used_without_an_app_command(self):
+        caller = Path.cwd()
+        context = Application(SimpleNamespace(root=str(self.root), app_sdl_root=str(self.root / 'sdl')))
+        with context.activate():
+            self.assertEqual(Path.cwd(), self.root)
+            self.assertEqual(os.environ['OSE_APP_ROOT'], str(self.root))
+            self.assertEqual(os.environ['SDL_ROOT'], str(self.root / 'sdl'))
+        self.assertEqual(Path.cwd(), caller)
+        self.assertNotIn('OSE_APP_ROOT', os.environ)
+
     def configuration(self, document, name='build/plan.json'):
+        if name == 'build/plan.json':
+            document = {'version': 2, 'components': {'source': {'execution_model': 2}}, **document}
         path = self.root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(document))
@@ -90,6 +104,22 @@ class ApplicationTests(unittest.TestCase):
         service.assert_not_called()
         self.assertIn('token must be text', stderr.getvalue())
 
+    def test_old_plan_fails_before_parameter_connection(self):
+        self.configuration({'version': 1})
+        for environment in ({}, {'SDL_ROOT': str(self.root)}):
+            with self.subTest(environment=environment), patch.dict(os.environ, environment):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr), patch('ose.parameters.cli.run', new=AsyncMock()) as service:
+                    self.assertEqual(self.command('parameter', 'get'), 1)
+                service.assert_not_called()
+                self.assertIn('version 2 application plan', stderr.getvalue())
+
+    def test_build_can_replace_an_obsolete_plan(self):
+        self.configuration({'version': 1})
+        with patch('ose.app.Application.make') as build:
+            self.assertEqual(self.command('build'), 0)
+        build.assert_called_once_with(['build'], [])
+
     def test_sync_storage_follows_caller_and_import_files_follow_application(self):
         caller = Path.cwd()
         synced = self.parameter('sync', '--dir', 'relative folder')
@@ -113,7 +143,7 @@ class ApplicationTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('make'), 'requires make')
     def test_run_builds_before_execution_and_preserves_unlimited_default(self):
         (self.root / 'Makefile').write_text('.PHONY: build\nbuild:\n\t@mkdir -p build\n'
-            '\t@printf \'{"execution":"local"}\\n\' > build/plan.json\n'
+            '\t@printf \'{"version":2,"execution":"local","components":{"source":{"execution_model":2}}}\\n\' > build/plan.json\n'
             '\t@printf "%s" "$(SCENARIO)" > build/scenario\n')
         for options, duration in [([], None), (['--duration', '2'], 2), (['DURATION=3'], 3)]:
             with self.subTest(options=options), patch('ose.execution.supervisor.run', new=AsyncMock()) as launch:

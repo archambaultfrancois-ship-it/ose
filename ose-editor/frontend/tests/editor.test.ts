@@ -12,14 +12,20 @@ import ReceptionView from '../src/components/ReceptionView.vue'
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 const model = {
+  version: 2,
   components: {
-    source: { inputs: {}, outputs: { out: { root: 'Reading' } }, trigger: { mode: 'periodic', period_ms: 100 } },
-    compute: { inputs: { input: { root: 'Reading' } }, outputs: { result: { root: 'Result' } }, trigger: { mode: 'on_change' } },
-    view: { inputs: { input: { root: 'Result', required: false } }, outputs: {}, trigger: { mode: 'on_change' } },
+    source: { inputs: {}, outputs: { out: { root: 'Reading' } } },
+    compute: { inputs: { input: { root: 'Reading', activates: { message: ['result'] } } }, outputs: { result: { root: 'Result' } } },
+    view: { inputs: { input: { root: 'Result' } }, outputs: {} },
   }, subscriptions: [{ id: 'readings', from: 'source.out', to: 'compute.input' }, { id: 'results', from: 'compute.result', to: 'view.input' }],
 }
 
 describe('domain to graph projection', () => {
+  it('leaves unsupported models to source editing instead of applying v2 semantics', () => {
+    expect(topology({ ...model, version: 1 }, {})).toEqual({ nodes: [], edges: [] })
+    expect(keysFor('model', [], { version: 1 }).version).toBe('2')
+    expect(keysFor('model', ['components', 'source'], { version: 1 })).not.toHaveProperty('trigger')
+  })
   it('keeps multiple producers on one input handle and exposes shared reception', () => {
     const merged = { ...model, external_topics: { outside: { root: 'Reading' } }, subscriptions: [
       ...model.subscriptions, { id: 'outside', from_topic: 'outside', to: 'compute.input' },
@@ -93,7 +99,7 @@ describe('domain to graph projection', () => {
     expect(graph.edges[0].source).toBe('group:root')
   })
   it('keeps group ports that also have crossing links and leaves free ports available', () => {
-    const extended = { ...model, components: { ...model.components, spare: { inputs: { free: { root: 'Reading', required: false } }, outputs: {} } },
+    const extended = { ...model, components: { ...model.components, spare: { inputs: { free: { root: 'Reading', mode: 'pull' } }, outputs: {} } },
       external_topics: { ambient: { root: 'Reading' } }, subscriptions: [...model.subscriptions,
         { id: 'fanout', from: 'source.out', to: 'view.input' },
         { id: 'external', from_topic: 'ambient', to: 'compute.input' },
@@ -102,7 +108,7 @@ describe('domain to graph projection', () => {
     const graph = topology(extended, { groups: { acquisition: { members: ['source', 'compute', 'spare'], collapsed: true } } })
     const group = graph.nodes.find(node => node.id === 'group:acquisition')!
     expect(group.data.inputs.map((port: any) => port.endpoint)).toEqual(['compute.input', 'spare.free'])
-    expect(group.data.inputs[1].required).toBe(false)
+    expect(group.data.inputs[1].mode).toBe('pull')
     expect(group.data.outputs.map((port: any) => port.endpoint)).toEqual(['source.out', 'compute.result'])
     expect(graph.edges.map(edge => edge.id)).toEqual(['results', 'fanout', 'external'])
     for (const edge of graph.edges) {
@@ -127,7 +133,7 @@ describe('domain to graph projection', () => {
     expect(expanded.nodes.find(node => node.id === 'component:source')!.data.outputs[0].endpoint).toBe('source.out')
   })
   it('treats input and output handles with the same name independently', () => {
-    const bidirectional = { components: {
+    const bidirectional = { version: 2, components: {
       a: { inputs: { port: { root: 'Reading' } }, outputs: { port: { root: 'Reading' } } },
       b: { inputs: { port: { root: 'Reading' } }, outputs: {} },
     }, subscriptions: [{ id: 'internal', from: 'a.port', to: 'b.port' }] }

@@ -23,8 +23,8 @@ class ObserverSettingsTests(unittest.TestCase):
         output = io.StringIO()
         with redirect_stderr(output):
             for machine in (1, 2):
-                observer.on_input(ctx, SimpleNamespace(machine_id=machine, sequence=1,
-                    time_ns=100, rms=.5, peak=.7, state=0))
+                observer.on_input(ctx, SimpleNamespace(message=SimpleNamespace(machine_id=machine, sequence=1,
+                    time_ns=100, rms=.5, peak=.7, state=0)))
         return [json.loads(line) for line in output.getvalue().splitlines()]
 
     def test_default_settings_preserve_existing_observations(self):

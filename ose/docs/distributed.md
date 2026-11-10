@@ -24,13 +24,46 @@ Components may declare Kubernetes constraints in `placement`:
 
 `build --component NAME` compiles only that executable while emitting the complete
 plan, supporting separate component images. Registration checks a fingerprint of
-contracts, parameters, environment, triggers and routes. Build images with fixed
+the application/execution-model versions, contracts, parameters, environment,
+triggers and routes. Build images with fixed
 internal paths such as `/app`, since commands in resolved plans are absolute.
+
+## Model v2 callbacks and Pull feedback
+
+Workers use the same per-input scheduler and CH/2 services as local execution.
+Each Push message or timeout activates one callback with one input reference.
+Pull inboxes never activate or gate another input. FIFO/latest reception,
+`get`/`pull`/`remove` selectors, timer controls and event-specific output permissions
+have the same semantics. Data cycles through passive Pull inputs are accepted;
+the event-to-output activation graph must remain acyclic.
+
+Optional application IDs travel unchanged over broker and direct routes, including
+zero and the full uint64 range. Absence remains distinct from zero. Retry,
+deduplication and generation checks use engine handles, independently of these IDs.
+Dynamic SDL contract exchange and S2PS/2 message bodies are unchanged.
+
+Workers initialize timers at logical time zero. Their real-time clocks advance
+after the initial READY barrier enables execution; arming in `on_start` does not
+count initialization or barrier wait time. Each worker has its own monotonic
+clock, with no globally synchronized timer phase. Cold replacements start fresh.
+
+Withdrawals are hidden within the callback and committed on successful CH/2
+completion; failure cancels them and discards staged publications. Capacity is
+released before outbound admission waits. This is a callback-local journal,
+not an atomic transaction across network deliveries, parameters or external effects.
+Message arrivals during a callback become accessible at the next activation.
+
+The [feedback example](../examples/feedback-pull-v2/README.md) includes a distributed
+deployment. `make test-distributed-inputs-v2` exercises real Python and C processes,
+broker/direct routes, mutual TLS, retries and generation fencing on loopback.
+Rust, Java and Ada use the same worker path and are qualified separately through
+local CH/2 tests (GNAT 12 for Ada). Their native distributed worker combinations
+have not been separately exercised by this qualification.
 
 ## External recording publishers
 
 The coordinator accepts publisher-only RPCs used by `ose replay`. They use
-the same authenticated CENV/1 control connection as worker RPCs, with a separate
+the same authenticated CENV/2 control connection as worker RPCs, with a separate
 certificate common name `replay`. Loopback development can use explicit
 `--insecure`. The application must already be activated.
 
@@ -83,8 +116,9 @@ All advertised worker endpoints must be reachable by their upstream workers.
 ## Lifecycle and replacement
 
 The coordinator waits for every READY before initial activation. After activation,
-surviving components continue according to their optional/required inputs and
-timeouts. A replacement registers a new generation and starts with empty state.
+surviving components continue according to their inputs and timeouts. Each Push
+or timer activates independently; passive Pull inboxes do not gate readiness.
+A replacement registers a new generation and starts with empty state.
 
 The default lease is six seconds, renewed every quarter lease. Connection loss or
 lease expiry retires that generation and clears affected broker queues. Concurrent
@@ -92,6 +126,11 @@ live registrations for one component are refused. Direct senders discard message
 addressed to obsolete target generations. Each recipient checks admission with
 the coordinator, including current source and target generations. A disconnected
 old sender cannot keep publishing just because its process cannot be terminated.
+
+Directory changes propagate on heartbeats. During replacement a surviving direct
+sender can still address the old recipient generation, and those messages may be
+discarded. Workloads requiring a resumed request/response exchange must account
+for discovery convergence and implement application-level retries as needed.
 
 The worker CLI cold-reconnects after a transport or process failure. Application
 effects outside OSE (devices, files or external services) require their own fencing
@@ -125,7 +164,7 @@ Direct admission requires coordinator connectivity. This favors fencing over
 continued admission during partitions. Control load still grows with admission
 rate; benchmark before targeting very high message rates. Each subscription has
 its own network loop. Application publication admission obeys its bounded wait
-policy. TCP frames obey the plan limit and CH/1 IPC remains limited to 1 MiB;
+policy. TCP frames obey the plan limit and CH/2 IPC remains limited to 1 MiB;
 chunk larger application objects into suitably sized SDL messages.
 
 ## Kubernetes export

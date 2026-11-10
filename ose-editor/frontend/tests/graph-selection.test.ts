@@ -25,6 +25,7 @@ async function graph() {
   store.project = {
     revision: 'r1', model: 'model.json',
     documents: { 'model.json': { value: {
+      version: 2,
       components: {
         source: { inputs: {}, outputs: {} },
         compute: { inputs: {}, outputs: {} },
@@ -62,7 +63,7 @@ describe('graph component selection', () => {
     const viewport = { ...flow.viewport }
     // Happy DOM does not measure nodes; provide their rendered dimensions.
     for (const node of flow.getNodes) {
-      node.dimensions = { width: 270, height: 80 }
+      node.dimensions = { width: 400, height: 144 }
     }
     const pane = wrapper.get('.vue-flow__pane')
     const release = vi.fn()
@@ -72,9 +73,9 @@ describe('graph component selection', () => {
     await nextTick()
     expect(pane.classes()).toContain('selection')
     await pane.trigger('pointerdown', { button: 0, pointerId: 1, clientX: 0, clientY: 0, ...flags })
-    await pane.trigger('pointermove', { button: 0, pointerId: 1, clientX: 620, clientY: 100, ...flags })
+    await pane.trigger('pointermove', { button: 0, pointerId: 1, clientX: 850, clientY: 180, ...flags })
     expect(wrapper.find('.vue-flow__selection').exists()).toBe(true)
-    await pane.trigger('pointerup', { button: 0, pointerId: 1, clientX: 620, clientY: 100, ...flags })
+    await pane.trigger('pointerup', { button: 0, pointerId: 1, clientX: 850, clientY: 180, ...flags })
     document.dispatchEvent(new KeyboardEvent('keyup', { key: modifier, code: modifier + 'Left' }))
     await flushPromises()
     expect(selected()).toEqual(['component:compute', 'component:source'])
@@ -159,6 +160,21 @@ describe('graph component selection', () => {
     expect(command).toHaveBeenLastCalledWith({ action: 'workspace', groups: {
       ...groups, Pipeline: { members: [], groups: ['one', 'two'], collapsed: true },
     } })
+    store.project = { ...store.project, revision: 'r5', workspace: { ...store.project.workspace, groups: command.mock.calls[2][0].groups } }
+    await flushPromises()
+    const expandAll = wrapper.findAll('button').find(button => button.text() === 'Expand all groups')!
+    expect(expandAll.attributes('disabled')).toBeUndefined()
+    await expandAll.trigger('click')
+    expect(command).toHaveBeenLastCalledWith({ action: 'workspace', groups: {
+      one: { members: ['source'], collapsed: false },
+      two: { members: ['compute'], collapsed: false },
+      Pipeline: { members: [], groups: ['one', 'two'], collapsed: false },
+    } })
+    store.project = { ...store.project, revision: 'r6', workspace: { ...store.project.workspace, groups: command.mock.calls[3][0].groups } }
+    await flushPromises()
+    expect(wrapper.find('[data-id="component:source"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="component:compute"]').exists()).toBe(true)
+    expect(wrapper.findAll('button').some(button => button.text() === 'Collapse all groups')).toBe(true)
   })
 
   it('moves selected components and groups out of their former parents when regrouping', async () => {

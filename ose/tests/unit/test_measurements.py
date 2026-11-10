@@ -6,11 +6,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from ose.execution.component import ComponentSession
+from ose.execution.input_process import InputSession
 from ose.execution.ipc import frame, port_data
 from ose.execution.measurements import Measurements, validate_snapshot
 from ose.measures import sample, render, run
 from ose.transport.secure import RPCServer
+from tests.component_driver import timer_frame
 
 
 def status(distributed=False):
@@ -68,7 +69,7 @@ class RegistryTests(unittest.TestCase):
 
     def test_python_sdk_lifecycle_and_finite_values(self):
         output = io.BytesIO()
-        session = ComponentSession(io.BytesIO(frame('I', b'{}') + frame('T') + frame('X')),
+        session = InputSession(io.BytesIO(frame('I', b'{}') + timer_frame(1) + frame('X')),
                                    output, auto_ready=False)
         session.declare_measurement('moteur.temperature')
         with self.assertRaises(RuntimeError):
@@ -76,7 +77,7 @@ class RegistryTests(unittest.TestCase):
         session.ready()
         with self.assertRaises(RuntimeError):
             session.declare_measurement('late')
-        for _ in session.ticks():
+        for _ in session.activations():
             for value in (True, '42', float('nan'), float('inf'), 10**1000):
                 with self.subTest(value=str(value)[:20]), self.assertRaises(ValueError):
                     session.measure('moteur.temperature', value)

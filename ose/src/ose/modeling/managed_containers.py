@@ -23,10 +23,10 @@ def validate_names(language, name, node, container):
     identity = container.get(key)
     if not isinstance(identity, str) or not identity:
         raise ValueError(f'{language} container requires {key}')
-    def valid(value):
+    def valid(value, allow_keyword=False):
         if language == 'java':
             return bool(re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', value)) and value not in JAVA_KEYWORDS
-        return bool(re.fullmatch(r'[A-Za-z](?:[A-Za-z0-9]|_[A-Za-z0-9])*', value)) and value.lower() not in ADA_KEYWORDS
+        return bool(re.fullmatch(r'[A-Za-z](?:[A-Za-z0-9]|_[A-Za-z0-9])*', value)) and (allow_keyword or value.lower() not in ADA_KEYWORDS)
     if not all(valid(part) for part in identity.split('.')):
         raise ValueError(f'invalid {language} {key}: {identity}')
     root = identity.split('.')[0].lower()
@@ -37,8 +37,10 @@ def validate_names(language, name, node, container):
         raise ValueError('Java handler package is reserved by the JVM')
     if identity.lower().startswith(('org.sdlose.', 'sdl.', 'sdl_', 'ose_')):
         raise ValueError('handler identity conflicts with a reserved SDK namespace')
-    for names in ([name], list(node['inputs']), list(node['outputs'])):
-        if not all(valid(part) for part in names):
+    for index, names in enumerate(([name], list(node['inputs']), list(node['outputs']))):
+        # Ports appear inside prefixed Ada identifiers, so keywords are valid.
+        allow_keyword = language == 'ada' and index > 0
+        if not all(valid(part, allow_keyword) for part in names):
             raise ValueError(f'invalid or reserved {language} identifier')
         if language == 'ada' and len(set(p.lower() for p in names)) != len(names):
             raise ValueError('Ada port identifiers collide ignoring case')
@@ -88,6 +90,8 @@ def java_string(value):
 
 
 def generate_java(name, node, handler, sdl_root, schemas, destination, identity):
+    if node.get('execution_model') != 2:
+        raise ValueError('Java containers require execution model 2')
     destination = Path(destination)
     types = merge_schemas(name, 'java', schemas, destination / 'types')
     # A component without ports still needs the public runtime.
@@ -102,7 +106,7 @@ def generate_java(name, node, handler, sdl_root, schemas, destination, identity)
     if classes.exists():
         shutil.rmtree(classes)
     classes.mkdir(parents=True, exist_ok=True)
-    reserved = {'org.sdlose.Component', 'org.sdlose.Json', package + '.API', package + '.Main', identity}
+    reserved = {'org.sdlose.Component', 'org.sdlose.Json', 'org.sdlose.InputProtocol', package + '.API', package + '.Main', identity}
     if any(wrapper in reserved for wrapper, _ in types.values()):
         raise ValueError('Java schema wrapper conflicts with the generated component API or handler')
     if handler.stem != identity.rsplit('.', 1)[-1]:
@@ -112,26 +116,38 @@ def generate_java(name, node, handler, sdl_root, schemas, destination, identity)
     def ports(direction):
         expressions = []
         for index, (port, desc) in enumerate(node.get(direction, {}).items()):
-            resource = direction + '_' + str(index) + '.sdl'
-            target = classes / package.replace('.', '/') / resource
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(desc['catalogue'], encoding='utf-8')
-            expressions.append('new Component.Port(%s, %s, Component.resource(API.class, %s), %s.class, %s, %s)' % (
-                java_string(port), java_string(desc['root']), java_string(resource), typ(desc),
-                str(desc.get('required', True)).lower(), str('timeout' in desc).lower()))
+            if desc.get('kind') == 'timer':
+                expression = 'null'
+            else:
+                resource = direction + '_' + str(index) + '.sdl'
+                target = classes / package.replace('.', '/') / resource
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(desc['catalogue'], encoding='utf-8')
+                expression = 'new Component.Port(%s, %s, Component.resource(API.class, %s), %s.class, %s)' % (
+                    java_string(port), java_string(desc['root']), java_string(resource), typ(desc),
+                    str('timeout' in desc).lower())
+            if direction == 'inputs':
+                mode = desc['timer']['mode'] if desc.get('kind') == 'timer' else desc.get('mode', 'push')
+                outputs = [','.join(map(java_string, desc.get('activates', {}).get(event, []))) for event in ('message', 'timeout')]
+                expression = (f'new Component.InputSpec({java_string(port)}, {expression}, org.sdlose.InputProtocol.Mode.{mode.upper()}, '
+                              f'new String[]{{{outputs[0]}}}, new String[]{{{outputs[1]}}})')
+            expressions.append(expression)
         # Individual factory methods avoid a large method for registration tables.
-        methods = [f'    private static Component.Port {direction}_{i}() throws Exception {{ return {expr}; }}' for i, expr in enumerate(expressions)]
-        methods += [f'    static Component.Port[] {direction}() throws Exception {{', f'        Component.Port[] ports = new Component.Port[{len(expressions)}];']
+        port_type = 'Component.InputSpec' if direction == 'inputs' else 'Component.Port'
+        methods = [f'    private static {port_type} {direction}_{i}() throws Exception {{ return {expr}; }}' for i, expr in enumerate(expressions)]
+        methods += [f'    static {port_type}[] {direction}() throws Exception {{', f'        {port_type}[] ports = new {port_type}[{len(expressions)}];']
         methods += [f'        ports[{i}] = {direction}_{i}();' for i in range(len(expressions))]
         methods += ['        return ports;', '    }']
         return methods
     lines = [f'package {package};', 'import org.sdlose.Component;', 'public final class API {'] + ports('inputs') + ports('outputs') + ports('parameter_bindings')
-    lines += ['    public static final class Context extends Component.Context {',
-              f'        public Context() throws Exception {{ super({java_string(name)}, outputs()); }}']
+    lines += ['    public static final class Context extends Component.Context {']
+    setup = f'super({java_string(name)}, outputs()); configureInputs(inputs());'
     if node.get('parameter_bindings'):
         readable = ','.join(str('read' in b['access']).lower() for b in node['parameter_bindings'].values())
         writable = ','.join(str('write' in b['access']).lower() for b in node['parameter_bindings'].values())
-        lines[-1] = f'        public Context() throws Exception {{ super({java_string(name)}, outputs()); configureParameters(parameter_bindings(), new boolean[]{{{readable}}}, new boolean[]{{{writable}}}); }}'
+        setup += f' configureParameters(parameter_bindings(), new boolean[]{{{readable}}}, new boolean[]{{{writable}}});'
+    lines += [f'        public Context() throws Exception {{ {setup} }}']
+    if node.get('parameter_bindings'):
         for i, (alias, desc) in enumerate(node['parameter_bindings'].items()):
             if 'read' in desc['access']:
                 lines += [f'        public {typ(desc)} parameters_{alias}() throws Exception {{ return ({typ(desc)})parameter({i}); }}']
@@ -139,42 +155,11 @@ def generate_java(name, node, handler, sdl_root, schemas, destination, identity)
                 lines += [f'        public void set_parameters_{alias}({typ(desc)} value) throws Exception {{ setParameter({i}, value); }}']
     for i, (port, desc) in enumerate(node['outputs'].items()):
         lines += [f'        public void publish_{port}({typ(desc)} message) throws Exception {{ publish({i}, message); }}']
-    lines += ['    }', '    public static final class Inputs {']
-    for port, desc in node['inputs'].items():
-        lines += [f'        public final {typ(desc)} {port};']
-    lines += ['        Inputs(Object[] values) {']
-    for i, (port, desc) in enumerate(node['inputs'].items()):
-        lines += [f'            this.{port} = ({typ(desc)})values[{i}];']
-    lines += ['        }', '    }', '    public static abstract class Handler {',
-              '        public void onStart(Context ctx) throws Exception {}', '        public void onStop(Context ctx) throws Exception {}']
-    for port, desc in node['inputs'].items():
-        lines += [f'        public void on_{port}(Context ctx, {typ(desc)} message) throws Exception {{ throw new UnsupportedOperationException("missing on_{port}"); }}']
-    lines += ['        public void onTick(Context ctx, Inputs inputs) throws Exception {']
-    if not node['inputs']:
-        lines += ['            throw new UnsupportedOperationException("missing onTick");']
-    for port, desc in node['inputs'].items():
-        condition = '' if 'timeout' in desc else f'if (inputs.{port} != null) '
-        lines += [f'            {condition}on_{port}(ctx, inputs.{port});']
-    lines += ['        }', '    }', '}']
+    from ose.modeling import java_inputs
+    lines += java_inputs.methods(node, typ) + ['    }'] + java_inputs.api(node, typ)
     (source / 'API.java').write_text('\n'.join(lines) + '\n')
-    (source / 'Main.java').write_text(f'''package {package};
-import org.sdlose.Component;
-public final class Main {{
-    public static void main(String[] args) {{
-        int status = 0;
-        try {{
-            final API.Context ctx = new API.Context();
-            final API.Handler handler = (API.Handler)Class.forName({java_string(identity)}).getDeclaredConstructor().newInstance();
-            Component.run(ctx, API.inputs(), new Component.Callbacks() {{
-                public void start() throws Exception {{ handler.onStart(ctx); }}
-                public void tick(Object[] values) throws Exception {{ handler.onTick(ctx, new API.Inputs(values)); }}
-                public void stop() throws Exception {{ handler.onStop(ctx); }}
-            }});
-        }} catch (Throwable failure) {{ failure.printStackTrace(System.err); status = 1; }}
-        System.exit(status);
-    }}
-}}
-''')
+    main = java_inputs.main(package, identity)
+    (source / 'Main.java').write_text(main)
     sources = sorted((destination / 'types').rglob('*.java')) + sorted((sdk_root() / 'java').rglob('*.java')) + [source / 'API.java', source / 'Main.java', handler]
     command = [sys.executable, '-m', 'ose.modeling.java_build', str(classes), *map(str, sources)]
     return {'types': types, 'command': tool('JAVA', 'java') + ['-cp', str(classes), package + '.Main'], 'build': [command]}
@@ -190,16 +175,20 @@ def scaffold_managed(node, container):
     if container['language'] == 'ada':
         from ose.modeling.ada_containers import scaffold
         return scaffold(node, container)
+    if node.get('execution_model') != 2:
+        raise ValueError('Java containers require execution model 2')
     if handler.exists():
         return
     identity = container['class']; package, _, simple = identity.rpartition('.')
     name = next(part for part in node['command'] if part.endswith('.Main')).split('.')[-2]
     lines = ([f'package {package};'] if package else []) + [f'import org.sdlose.generated.{name}.API;', f'public final class {simple} extends API.Handler {{']
     for port, desc in node['inputs'].items():
-        typ = '.'.join(container['types'][desc['root']])
-        lines += [f'    @Override public void on_{port}(API.Context ctx, {typ} message) throws Exception {{', '        // Implement message processing here.', '    }']
-    if not node['inputs']:
-        lines += ['    @Override public void onTick(API.Context ctx, API.Inputs inputs) throws Exception {', '        // Construct a typed message and call ctx.publish_<port>(message).', '    }']
+        if desc.get('mode', 'push') == 'pull':
+            continue
+        from ose.modeling.java_inputs import input_type
+        typ = 'org.sdlose.InputProtocol.Reference<' + input_type(desc, lambda d: '.'.join(container['types'][d['root']])) + '>'
+        lines += [f'    @Override public void on_{port}(API.Context ctx, {typ} input) throws Exception {{',
+                  '        throw new UnsupportedOperationException("Implement input processing");', '    }']
     lines += ['}', '']
     if handler.stem != simple:
         raise ValueError('Java handler filename must match class name')

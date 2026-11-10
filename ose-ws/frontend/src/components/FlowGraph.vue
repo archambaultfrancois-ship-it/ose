@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId } from 'vue'
-import { layout, nodeHeight, nodeWidth, type FlowNode, type FlowEdge, type Topology } from '../flow-graph'
+import { layout, inputSummary, inputDetails, nodeHeight, nodeWidth, type FlowNode, type FlowEdge, type Topology } from '../flow-graph'
 import LinkContract from './LinkContract.vue'
 const props = defineProps<{ topology?: Topology | null; components: any[]; epoch?: string | null; error?: string | null; matching: string[]; selected?: string | null; active?: boolean; connected?: boolean; frozen?: boolean }>()
 const emit = defineEmits<{ select: [name: string] }>()
@@ -26,7 +26,7 @@ function fit() { zoom.value = Math.min(1, (viewport.value?.clientWidth || graph.
 function rate(value: any) { return value == null ? '—' : Number(value).toLocaleString('en', { maximumFractionDigits: 1 }) }
 function state(node: FlowNode) { return node.kind === 'external' ? 'EXTERNAL TOPIC' : reports.value.get(node.name)?.state || 'UNAVAILABLE' }
 function schedule(node: FlowNode) {
-  return node.kind === 'external' ? node.root || 'External publisher' : node.trigger?.mode === 'periodic' ? `Periodic · ${node.trigger.period_ms} ms` : node.trigger?.mode === 'on_change' ? 'On change' : 'Trigger unavailable'
+  return node.kind === 'external' ? node.root || 'External publisher' : inputSummary(node.inputs)
 }
 function short(value: string, limit = 28) { return value.length > limit ? value.slice(0, limit - 1) + '…' : value }
 function edgeTitle(edge: FlowEdge) {
@@ -50,6 +50,7 @@ function edgeTitle(edge: FlowEdge) {
           <g v-for="node in graph.nodes" :key="node.id" class="flow-node" :class="{ external: node.kind === 'external', selected: selected === node.name && node.kind === 'component', dimmed: node.kind === 'component' && !matches.has(node.name) }" :data-state="node.kind === 'external' ? 'external' : reports.get(node.name)?.severity || 'error'" :transform="`translate(${node.x}, ${node.y})`" :role="node.kind === 'component' ? 'button' : 'group'" :tabindex="node.kind === 'component' ? 0 : undefined" :aria-label="`${node.name}: ${state(node)}`" @click="node.kind === 'component' && emit('select', node.name)" @keydown.enter.prevent="node.kind === 'component' && emit('select', node.name)" @keydown.space.prevent="node.kind === 'component' && emit('select', node.name)">
             <title>{{ node.name }}
 {{ state(node) }} · {{ schedule(node) }}
+{{ inputDetails(node.inputs) }}
 {{ node.kind === 'component' ? 'Select to inspect component diagnostics.' : 'Declared external topic.' }}</title>
             <rect :width="nodeWidth" :height="nodeHeight" rx="9" /><circle cx="16" cy="21" r="4" />
             <text x="28" y="25" class="flow-name">{{ short(node.name, 25) }}</text><text x="16" y="45" class="flow-state">{{ state(node) }}</text>

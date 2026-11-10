@@ -56,7 +56,7 @@ class FrameReaderTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_eof_reports_the_incomplete_prefix_or_body(self):
         for data, partial, expected in [(b'', b'', 4), (b'\x00\x00', b'\x00\x00', 4),
-                                        (struct.pack('>I', 7) + b'CE', b'CE', 7)]:
+                                        (struct.pack('>I', 8) + b'CE', b'CE', 8)]:
             with self.subTest(data=data):
                 reader = _FrameReader()
                 reader.feed_data(data)
@@ -67,7 +67,7 @@ class FrameReaderTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(reader._buffer), 0)
 
     async def test_invalid_lengths_fail_before_waiting_for_a_body(self):
-        for size in (0, 6, 1025, 0xffffffff):
+        for size in (0, 7, 1025, 0xffffffff):
             with self.subTest(size=size):
                 reader = _FrameReader()
                 reader.feed_data(struct.pack('>I', size))
@@ -98,12 +98,12 @@ class FrameReaderTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(receiving, return_exceptions=True)
 
     async def test_bad_metadata_cannot_read_into_the_next_frame(self):
-        packets = [b'XX\x01' + struct.pack('>I', 0),
-                   b'CE\x01' + struct.pack('>I', 65537),
-                   b'CE\x01' + struct.pack('>I', 100),
-                   b'CE\x01' + struct.pack('>I', 2) + b'[]',
+        packets = [b'XX\x02\0' + struct.pack('>I', 0),
                    b'CE\x01' + struct.pack('>I', 2) + b'{}',
-                   b'CE\x01' + struct.pack('>I', 1) + b'\xff']
+                   b'CE\x02\0' + struct.pack('>I', 65537),
+                   b'CE\x02\0' + struct.pack('>I', 100),
+                   b'CE\x02\0' + struct.pack('>I', 1) + b'\xff',
+                   b'CE\x02\x7f' + struct.pack('>I', 0)]
         for packet in packets:
             with self.subTest(packet=packet):
                 reader = _FrameReader()

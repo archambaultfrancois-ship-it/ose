@@ -64,23 +64,30 @@ def merge_schemas(name, language, schemas, destination):
 
 
 def generate_c(name, node, handler, sdl_root, schemas, destination):
+    if node.get("execution_model") != 2:
+        raise ValueError("C containers require execution model 2")
     destination, sdl_root = Path(destination), Path(sdl_root)
     bindings = destination / "types"
     types = merge_schemas(name, "c", schemas, bindings)
     reserved = {"OseContext", "OsePortSpec", "OseHook", "ComponentCallbacks", "main", "dispatch", "inputs", "outputs",
                 "ose_now", "ose_time_ns", "ose_tick_index", "parameters", "OseParameterSpec",
-                "ose_parameter_value", "ose_set_parameter_value", "ose_run_callbacks_parameters",
+                "ose_parameter_value", "ose_set_parameter_value",
                 "OseRecordResult", "ose_declare_recording_value", "ose_recording_enabled", "ose_record_value"}
     reserved.update("ose_declare_recording_" + symbol for _, symbol in types.values())
     reserved.update("ose_record_" + symbol for _, symbol in types.values())
     reserved.update("recording_catalogue_" + str(index) for index in range(len(set(node.get("recording_catalogues", {}).values()))))
-    if node["inputs"]:
-        reserved.add("ComponentInputs")
     reserved.update('parameters_' + alias for alias in node.get('parameter_bindings', {}))
     reserved.update('set_parameters_' + alias for alias in node.get('parameter_bindings', {}))
     reserved.update("publish_" + port for port in node["outputs"])
     reserved.update("Input_" + port for port in node["inputs"])
     reserved.update("Output_" + port for port in node["outputs"])
+    reserved.update(("OseInputReference", "OseSelector", "OseInputRecord", "OseActivation", "OseInputEvent",
+                     "OseInputKind", "OseInputPolicy", "OseInputHook", "policies", "ose_arm", "ose_disarm",
+                     "ose_get_input", "ose_remove_input", "ose_publish_value_with_id", "ose_run_input_callbacks"))
+    reserved.update("publish_" + port + "_with_id" for port in node["outputs"])
+    reserved.update(operation + "_" + port for port, desc in node["inputs"].items() if desc.get("mode") == "pull"
+                    for operation in ("get", "pull", "remove"))
+    reserved.update(f"ose_allow_{index}_{event}" for index in range(len(node["inputs"])) for event in ("message", "timeout"))
     for _, symbol in types.values():
         if symbol in reserved:
             raise ValueError(f"C container {name}: SDL type {symbol} conflicts with the generated component API")
@@ -88,17 +95,8 @@ def generate_c(name, node, handler, sdl_root, schemas, destination):
     header = ["/* Generated component API. Edit the handler, not this file. */",
               "#ifndef OSE_GENERATED_COMPONENT_H", "#define OSE_GENERATED_COMPONENT_H",
               '#include "ose_callbacks.h"', *(f'#include "{path}"' for path in headers)]
-    for direction, prefix in (("inputs", "Input"), ("outputs", "Output")):
-        for port, desc in node[direction].items():
-            header.append(f"typedef {types[desc['root']][1]} {prefix}_{port};")
-    if node["inputs"]:
-        header += ["typedef struct {"] + [f"    const {types[desc['root']][1]} *{port};" for port, desc in node["inputs"].items()]
-        header += ["} ComponentInputs;"]
-    tick_args = "OseContext *, const ComponentInputs *" if node["inputs"] else "OseContext *"
-    header += ["typedef struct {", "    OseHook on_start, on_stop;", f"    int (*on_tick)({tick_args});"]
-    for port, desc in node["inputs"].items():
-        header.append(f"    int (*on_{port})(OseContext *, const {types[desc['root']][1]} *);")
-    header += ["} ComponentCallbacks;", "extern const ComponentCallbacks component_callbacks;"]
+    from ose.modeling import c_inputs
+    header += c_inputs.header(node, types)
     for port, desc in node["outputs"].items():
         header.append(f"int publish_{port}(OseContext *, const {types[desc['root']][1]} *);")
     for root in node.get("recording_catalogues", {}):
@@ -113,7 +111,7 @@ def generate_c(name, node, handler, sdl_root, schemas, destination):
             header.append(f"int set_parameters_{alias}(OseContext *, const {typ} *);")
     header += ["#endif", ""]
     (destination / "component.h").write_text("\n".join(header))
-    source = ['/* Generated from the component model. */', '#include "component.h"', '#include <stdio.h>']
+    source = ['/* Generated from the component model. */', '#include "component.h"', '#include <stdio.h>', '#include <string.h>']
     recording_catalogues = {text: index for index, text in enumerate(dict.fromkeys(node.get("recording_catalogues", {}).values()))}
     for text, index in recording_catalogues.items():
         source.append(f"static const char recording_catalogue_{index}[] = {c_string(text)};")
@@ -130,10 +128,9 @@ def generate_c(name, node, handler, sdl_root, schemas, destination):
     for direction in ("inputs", "outputs"):
         source.append(f"static const OsePortSpec {direction}[] = {{")
         for port, desc in node[direction].items():
-            source.append("    {" + ", ".join((c_string(port), c_string(desc["root"]), c_string(desc["catalogue"]),
-                                               "1" if desc.get("required", True) else "0",
+            source.append("    {" + ", ".join((c_string(port), c_string(desc["root"]) if "root" in desc else "NULL", c_string(desc["catalogue"]) if "catalogue" in desc else "NULL",
                                                repr(float(desc.get("timeout", 0))))) + "},")
-        source += ["    {NULL, NULL, NULL, 0, 0}", "};"]
+        source += ["    {NULL, NULL, NULL, 0}", "};"]
     for index, (port, desc) in enumerate(node["outputs"].items()):
         source += [f"int publish_{port}(OseContext *ctx, const {types[desc['root']][1]} *message) {{",
                    f"    return ose_publish_value(ctx, {index}, message);", "}"]
@@ -148,25 +145,10 @@ def generate_c(name, node, handler, sdl_root, schemas, destination):
             source += [f'const {typ} *parameters_{alias}(const OseContext *ctx) {{ return ose_parameter_value(ctx, {index}); }}']
         if 'write' in desc['access']:
             source += [f'int set_parameters_{alias}(OseContext *ctx, const {typ} *value) {{ return ose_set_parameter_value(ctx, {index}, value); }}']
-    source += ["static int dispatch(OseContext *ctx) {"]
-    if node["inputs"]:
-        source += ["    ComponentInputs selected;"]
-        for index, port in enumerate(node["inputs"]):
-            source.append(f"    selected.{port} = ose_input_value(ctx, {index});")
-        source.append("    if (component_callbacks.on_tick) return component_callbacks.on_tick(ctx, &selected);")
-        for port, desc in node["inputs"].items():
-            condition = "" if "timeout" in desc else f"selected.{port} && "
-            source.append(f"    if ({condition}!component_callbacks.on_{port}(ctx, selected.{port})) return 0;")
-        source.append("    return 1;")
-    else:
-        source.append("    return component_callbacks.on_tick(ctx);")
-    source += ["}", "int main(void) {"]
-    checks = " && ".join(f"component_callbacks.on_{port}" for port in node["inputs"])
-    condition = f"!component_callbacks.on_tick && !({checks})" if checks else "!component_callbacks.on_tick"
-    source += [f"    if ({condition}) {{", '        fputs("missing component callbacks\\n", stderr); return 1;', "    }"]
+    source += c_inputs.source(node, types)
     for function in sorted(registrations):
         source.append(f"    if (!{function}()) return 1;")
-    source += [f"    return ose_run_callbacks_parameters({c_string(name)}, inputs, {len(node['inputs'])}, outputs, {len(node['outputs'])}, parameters, {len(node.get('parameter_bindings', {}))},",
+    source += [f"    return ose_run_input_callbacks({c_string(name)}, inputs, {len(node['inputs'])}, policies, outputs, {len(node['outputs'])}, parameters, {len(node.get('parameter_bindings', {}))},",
                "        component_callbacks.on_start, dispatch, component_callbacks.on_stop);", "}", ""]
     (destination / "container.c").write_text("\n".join(source))
     sdk = sdk_root() / "c"
@@ -181,11 +163,15 @@ def generate_c(name, node, handler, sdl_root, schemas, destination):
 
 
 def generate_rust(name, node, handler, sdl_root, schemas, destination):
+    if node.get("execution_model") != 2:
+        raise ValueError("Rust containers require execution model 2")
     destination, sdl_root = Path(destination), Path(sdl_root)
     source = destination / "src"
     types = merge_schemas(name, "rust", schemas, source / "types")
+    imports = "receive, send" + (", input" if node.get("parameter_bindings") else "")
     lines = ["// Generated from the component model.", "#![allow(dead_code, non_snake_case)]",
-             "use sdl_runtime::SdlMessage;", "use sdl_ose_component::{receive, send, input, publish};",
+             "use sdl_runtime::SdlMessage;", "use sdl_ose_component::{" + imports + "};",
+             "pub use sdl_ose_component::inputs::{InputReference, EventKind, Selector};",
              "pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;",
              "fn codec<T>(value: std::result::Result<T, sdl_runtime::CodecError>) -> Result<T> {",
              '    value.map_err(|error| format!("SDL codec: {error:?}").into())', "}",
@@ -194,6 +180,8 @@ def generate_rust(name, node, handler, sdl_root, schemas, destination):
              "    recording: std::collections::HashMap<String, (std::any::TypeId, sdl_runtime::Context, bool)>,",
              "    recording_ready: bool, recording_bytes: usize,",
              "    measurements: std::collections::HashSet<String>,"]
+    from ose.modeling import rust_inputs
+    lines += rust_inputs.context_fields(node)
     for port in node["outputs"]:
         lines.append(f"    output_{port}: sdl_runtime::Context,")
     for alias, desc in node.get('parameter_bindings', {}).items():
@@ -267,6 +255,8 @@ def generate_rust(name, node, handler, sdl_root, schemas, destination):
 '''.splitlines()
     for port, desc in node["outputs"].items():
         module, symbol = types[desc["root"]]
+        lines += rust_inputs.output_methods(port, desc, types)
+        continue
         lines += [f"    pub fn publish_{port}(&mut self, message: &crate::types::{module}::{symbol}) -> Result {{",
                   '        if !self.active { return Err("publication is only allowed inside a tick callback".into()); }',
                   f"        publish({rust_string(port)}, &codec(sdl_runtime::encode(&self.output_{port}, message))?)?;", "        Ok(())", "    }"]
@@ -290,93 +280,13 @@ def generate_rust(name, node, handler, sdl_root, schemas, destination):
                       f'                if data.catalogue != {rust_string(desc["catalogue"])} || (initial && self.parameter_value_{alias}.is_some()) {{ return Err("invalid parameter update".into()); }}',
                       f'                self.parameter_value_{alias} = Some(codec(sdl_runtime::decode(&self.parameter_codec_{alias}, data.payload))?);', '            }']
         lines += ['            _ => return Err("unknown readable parameter".into()),', '        }', '        Ok(())', '    }']
+    lines += rust_inputs.context_methods(node, types)
     lines.append("}")
-    if node["inputs"]:
-        lines.append("pub struct Inputs<'a> {")
-        for port, desc in node["inputs"].items():
-            module, symbol = types[desc["root"]]
-            lines.append(f"    pub {port}: Option<&'a crate::types::{module}::{symbol}>,")
-        lines.append("}")
-    lines += ["pub trait Callbacks {", "    fn on_start(&mut self, _ctx: &mut Context) -> Result { Ok(()) }",
-              "    fn on_stop(&mut self, _ctx: &mut Context) -> Result { Ok(()) }"]
-    for port, desc in node["inputs"].items():
-        module, symbol = types[desc["root"]]
-        argument = f"&crate::types::{module}::{symbol}"
-        if "timeout" in desc:
-            argument = f"Option<{argument}>"
-        lines += [f"    fn on_{port}(&mut self, _ctx: &mut Context, _message: {argument}) -> Result {{",
-                  f'        Err("implement on_{port} or on_tick".into())', "    }"]
-    if node["inputs"]:
-        lines.append("    fn on_tick(&mut self, ctx: &mut Context, inputs: &Inputs<'_>) -> Result {")
-        for port, desc in node["inputs"].items():
-            if "timeout" in desc:
-                lines.append(f"        self.on_{port}(ctx, inputs.{port})?;")
-            else:
-                lines.append(f"        if let Some(message) = inputs.{port} {{ self.on_{port}(ctx, message)?; }}")
-        lines.append("        Ok(())")
-    else:
-        lines += ["    fn on_tick(&mut self, _ctx: &mut Context) -> Result {", '        Err("implement on_tick".into())']
-    lines += ["    }", "}", "pub fn run<H: Callbacks>(mut handler: H) -> Result {", "    let init = receive()?;",
-              '    if init.op != b\'I\' { return Err("expected INIT".into()); }', "    let mut ctx = Context {",
-              f"        name: {rust_string(name)}, config_json: String::from_utf8(init.data)?, active: false, tick: Default::default(), parameter_writes: true,",
-              "        recording: Default::default(), recording_ready: false, recording_bytes: 0, measurements: Default::default(),"]
-    for port, desc in node["outputs"].items():
-        module, symbol = types[desc["root"]]
-        lines.append(f"        output_{port}: codec(sdl_runtime::prepare({rust_string(desc['catalogue'])}, &[crate::types::{module}::{symbol}::type_info()]))?,")
-    for alias, desc in node.get('parameter_bindings', {}).items():
-        module, symbol = types[desc['root']]
-        lines.append(f'        parameter_codec_{alias}: codec(sdl_runtime::prepare({rust_string(desc["catalogue"])}, &[crate::types::{module}::{symbol}::type_info()]))?,')
-        if 'read' in desc['access']:
-            lines.append(f'        parameter_value_{alias}: None,')
-    lines += ["    };", "    let execution = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result {"]
-    for port, desc in node["inputs"].items():
-        module, symbol = types[desc["root"]]
-        lines += [f"        let mut selected_{port}: Option<crate::types::{module}::{symbol}> = None;",
-                  f"        let mut received_{port} = false;",
-                  f"        let mut decoder_{port}: Option<(String, sdl_runtime::Context)> = None;"]
-    for alias, desc in node.get('parameter_bindings', {}).items():
-        if 'read' in desc['access']:
-            lines += ['        ctx.parameter_update(&receive()?, true)?;']
-    lines += ["        handler.on_start(&mut ctx)?;", "        ctx.parameter_writes = false; ctx.recording_ready = true;", "        send(b'R', &[3])?;" if node.get("parameter_bindings") else "        send(b'R', sdl_ose_component::TICK_CONTEXT)?;", "        loop {", "            let event = receive()?;",
-              "            match event.op {", "                b'E' => ctx.recording_update(&event.data)?,", *(["                b'U' => ctx.parameter_update(&event, false)?,"] if node.get('parameter_bindings') else []), "                b'D' => {", "                    let data = input(&event)?;",
-              "                    match data.port {"]
-    for port, desc in node["inputs"].items():
-        module, symbol = types[desc["root"]]
-        lines += [f"                        {rust_string(port)} => {{",
-                  f'                            if received_{port} {{ return Err("duplicate input in tick".into()); }}',
-                  f"                            received_{port} = true;"]
-        if "timeout" in desc:
-            lines += ["                            if data.is_null() {",
-                      f"                                selected_{port} = None;",
-                      "                            } else {"]
-        lines += [f"                            if decoder_{port}.as_ref().map(|(text, _)| text.as_str()) != Some(data.catalogue) {{",
-                  f"                                let check = sdl_runtime::compare_catalogues(data.catalogue, {rust_string(desc['catalogue'])}, Some({rust_string(desc['root'])}), true);",
-                  '                                if !check.compatible() { return Err(format!("{} at {}", check.code, check.path).into()); }',
-                  f"                                let prepared = codec(sdl_runtime::prepare(data.catalogue, &[crate::types::{module}::{symbol}::type_info()]))?;",
-                  f"                                decoder_{port} = Some((data.catalogue.to_owned(), prepared));", "                            }",
-                  f"                            selected_{port} = Some(codec(sdl_runtime::decode(&decoder_{port}.as_ref().unwrap().1, data.payload))?);"]
-        if "timeout" in desc:
-            lines.append("                            }")
-        lines.append("                        }")
-    lines += ['                        _ => return Err("unknown input port".into()),', "                    }", "                }",
-              "                b'T' => {", "                    ctx.tick = sdl_ose_component::tick(&event, ctx.tick_index())?;"]
-    for port, desc in node["inputs"].items():
-        if desc.get("required", True):
-            lines.append(f'                    if !received_{port} {{ return Err("missing required input: {port}".into()); }}')
-    lines.append("                    ctx.active = true; ctx.parameter_writes = true; ctx.recording_bytes = 0;")
-    if node["inputs"]:
-        fields = ", ".join(f"{port}: selected_{port}.as_ref()" for port in node["inputs"])
-        lines.append(f"                    handler.on_tick(&mut ctx, &Inputs {{ {fields} }})?;")
-    else:
-        lines.append("                    handler.on_tick(&mut ctx)?;")
-    lines += ["                    ctx.active = false; ctx.parameter_writes = false;", "                    send(b'F', &[])?;"]
-    for port in node["inputs"]:
-        lines.append(f"                    selected_{port} = None;")
-        lines.append(f"                    received_{port} = false;")
-    lines += ["                }", "                b'X' if event.data.is_empty() => return Ok(()),",
-              '                _ => return Err("unexpected component event".into()),', "            }", "        }", "    }));",
-              "    ctx.active = false; ctx.parameter_writes = false; ctx.recording_ready = true;", "    let stop = handler.on_stop(&mut ctx);", "    match execution {",
-              "        Ok(result) => result.and(stop),", "        Err(panic) => std::panic::resume_unwind(panic),", "    }", "}", ""]
+    return _finish_rust(name, handler, sdl_root, destination, source, types,
+                        rust_inputs.runtime(name, node, types, lines))
+
+
+def _finish_rust(name, handler, sdl_root, destination, source, types, lines):
     (source / "container.rs").write_text("\n".join(lines))
     (source / "main.rs").write_text("// Generated component entry point.\npub mod types;\npub mod container;\n" +
         f"#[path = {rust_string(str(handler))}]\nmod handler;\n" +
@@ -394,6 +304,8 @@ def generate_rust(name, node, handler, sdl_root, schemas, destination):
 
 
 def scaffold_native(node, handler, types, language):
+    if node.get("execution_model") != 2:
+        raise ValueError(f"{language.title()} containers require execution model 2")
     handler = Path(handler)
     if handler.exists():
         if not handler.is_file():
@@ -401,33 +313,25 @@ def scaffold_native(node, handler, types, language):
         return
     if language == "c":
         lines = ['/* User callbacks. Never overwritten by the builder. */', '#include "component.h"']
-        if len(node["inputs"]) == 1:
-            port, desc = next(iter(node["inputs"].items()))
-            lines += [f"static int on_{port}(OseContext *ctx, const Input_{port} *message) {{",
-                      "    (void)message;", '    return ose_fail(ctx, "implement the input callback");', "}",
-                      f"const ComponentCallbacks component_callbacks = {{ .on_{port} = on_{port} }};", ""]
-        else:
-            args = "OseContext *ctx, const ComponentInputs *inputs" if node["inputs"] else "OseContext *ctx"
-            lines += [f"static int on_tick({args}) {{"]
-            if node["inputs"]:
-                lines.append("    (void)inputs;")
-            lines += ['    return ose_fail(ctx, "implement the tick callback");', "}",
-                      "const ComponentCallbacks component_callbacks = { .on_tick = on_tick };", ""]
+        callbacks = []
+        for port, desc in node["inputs"].items():
+            if desc.get("mode", "push") == "pull":
+                continue
+            lines += [f"static int on_{port}(OseContext *ctx, const Input_{port} *input) {{",
+                      "    (void)input;", '    return ose_fail(ctx, "implement the input callback");', "}"]
+            callbacks.append(f".on_{port} = on_{port}")
+        lines += ["const ComponentCallbacks component_callbacks = { " + (", ".join(callbacks) or "0") + " };", ""]
     else:
         lines = ["// User callbacks. Never overwritten by the builder.", "use crate::container::{Callbacks, Context, Result};",
                  "#[derive(Default)]", "pub struct Handler;", "impl Callbacks for Handler {"]
-        if len(node["inputs"]) == 1:
-            port, desc = next(iter(node["inputs"].items()))
-            module, symbol = types[desc["root"]]
-            argument = f"&crate::types::{module}::{symbol}"
-            if "timeout" in desc:
-                argument = f"Option<{argument}>"
-            lines += [f"    fn on_{port}(&mut self, _ctx: &mut Context, _message: {argument}) -> Result {{",
-                      '        Err("implement the input callback".into())']
-        else:
-            args = "&mut self, _ctx: &mut Context, _inputs: &crate::container::Inputs<'_>" if node["inputs"] else "&mut self, _ctx: &mut Context"
-            lines += [f"    fn on_tick({args}) -> Result {{", '        Err("implement the tick callback".into())']
-        lines += ["    }", "}", ""]
+        from ose.modeling.rust_inputs import type_name
+        for port, desc in node["inputs"].items():
+            if desc.get("mode", "push") == "pull":
+                continue
+            typ = "()" if desc.get("kind") == "timer" else type_name(types, desc)
+            lines += [f"    fn on_{port}(&mut self, _ctx: &mut Context, _input: &crate::container::InputReference<{typ}>) -> Result {{",
+                      '        Err("implement the input callback".into())', "    }"]
+        lines += ["}", ""]
     handler.parent.mkdir(parents=True, exist_ok=True)
     try:
         with handler.open("x") as stream:

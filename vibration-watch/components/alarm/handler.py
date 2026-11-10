@@ -11,13 +11,14 @@ def on_stop(ctx):
     ctx.log('INFO', 'Alarm policy stopped', 'lifecycle')
 
 
-def process(ctx, message):
+def process(ctx, input):
+    message = input.message
     settings = getattr(ctx, f"parameters_detection_{message.machine_id}")()
     threshold = settings.rms_threshold
     state = classify(message.rms, threshold)
     ctx.publish_event(Alarm(machine_id=message.machine_id, sequence=message.sequence,
         time_ns=message.time_ns, rms=message.rms, peak=message.peak,
-        state=state, source_note="RMS threshold evaluation"))
+        state=state, source_note="RMS threshold evaluation"), id=input.app_id)
     previous = ctx.alarm_states.get(message.machine_id)
     changed = previous != state
     if changed or message.sequence % 10 == 0:
@@ -28,9 +29,9 @@ def process(ctx, message):
     ctx.alarm_states[message.machine_id] = state
 
 
-def on_machine_1(ctx, message):
-    process(ctx, message)
+def on_machine_1(ctx, input):
+    process(ctx, input)
 
 
-def on_machine_2(ctx, message):
-    process(ctx, message)
+def on_machine_2(ctx, input):
+    process(ctx, input)

@@ -29,11 +29,11 @@ class RamTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.codec = SDL2(SDL_ROOT)
         port = {"root": "Measurement", "catalogue": CATALOGUE, "catalogue_id": self.codec.identity(CATALOGUE)}
-        self.plan = {"version": 1, "sdl_root": str(Path(SDL_ROOT).resolve()), "max_frame": 1024 * 1024,
+        self.plan = {"version": 2, "sdl_root": str(Path(SDL_ROOT).resolve()), "max_frame": 1024 * 1024,
                      "max_datagram": 1200, "components": {
-                         "source": {"inputs": {}, "outputs": {"output": port}},
-                         "sink": {"inputs": {"left": copy.deepcopy(port), "right": copy.deepcopy(port)},
-                                  "outputs": {}, "trigger": {"mode": "on_change"}}},
+                         "source": {"execution_model": 2, "inputs": {}, "outputs": {"output": port}},
+                         "sink": {"execution_model": 2, "inputs": {"left": copy.deepcopy(port), "right": copy.deepcopy(port)},
+                                  "outputs": {}}},
                      "subscriptions": [{"id": p, "from": "source.output", "to": "sink." + p,
                                         "policy": Policy(capacity=2, ack="received").to_dict()} for p in ("left", "right")]}
         self.tasks, self.brokers, self.adapters = [], [], []

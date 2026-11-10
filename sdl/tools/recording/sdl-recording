@@ -109,6 +109,7 @@ def _inspect(record, full=False):
       'schema_id': record.channel.schema_id, 'root_type': record.channel.root_type,
       'log_time_ns': record.log_time_ns, 'publish_time_ns': record.publish_time_ns,
       'sequence': record.sequence, 'payload_bytes': len(record.payload),
+      **({'metadata': dict(record.metadata)} if record.metadata else {}),
       'message': _json_value(record.decode(), None if full else 8)}
 
 
@@ -140,6 +141,8 @@ def _text_rows(record, full):
          ('sequence', 'uint32', record.sequence),
          ('payload_bytes', 'uint64', len(record.payload))):
       yield '@' + name, type_name, _text_value(value, limit)
+   for name, value in record.metadata.items():
+      yield '@metadata.' + name, 'string', _text_value(value, limit)
 
    def visit(path, value, type_name, dimensions=(), modifier='required', depth=0):
       label = (modifier + ' ' if modifier != 'required' else '') + type_name
@@ -221,6 +224,7 @@ def _inspect_text(record, full, indent_width):
       'publish_time_ns': record.publish_time_ns,
       'sequence': record.sequence,
       'payload_bytes': len(record.payload),
+      **({'metadata': SdlDynamicMessage('MessageMetadata', dict(record.metadata))} if record.metadata else {}),
       'message': record.decode(),
    })
    print(display(message, indent_width, max_items=None if full else 8), end='')

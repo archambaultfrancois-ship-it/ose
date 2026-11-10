@@ -21,6 +21,16 @@ and connect the retained consumers to external topics. A source or destination
 may appear only once in the mappings. Each mapped source must have at least one
 message in the selected range.
 
+Replay preserves each recorded `ose.app_id` as the optional application ID in
+simulation and live local/distributed publication. Zero, uint64 maximum and
+duplicate IDs retain their meaning. Time sorting, schema adaptation and repeated
+loops do not change application IDs. Replay still creates fresh engine/transport
+identities for each publication, including each loop, so equal application IDs
+are never transport duplicates. Old recordings without this metadata remain
+readable and publish without an application ID; none is inferred from the
+container sequence or payload. A malformed selected application ID fails
+preflight before components or live publishers start.
+
 ## Live replay and speed control
 
 Start the application with external inputs before replaying in real time:

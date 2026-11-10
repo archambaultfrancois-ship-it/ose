@@ -15,6 +15,7 @@ void cenv_set_error(const char *code, const char *message);
 int cenv_declare(CenvClient *, const char *topic, const char *root, const char *catalogue);
 int cenv_release_publisher(CenvClient *, const char *topic);
 char *cenv_publish_envelope(CenvClient *, const char *, const uint8_t *, size_t);
+char *cenv_publish_envelope_with_id(CenvClient *, const char *, const uint8_t *, size_t, uint64_t id);
 CenvSubscription *cenv_subscribe_raw(CenvClient *, const char *topic, const char *root,
                                     const char *catalogue, const char *resolved_policy_json, CenvHooks);
 #endif

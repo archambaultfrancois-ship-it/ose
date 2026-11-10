@@ -2,22 +2,22 @@
 
 ## Application models and builds
 
-- **[Component graphs](architecture.md#documents)**: describe typed inputs, outputs, subscriptions, triggers and parameters in JSON.
+- **[Component graphs](architecture.md#documents)**: describe typed Push/Pull inputs, timers, activation links, subscriptions and parameters in JSON.
 - **[Separate deployments](architecture.md#documents)**: bind the same model to executable commands, generated containers and transport settings.
-- **[Contract validation](architecture.md#documents)**: check SDL publisher-to-consumer compatibility, required connections and acyclic graphs before execution.
+- **[Contract validation](architecture.md#documents)**: check dynamic SDL publisher-to-consumer compatibility and reject activation cycles before execution.
 - **[Multilanguage components](callbacks.md)**: connect Python, C, Rust, Java and Ada implementations in one application.
 - **[Generated containers](callbacks.md)**: generate typed bindings, wrappers and compilation commands while preserving existing user handlers.
 - **[Local application environment](../../README.md#local-application-environment)**: access application and recording commands with automatic setup of optional recording services.
 
 ## Callbacks and execution
 
-- **[Typed callbacks](callbacks.md#scheduling)**: process individual input messages or a complete snapshot and publish through typed output methods.
+- **[Typed callbacks](callbacks.md#lifecycle-and-execution)**: process one input reference per activation and publish through typed output methods.
 - **[Lifecycle hooks](callbacks.md#python-callbacks)**: initialize component resources before READY and release them during shutdown.
-- **[Periodic and input-driven execution](runtime.md#when-ticks-start)**: run sources and consumers on model-defined periods or input changes.
-- **[Input snapshots](runtime.md#building-a-ticks-input-snapshot)**: combine required and optional inputs, reserving FIFO values until tick completion.
-- **[Required-input timeouts](runtime.md#required-input-timeouts)**: continue through the existing callback with a null value when an input deadline expires.
+- **[Periodic and input-driven execution](runtime.md#selecting-one-activation)**: run independent Push callbacks and explicitly declared timers.
+- **[Pull inboxes](runtime.md#pull-access)**: read, pull or remove messages during another input's callback, with deferred consumption and optional ID selectors.
+- **[Inactivity timeouts](runtime.md#inactivity-timeouts-and-timers)**: invoke the input callback with an expiration reference after reception inactivity.
 - **[Shared parameter blocks](parameters.md)**: bind typed SDL settings to selected components, read or replace whole blocks through five language APIs, and distribute the latest values locally or across workers.
-- **[Application clock](callbacks.md#timed-input-callbacks)**: access callback time and tick indices in real-time execution and simulation.
+- **[Application clock](callbacks.md#completion-outputs-and-time)**: access callback time and activation indices in real-time execution and simulation.
 - **[Process supervision](architecture.md#process-lifecycle)** *(local execution)*: start isolated components behind a READY barrier and shut them down cleanly on interrupts or failure.
 
 ## Delivery and quality of service
@@ -27,7 +27,7 @@
 - **[Admission acknowledgements](runtime.md#admission-acknowledgement-and-processing-completion)**: confirm receipt into RAM separately from business processing completion.
 - **[Retries and duplicate detection](delivery.md)**: configure retry budgets and backoff with a bounded in-memory deduplication window.
 - **[Independent subscribers](runtime.md#backpressure-and-ordering)**: let other subscriptions progress while a consumer is slow or full.
-- **[TCP and UDP transport](delivery.md#network-protocol-cenv1)** *(local broker)*: carry SDL binary envelopes with explicit frame and datagram limits.
+- **[TCP and UDP transport](cenv2.md)** *(local broker)*: carry SDL binary envelopes with explicit frame and datagram limits.
 - **[Volatile delivery](delivery.md)**: keep queues, latest values and retry state in bounded RAM; restarts begin without message recovery.
 
 ## Deterministic simulation
@@ -63,4 +63,4 @@
 - **[Application measurements](measurements.md)**: declare dot-separated fl64 names in all five component SDKs, retain only each current value in RAM, and sample local/distributed values with `ose measure`.
 - **[Component logs](logs.md)**: deposit structured logs from all five component SDKs into a bounded in-memory runtime history, follow with `ose logs`, and filter the stream in the web console. Levels include distinct CRITICAL and FATAL entries.
 - **[Cluster status](distributed.md#processes-and-authentication)**: query the distributed coordinator for worker and delivery status.
-- **[Custom component processes](../sdk/protocol.md)**: integrate executables through the documented CH/1 binary lifecycle protocol.
+- **[Custom component processes](../sdk/input-protocol.md)**: integrate executables through the CH/2 single-input binary lifecycle protocol.

@@ -106,7 +106,7 @@ daemon's own `set`. An edit retaining the exact previous mtime may be ignored;
 | Directory sync total | No aggregate import cap; blocks are processed separately. |
 
 UTF-8, duplicate-key rejection and SDL validation remain mandatory. Increasing
-JSON limits does not increase the existing SDL transport/CH/1 frame limits or
+JSON limits does not increase the existing SDL transport/CH/2 frame limits or
 the service's 64 MiB encoded-value budget.
 
 Files are the only persistent sync state. There are no revisions, transactions,

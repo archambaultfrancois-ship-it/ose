@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "schemas": "settings.sdl",
   "shared_parameters": {
     "atelier/security": {
@@ -30,12 +30,19 @@
   },
   "components": {
     "detector_1": {
-      "inputs": {},
-      "outputs": {},
-      "trigger": {
-        "mode": "periodic",
-        "period_ms": 100
+      "inputs": {
+        "clock": {
+          "kind": "timer",
+          "timer": {
+            "mode": "periodic",
+            "delay": 0.1
+          },
+          "activates": {
+            "timeout": []
+          }
+        }
       },
+      "outputs": {},
       "parameter_bindings": {
         "detection": {
           "path": "machines/press_1/detection",
@@ -48,12 +55,19 @@
       }
     },
     "detector_2": {
-      "inputs": {},
-      "outputs": {},
-      "trigger": {
-        "mode": "periodic",
-        "period_ms": 100
+      "inputs": {
+        "clock": {
+          "kind": "timer",
+          "timer": {
+            "mode": "periodic",
+            "delay": 0.1
+          },
+          "activates": {
+            "timeout": []
+          }
+        }
       },
+      "outputs": {},
       "parameter_bindings": {
         "detection": {
           "path": "machines/press_2/detection",

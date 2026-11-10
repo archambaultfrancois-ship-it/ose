@@ -14,6 +14,8 @@ package body Ose_Client.Typed is
      with Import, Convention => C, External_Name => "cenv_release_publisher";
    function C_Publish (Owner : System.Address; Topic : Interfaces.C.char_array; Data : System.Address; Size : Interfaces.C.size_t) return Interfaces.C.Strings.chars_ptr
      with Import, Convention => C, External_Name => "cenv_publish_envelope";
+   function C_Publish_With_Id (Owner : System.Address; Topic : Interfaces.C.char_array; Data : System.Address; Size : Interfaces.C.size_t; Id : Interfaces.Unsigned_64) return Interfaces.C.Strings.chars_ptr
+     with Import, Convention => C, External_Name => "cenv_publish_envelope_with_id";
    function C_Close (Self : System.Address) return Interfaces.C.int with Import, Convention => C, External_Name => "cenv_unsubscribe";
    function C_Wait (Self : System.Address; Ms : Interfaces.Unsigned_32) return Interfaces.C.int with Import, Convention => C, External_Name => "cenv_wait_closed";
    function C_Stats (Self : System.Address) return Interfaces.C.Strings.chars_ptr with Import, Convention => C, External_Name => "cenv_subscription_stats";
@@ -30,6 +32,12 @@ package body Ose_Client.Typed is
       if Self.Closed then raise Client_Error with "publisher closed"; end if;
       declare Wire : constant SDL_Runtime.Bytes := SDL_Runtime.Pack_Envelope (SDL_Runtime.Catalogue_Id (Catalogue), Encode (Self.Encoder, Message));
       begin return Take_String (C_Publish (Raw (Self.Owner), C_String (To_String (Self.Topic)), Wire'Address, Interfaces.C.size_t (Wire'Length))); end;
+   end Publish;
+   function Publish (Self : Publisher; Message : Message_Type; Id : Interfaces.Unsigned_64) return String is
+   begin
+      if Self.Closed then raise Client_Error with "publisher closed"; end if;
+      declare Wire : constant SDL_Runtime.Bytes := SDL_Runtime.Pack_Envelope (SDL_Runtime.Catalogue_Id (Catalogue), Encode (Self.Encoder, Message));
+      begin return Take_String (C_Publish_With_Id (Raw (Self.Owner), C_String (To_String (Self.Topic)), Wire'Address, Interfaces.C.size_t (Wire'Length), Id)); end;
    end Publish;
    procedure Close (Self : in out Publisher) is
    begin
@@ -60,6 +68,8 @@ package body Ose_Client.Typed is
    type Raw_Info is record
       Publication_Id, Topic, Epoch : Interfaces.C.Strings.chars_ptr;
       Sequence : Interfaces.Unsigned_64;
+      Has_App_Id : Interfaces.C.int;
+      App_Id : Interfaces.Unsigned_64;
    end record with Convention => C;
    type Decode_Hook is access function (User : System.Address; Cat : Interfaces.C.Strings.chars_ptr; Data : System.Address; Size : Interfaces.C.size_t) return System.Address
      with Convention => C;
@@ -117,8 +127,11 @@ package body Ose_Client.Typed is
    begin
       declare
          Self : constant Consumer_Access := Consumer_Ptr (User);
-         Metadata : constant Message_Info := (To_Unbounded_String (Interfaces.C.Strings.Value (Info.Publication_Id)),
-             To_Unbounded_String (Interfaces.C.Strings.Value (Info.Topic)), To_Unbounded_String (Interfaces.C.Strings.Value (Info.Epoch)), Info.Sequence);
+         Metadata : constant Message_Info := (
+             Publication_Id => To_Unbounded_String (Interfaces.C.Strings.Value (Info.Publication_Id)),
+             Topic => To_Unbounded_String (Interfaces.C.Strings.Value (Info.Topic)),
+             Epoch => To_Unbounded_String (Interfaces.C.Strings.Value (Info.Epoch)),
+             Sequence => Info.Sequence, Has_App_Id => Info.Has_App_Id /= 0, App_Id => Info.App_Id);
       begin
          Active.Set_Value (User); Self.Callback (Value_Ptr (Value).all, Metadata, Self.User); Active.Set_Value (System.Null_Address); return 1;
       end;

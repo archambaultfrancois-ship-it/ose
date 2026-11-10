@@ -1,4 +1,5 @@
 import { receptionFor } from './reception'
+import { activationCycle, inputKind } from './execution'
 
 export type Publisher = { endpoint: string; external: boolean }
 export type Assessment = { status: 'compatible' | 'incompatible' | 'unknown'; message: string }
@@ -14,33 +15,26 @@ export function publishers(model: any): Publisher[] {
 
 export function inputs(model: any): string[] {
   return Object.entries(model?.components || {}).flatMap(([name, component]: any) =>
-    Object.keys(component.inputs || {}).map(port => name + '.' + port))
+    Object.entries(component.inputs || {}).filter(([, desc]) => inputKind(desc) !== 'timer').map(([port]) => name + '.' + port))
 }
 
 export function assessConnection(project: any, source: Publisher, target: string): Assessment {
   const reject = (message: string): Assessment => ({ status: 'incompatible', message })
   const document = project?.documents[project.model], model = document?.value
   if (!model || document.stale) return reject('Repair the model source before connecting ports.')
+  if (model.version !== 2) return reject('Migrate the application model to v2 before connecting ports.')
   const [sourceComponent, output] = source.endpoint.split('.')
   const [targetComponent, input] = target.split('.')
   const publisher = source.external ? model.external_topics?.[source.endpoint] : model.components?.[sourceComponent]?.outputs?.[output]
   const consumer = model.components?.[targetComponent]?.inputs?.[input]
   if (!publisher || !consumer) return reject('Choose an existing output and destination input.')
+  if (inputKind(consumer) === 'timer') return reject('Timer inputs cannot receive subscriptions.')
   if (!publisher.root || !consumer.root) return reject('Both ports need a logical root type.')
   if (publisher.root !== consumer.root) return reject(`Different logical roots: ${publisher.root} → ${consumer.root}.`)
-  if (!source.external) {
-    // A new source → target edge closes a cycle if target reaches source.
-    const pending = [targetComponent], seen = new Set<string>()
-    while (pending.length) {
-      const component = pending.pop()!
-      if (component === sourceComponent) return reject(`This connection would create a component cycle (${targetComponent} → … → ${sourceComponent} → ${targetComponent}).`)
-      if (seen.has(component)) continue
-      seen.add(component)
-      for (const sub of model.subscriptions || []) {
-        if (sub.from?.split('.')[0] === component) pending.push(sub.to.split('.')[0])
-      }
-    }
-  }
+  const subscription = source.external ? { from_topic: source.endpoint, to: target } : { from: source.endpoint, to: target }
+  const candidate = { ...model, subscriptions: [...(model.subscriptions || []), subscription] }
+  const cycle = activationCycle(candidate)
+  if (cycle) return reject('This connection would create an activation cycle: ' + cycle.join(' → '))
   if (receptionFor(model, target).conflict) return reject('The destination has conflicting reception settings. Repair its shared reception policy first.')
   const validation = project.validation?.revision === project.revision ? project.validation : null
   const report = validation?.connection_contracts?.find((item: any) => item.root === publisher.root &&

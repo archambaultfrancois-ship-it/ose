@@ -53,7 +53,7 @@ CenvPublisher *cenv_publisher(CenvClient *client, const char *topic, const char 
     type_free(cat);
     return p;
 }
-char *cenv_publish(CenvPublisher *p, const void *value) {
+static char *publish_message(CenvPublisher *p, const void *value, int has_id, uint64_t id) {
     void *payload, *envelope;
     size_t size, envelope_size;
     char *result;
@@ -63,9 +63,16 @@ char *cenv_publish(CenvPublisher *p, const void *value) {
     envelope = type_envelope_pack(p->identity, payload, size, &envelope_size);
     type_free(payload);
     if (!envelope) { cenv_set_error("schema", "SDL envelope encoding failed"); return NULL; }
-    result = cenv_publish_envelope(p->client, p->topic, envelope, envelope_size);
+    result = has_id ? cenv_publish_envelope_with_id(p->client, p->topic, envelope, envelope_size, id)
+                    : cenv_publish_envelope(p->client, p->topic, envelope, envelope_size);
     type_free(envelope);
     return result;
+}
+char *cenv_publish(CenvPublisher *p, const void *value) {
+    return publish_message(p, value, 0, 0);
+}
+char *cenv_publish_with_id(CenvPublisher *p, const void *value, uint64_t id) {
+    return publish_message(p, value, 1, id);
 }
 int cenv_publisher_close(CenvPublisher *p) {
     if (!p || p->closed) return 1;

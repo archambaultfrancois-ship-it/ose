@@ -11,6 +11,8 @@ import re
 import subprocess
 import sys
 
+from ose.execution.plan import read_plan
+
 
 def _inherit(commands, name, source, summary):
     parser = commands.add_parser(name, parents=[copy.deepcopy(source)],
@@ -92,8 +94,14 @@ class Application:
         self.python = sys.executable
         self.plan = self.root / getattr(args, 'plan', 'build/plan.json')
         selected = args.app_sdl_root or getattr(args, 'sdl_root', None) or os.environ.get('SDL_ROOT')
+        # Build commands must be able to replace an obsolete compiled plan.
+        rebuilding = getattr(args, 'app_action', None) in ('build', 'validate', 'make', 'run', 'simulate', 'distributed')
         if not selected and self.plan.is_file():
-            selected = self.read(self.plan).get('sdl_root')
+            try:
+                selected = read_plan(self.plan).get('sdl_root')
+            except ValueError:
+                if not rebuilding:
+                    raise
         if not selected and (self.root / 'deps/sdl-ose/sdl').is_dir():
             selected = self.root / 'deps/sdl-ose/sdl'
         self.sdl = Path(selected).resolve() if selected else Path(__file__).resolve().parents[3] / 'sdl'
@@ -143,7 +151,8 @@ class Application:
             if not configuration.is_file():
                 continue
             try:
-                token = self.read(configuration).get('parameter_clients', {}).get(args.client, {}).get('token', '')
+                document = read_plan(configuration) if configuration == self.plan else self.read(configuration)
+                token = document.get('parameter_clients', {}).get(args.client, {}).get('token', '')
             except (AttributeError, TypeError) as error:
                 raise ValueError(f'invalid parameter clients in {configuration}') from error
             if not isinstance(token, str) or '\0' in token:

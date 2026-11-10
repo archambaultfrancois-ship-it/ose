@@ -241,7 +241,7 @@ class FlowAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_local_observation_preserves_business_delivery_queue(self):
         source_node = self.broker.plan['components']['source']
         sub = {'id': 'link', 'from': 'source.settings', 'to': 'sink.input', 'policy': SubscriptionPolicy.resolve().to_dict()}
-        plan = dict(self.broker.plan, components={'source': source_node, 'sink': {'inputs': {'input': source_node['outputs']['settings']}, 'outputs': {}, 'trigger': {'mode': 'on_change'}}}, subscriptions=[sub])
+        plan = dict(self.broker.plan, components={'source': source_node, 'sink': {'inputs': {'input': source_node['outputs']['settings']}, 'outputs': {}, 'execution_model': 2}}, subscriptions=[sub])
         broker = Broker(plan)
         await broker.start(); self.addAsyncCleanup(broker.close)
         broker.peers['source'] = (None, None); broker.ready.add('source'); broker.enabled = True
@@ -260,7 +260,7 @@ class FlowAPITests(unittest.IsolatedAsyncioTestCase):
         for routing in ('broker', 'direct'):
             sub = {'id': 'link', 'from': 'source.settings', 'to': 'sink.input', 'routing': routing, 'policy': SubscriptionPolicy.resolve().to_dict()}
             source_node = self.broker.plan['components']['source']
-            plan = dict(self.broker.plan, execution='distributed', components={'source': source_node, 'sink': {'inputs': {'input': source_node['outputs']['settings']}, 'outputs': {}, 'trigger': {'mode': 'on_change'}}}, subscriptions=[sub])
+            plan = dict(self.broker.plan, execution='distributed', components={'source': source_node, 'sink': {'inputs': {'input': source_node['outputs']['settings']}, 'outputs': {}, 'execution_model': 2}}, subscriptions=[sub])
             # This manually driven worker fixture has no heartbeat task.
             coordinator = Coordinator(plan, lease_seconds=30)
             await coordinator.start(); self.addAsyncCleanup(coordinator.close)

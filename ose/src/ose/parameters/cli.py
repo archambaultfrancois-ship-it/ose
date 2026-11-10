@@ -1,4 +1,5 @@
 """CLI for complete parameter blocks; all access goes through the service."""
+from ose.execution.plan import read_plan
 import argparse
 import asyncio
 import json
@@ -146,7 +147,7 @@ def connection_factory(options):
         runtime = SDL2(options.sdl_root)
     elif Path(options.plan).is_file():
         from ose.codec.sdl2 import SDL2
-        runtime = SDL2(json.loads(Path(options.plan).read_text())['sdl_root'])
+        runtime = SDL2(read_plan(options.plan)['sdl_root'])
     else:
         try:
             runtime = Runtime()

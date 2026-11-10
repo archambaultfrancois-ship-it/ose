@@ -11,6 +11,8 @@ typedef struct CenvPublisher CenvPublisher;
 typedef struct {
     const char *publication_id, *topic, *epoch;
     uint64_t sequence;
+    int has_app_id;
+    uint64_t app_id; /* valid only when has_app_id != 0; zero is a valid ID */
 } CenvMessageInfo;
 /* Message and info are borrowed for this call only; return 1 on success, 0 on failure.
  * Callbacks are sequential per subscription and concurrent between subscriptions. */
@@ -37,6 +39,7 @@ void cenv_string_free(char *);
 /* Register generated SDL types before creating typed publishers/subscriptions. */
 CenvPublisher *cenv_publisher(CenvClient *, const char *topic, const char *root);
 char *cenv_publish(CenvPublisher *, const void *message);
+char *cenv_publish_with_id(CenvPublisher *, const void *message, uint64_t id);
 int cenv_publisher_close(CenvPublisher *);
 void cenv_publisher_free(CenvPublisher *);
 CenvSubscription *cenv_subscribe(CenvClient *, const char *topic, const char *root,

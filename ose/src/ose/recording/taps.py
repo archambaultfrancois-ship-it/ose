@@ -11,6 +11,7 @@ from ose.transport.protocol import encode
 from ose.codec.runtime import Runtime
 from ose.recording import DEFAULT_LABEL, session_label
 from ose.recording.filters import prepare_filter
+from ose.delivery.messages import validate_app_id
 
 
 OPERATIONS = {"recording_points", "recording_describe", "recording_state", "recording_open",
@@ -160,15 +161,19 @@ class TapHub:
         if was_active:
             self._activation_changed()
 
-    def observe(self, topic, body, *, generation, sequence, catalogue, root):
+    def observe(self, topic, body, *, generation, sequence, catalogue, root, app_id=None):
         # Keep the hot path constant when nobody is recording.
         if not self.sessions:
             return
+        if app_id is not None:
+            validate_app_id(app_id)
         for session in self.sessions.values():
             expected = session["points"].get(topic)
             if not session["active"] or expected is None:
                 continue
             metadata = {"topic": expected.get("topic", topic), "generation": generation, "sequence": sequence}
+            if app_id is not None:
+                metadata["app_id"] = app_id
             if metadata["topic"] != topic:
                 metadata["point"] = topic
             session["counts"]["observed"] += 1

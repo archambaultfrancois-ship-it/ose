@@ -7,6 +7,7 @@ with Interfaces;
 with SDL_measurement;
 with Probe_Callbacks; use Probe_Callbacks;
 procedure External_Probe is
+   use type Interfaces.Unsigned_64;
    C : Ose_Client.Client;
    P : Messages.Publisher;
    Q : Ose_Client.Options;
@@ -34,6 +35,41 @@ begin
          if not Messages.Wait_Closed (S, 3000) then raise Program_Error with "workers did not stop"; end if;
       end;
    end loop;
+   for Transport in 1 .. 2 loop
+      declare
+         Ids : Messages.Publisher;
+         S : Messages.Subscription;
+         Identity : Interfaces.Unsigned_64 := 0;
+      begin
+         Messages.Open (Ids, C, "ada.ids" & Character'Val (Character'Pos ('0') + Transport));
+         Q := (Ack_Received => True, Max_Retries => 2, UDP => Transport = 2, others => <>);
+         Messages.Subscribe (S, C, "ada.ids" & Character'Val (Character'Pos ('0') + Transport), Receive_Id'Access, Q);
+         for Index in 0 .. 3 loop
+            declare Before : constant Natural := Received.Count;
+            begin
+               M.F_sequence := Interfaces.Unsigned_64 (Index);
+               case Index is
+                  when 0 => Ada.Text_IO.Put_Line (Messages.Publish (Ids, M));
+                  when others =>
+                     case Index is
+                        when 1 => Identity := 0;
+                        when 2 => Identity := 2**53 + 1;
+                        when others => Identity := Interfaces.Unsigned_64'Last;
+                     end case;
+                     Ada.Text_IO.Put_Line (Messages.Publish (Ids, M, Identity));
+               end case;
+               for J in 1 .. 500 loop
+                  exit when Received.Count > Before;
+                  delay 0.01;
+               end loop;
+               if Received.Count = Before then raise Program_Error with "ID delivery timed out"; end if;
+            end;
+         end loop;
+         Messages.Unsubscribe (S);
+         if not Messages.Wait_Closed (S, 3000) then raise Program_Error with "ID workers did not stop"; end if;
+      end;
+   end loop;
+   M.F_sequence := Interfaces.Unsigned_64'Last;
    Ada.Text_IO.Put_Line (Ose_Client.List_Topics (C));
    declare
       B : Ose_Client.Client;

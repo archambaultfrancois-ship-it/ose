@@ -1,22 +1,7 @@
-"""CH/1 component protocol: length-prefixed binary events on stdio."""
+"""Shared component framing and named service fields on stdio."""
 import struct
 
 MAX_SIZE = 1024 * 1024
-TICK_CONTEXT = b"\x01"
-
-
-def tick_context(data, previous_index=0):
-    """Decode negotiated tick metadata; retain support for historical empty ticks."""
-    if not data:
-        return 0, previous_index + 1
-    if len(data) != 16:
-        raise ValueError("invalid tick context")
-    timestamp, index = struct.unpack(">QQ", data)
-    if index == 0:
-        raise ValueError("tick index must be positive")
-    return timestamp, index
-
-
 def frame(op, data=b""):
     body = op.encode("ascii") + data
     if len(body) > MAX_SIZE:

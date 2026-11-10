@@ -4,11 +4,12 @@ import json
 import sys
 import time
 from ose.codec.sdl2 import SDL2
-from ose.delivery.buffers import input_buffers
+from ose.delivery.buffers import Buffer, input_buffers
+from ose.delivery.stores import MemoryStore
 from ose.delivery.policies import SubscriptionPolicy
-from ose.parameters.bindings import RemoteBindings, updates
-from ose.execution.process import start_component, tick_events, stop_component
-from ose.execution.scheduler import Scheduler, reserve_snapshot
+from ose.parameters.bindings import RemoteBindings
+from ose.execution.process import start_component, input_events, stop_component
+from ose.execution.plan import require_v2
 from ose.execution.observation import TickTimings, ReportSchedule
 from ose.transport.tcp import Client
 from ose.transport.udp import UDP
@@ -19,6 +20,7 @@ from ose.execution.logs import ComponentLogs
 
 class Adapter:
     def __init__(self, plan, name, *, working_directory=None):
+        require_v2(plan)
         self.plan, self.name, self.node = plan, name, plan["components"][name]
         self.working_directory = working_directory
         self.reports = ReportSchedule()
@@ -40,15 +42,27 @@ class Adapter:
         self.request_timeout = 15 + max_wait / 1000
         self.buffers = {target.split(".")[1]: buffer for target, buffer in
                         input_buffers(self.subscriptions.values(), self._changed).items()}
-        self.scheduler = Scheduler(self.node, self.buffers)
+        from ose.execution.activation import InputScheduler
+        from ose.execution.input_ipc import InputServices
+        for port, desc in self.node["inputs"].items():
+            if desc.get("kind") != "timer" and port not in self.buffers:
+                buffer = Buffer(SubscriptionPolicy(), MemoryStore())
+                buffer.store.on_change = self._changed
+                self.buffers[port] = buffer
+        self.scheduler = InputScheduler(self.node, self.buffers)
+        self.scheduler.start()
+        self.input_services = InputServices(self.scheduler, self._input_now, on_change=self._changed)
         self.timings = TickTimings()
         self.started_at = time.monotonic()
-        self.timed_ticks, self.tick_index, self.activated_at_ns = False, 0, 0
+        self.tick_index, self.activated_at_ns = 0, 0
         self.closing = False
 
     def _changed(self):
         self.activity.set()
         self.reports.mark()
+
+    def _input_now(self):
+        return time.monotonic_ns() - self.activated_at_ns if self.activated_at_ns else 0
 
     async def _recording_request(self, *args, **kwargs):
         return await self.client.request(*args, **kwargs)
@@ -103,10 +117,15 @@ class Adapter:
                 record = {"id": header["id"], "epoch": header["epoch"], "sequence": header["sequence"],
                           "topic": header["topic"],
                           "body": body, "payload": memoryview(body)[self.codec.api.ENVELOPE_HEADER_SIZE:], "catalogue": text}
+                if "app_id" in header:
+                    record["app_id"] = header["app_id"]
+                from ose.execution.input_ipc import check_record_size
+                check_record_size(port, record)
                 deadline = time.monotonic() + buffer.policy.wait_timeout_ms / 1000
                 while True:
                     buffer.store.changed.clear()
-                    result = buffer.admit(record)
+                    result = self.scheduler.admit(port, record, self._input_now())
+                    self._changed()
                     if result != "full" or buffer.policy.overflow != "wait" or time.monotonic() >= deadline:
                         break
                     try:
@@ -133,7 +152,7 @@ class Adapter:
             "process": describe("a", self.plan, self.name, self.process),
             "ticks_hz": self.metrics.get("ticks", 0) / elapsed,
             "publications_hz": self.metrics.get("publications", 0) / elapsed,
-            "running": bool(self.activated_at_ns), **self.metrics, **self.timings.snapshot(self.scheduler)}
+            "running": bool(self.activated_at_ns), **self.metrics, **self.timings.snapshot()}
         if hasattr(self, "component_recording"):
             metrics["recording"] = dict(self.component_recording.counts)
         metrics['measurements'] = self.process.measurements.snapshot()
@@ -157,33 +176,45 @@ class Adapter:
     async def _work(self):
         while not self.closing:
             self.activity.clear()
-            if hasattr(self, "parameters"):
-                await updates(self.process, self.node, self.parameters.drain())
-            selected = self.scheduler.select()
-            if selected is None:
+            now = self._input_now()
+            reference = self.scheduler.select(now)
+            if reference is None:
+                deadline = self.scheduler.next_event(now)
+                timeout = max(0, (deadline - now) / 1e9) if deadline is not None else None
                 try:
-                    await asyncio.wait_for(self.activity.wait(), self.scheduler.wait_timeout())
+                    await asyncio.wait_for(self.activity.wait(), timeout)
                 except asyncio.TimeoutError:
                     pass
                 continue
-            # Reserve the complete snapshot atomically before any pipe write can suspend.
-            reserve_snapshot(self.buffers, selected)
-            self.reports.mark()
             self.tick_index += 1
-            self.input_recording.observe(selected, self.tick_index)
-            timestamp = time.monotonic_ns() - self.activated_at_ns if self.timed_ticks else None
-            async for port, payload in self.timings.events(
-                    tick_events(self.process, self.node, selected, timestamp, self.tick_index,
-                                **({"parameters": self.parameters} if self.node.get("parameter_bindings") else {}))):
-                desc = self.node["outputs"][port]
-                envelope = self.codec.wrap(desc["catalogue"], payload)
-                result, _ = await self.client.request("publish", envelope, timeout=self.request_timeout, topic=f"{self.name}.{port}")
+            self.reports.mark()
+            self.input_recording.observe({reference.port: reference.record}, self.tick_index)
+            outputs, size, success = [], 0, False
+            try:
+                async for port, payload, app_id in self.timings.events(input_events(
+                        self.process, self.node, reference, self.tick_index, self.input_services,
+                        **({"parameters": self.parameters} if self.node.get("parameter_bindings") else {}))):
+                    size += len(payload) + len(port.encode()) + 12
+                    if size > 16 * 1024 * 1024:
+                        raise ValueError("callback outputs exceed 16 MiB")
+                    desc = self.node["outputs"][port]
+                    envelope = self.codec.wrap(desc["catalogue"], payload)
+                    self.codec.validate_only(desc["catalogue"], desc["root"], envelope)
+                    outputs.append((port, envelope, app_id))
+                success = True
+            finally:
+                self.scheduler.complete(reference, self._input_now(), success=success)
+            # FINISHED releases withdrawn inbox capacity before any outbound
+            # admission wait, so feedback cannot hold its own consumed slot.
+            for port, envelope, app_id in outputs:
+                result, _ = await self.client.request("publish", envelope, timeout=self.request_timeout,
+                    topic=f"{self.name}.{port}", **({"app_id": app_id} if app_id is not None else {}))
                 self.metrics["publications"] = self.metrics.get("publications", 0) + 1
-                refused = {key: value for key, value in result["delivery"].items() if value not in ("accepted", "stale")}
+                refused = {key: value for key, value in result["delivery"].items()
+                           if value not in ("accepted", "duplicate", "stale")}
                 if refused:
                     self.metrics["delivery_refused"] = self.metrics.get("delivery_refused", 0) + len(refused)
                     print(f"{self.name}: delivery refused {refused}", file=sys.stderr)
-            self.scheduler.complete(selected)
             self.metrics["ticks"] = self.metrics.get("ticks", 0) + 1
             self.reports.mark()
 
@@ -209,8 +240,9 @@ class Adapter:
                     self.data_clients[identity] = client
                     await client.request("attach", node=self.name, subscription=identity)
             self.parameters = await RemoteBindings(self.node, self.client.request, self.activity).open()
-            self.process, self.timed_ticks = await start_component(self.node, self.parameters, self.component_recording.endpoint, self.component_logs,
-                **({"working_directory": self.working_directory} if self.working_directory is not None else {}))
+            self.process = await start_component(self.node, self.parameters, self.component_recording.endpoint, self.component_logs,
+                **({"working_directory": self.working_directory} if self.working_directory is not None else {}),
+                inputs=self.input_services)
             self.process.measurements.on_change = self.reports.mark
             result, _ = await self.client.request("ready")
             self.reports.configure(result.get('reporting'))
@@ -220,7 +252,6 @@ class Adapter:
                 if status["enabled"]:
                     break
                 await asyncio.sleep(.02)
-            self.scheduler.start()
             self.activated_at_ns = time.monotonic_ns()
             tasks = [*(asyncio.create_task(self._receiver(identity)) for identity in self.subscriptions),
                      asyncio.create_task(self._work()), asyncio.create_task(self._report()), self.client.task,

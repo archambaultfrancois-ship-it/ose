@@ -10,9 +10,9 @@ from ose.transport.tcp import Client, RemoteError
 
 class ControlConnectionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.server = Broker(dict(sdl_root=str(Path(__file__).resolve().parents[3] / 'sdl'),
+        self.server = Broker(dict(version=2, sdl_root=str(Path(__file__).resolve().parents[3] / 'sdl'),
             max_frame=1024 * 1024, max_datagram=1200, subscriptions=[],
-            components={'source': dict(inputs={}, outputs={}, trigger={'mode': 'on_change'})}))
+            components={'source': dict(execution_model=2, inputs={}, outputs={})}))
         await self.server.start()
         self.addAsyncCleanup(self.server.close)
         self.client = await Client.connect('127.0.0.1', self.server.port)

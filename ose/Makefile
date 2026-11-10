@@ -18,6 +18,40 @@ check:
 test: test-unit test-sdk test-integration test-simulated $(if $(findstring java,$(TEST_LANGUAGES)),test-java) $(if $(findstring ada,$(TEST_LANGUAGES)),test-ada) $(if $(and $(findstring java,$(TEST_LANGUAGES)),$(findstring ada,$(TEST_LANGUAGES))),test-mixed)
 test-unit:
 	"$(PYTHON)" -m unittest discover -s tests/unit -v
+.PHONY: bench-cenv
+bench-cenv:
+	"$(PYTHON)" tests/bench_cenv.py
+.PHONY: test-cenv2
+test-cenv2: sdl-services
+	"$(PYTHON)" -m unittest discover -s tests/unit -p 'test_cenv2.py' -v
+	"$(PYTHON)" -m unittest discover -s tests/unit -p 'test_tcp_receive.py' -v
+	CARGO_TARGET_DIR=$(CURDIR)/build/client-rust cargo test --offline --manifest-path sdk/client/rust/Cargo.toml
+	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest tests.integration.test_broker tests.integration.test_external_client tests.integration.test_delivery_limits tests.integration.test_distributed tests.integration.test_input_process -v
+.PHONY: test-inputs-v2
+test-inputs-v2: sdl-services
+	"$(PYTHON)" -m unittest discover -s tests/unit -p 'test_activation*.py' -v
+	"$(PYTHON)" -m unittest discover -s tests/unit -p 'test_input_ipc.py' -v
+	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest tests.integration.test_input_callbacks tests.integration.test_input_process -v
+.PHONY: test-rust-inputs-v2
+test-rust-inputs-v2: sdl-services
+	CARGO_TARGET_DIR=$(CURDIR)/build/sdk-rust cargo test --offline --manifest-path sdk/rust/Cargo.toml
+	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest tests.integration.test_rust_inputs -v
+.PHONY: test-c-inputs-v2
+test-c-inputs-v2: sdl-services
+	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest tests.integration.test_c_inputs -v
+.PHONY: test-java-inputs-v2
+test-java-inputs-v2: sdl-services
+	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest tests.integration.test_java_inputs -v
+.PHONY: test-ada-inputs-v2
+test-ada-inputs-v2: sdl-services
+	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest tests.managed.test_ada_inputs -v
+.PHONY: test-distributed-inputs-v2
+test-distributed-inputs-v2: sdl-services
+	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest tests.integration.test_distributed_inputs -v
+.PHONY: test-example-inputs-v2
+test-example-inputs-v2: sdl-services
+	"$(PYTHON)" -m unittest discover -s tests/unit -p 'test_example_models.py' -v
+	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest tests.integration.test_ose tests.integration.test_example_inputs tests.simulation.test_simulation.SimulationTests.test_extracted_project_example_and_scripted_inputs -v
 test-sdk:
 	CARGO_TARGET_DIR=$(CURDIR)/build/sdk-rust cargo test --offline --manifest-path sdk/rust/Cargo.toml
 	CARGO_TARGET_DIR=$(CURDIR)/build/client-rust cargo test --offline --manifest-path sdk/client/rust/Cargo.toml

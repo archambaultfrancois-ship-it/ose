@@ -1,0 +1,162 @@
+[
+  {
+    "name": "data",
+    "header": {
+      "op": "data",
+      "subscription": "link",
+      "id": "epoch:42",
+      "epoch": "epoch",
+      "sequence": 42,
+      "topic": "sensor.out"
+    },
+    "body_hex": "533250530200ff",
+    "packet_hex": "434502010000002c0000046c696e6b000865706f63683a3432000565706f6368000000000000002a000a73656e736f722e6f7574533250530200ff"
+  },
+  {
+    "name": "data_zero",
+    "header": {
+      "op": "data",
+      "subscription": "link",
+      "id": "epoch:42",
+      "epoch": "epoch",
+      "sequence": 42,
+      "topic": "sensor.out",
+      "app_id": 0
+    },
+    "body_hex": "00ff",
+    "packet_hex": "43450201000000340100046c696e6b000865706f63683a3432000565706f6368000000000000002a000a73656e736f722e6f7574000000000000000000ff"
+  },
+  {
+    "name": "data_max",
+    "header": {
+      "op": "data",
+      "subscription": "link",
+      "id": "epoch:42",
+      "epoch": "epoch",
+      "sequence": 42,
+      "topic": "sensor.out",
+      "app_id": 18446744073709551615
+    },
+    "body_hex": "ff00",
+    "packet_hex": "43450201000000340100046c696e6b000865706f63683a3432000565706f6368000000000000002a000a73656e736f722e6f7574ffffffffffffffffff00"
+  },
+  {
+    "name": "ack",
+    "header": {
+      "op": "ack",
+      "subscription": "liaison-é",
+      "id": "epoch:42"
+    },
+    "body_hex": "",
+    "packet_hex": "4345020200000016000a6c696169736f6e2dc3a9000865706f63683a3432"
+  },
+  {
+    "name": "publish_missing",
+    "header": {
+      "op": "publish",
+      "request": 18446744073709551615,
+      "topic": "sensor.out"
+    },
+    "body_hex": "533250530200",
+    "packet_hex": "434502030000001500ffffffffffffffff000a73656e736f722e6f7574533250530200"
+  },
+  {
+    "name": "publish_zero",
+    "header": {
+      "op": "publish",
+      "request": 1,
+      "topic": "sensor.out",
+      "app_id": 0
+    },
+    "body_hex": "00",
+    "packet_hex": "434502030000001d010000000000000001000a73656e736f722e6f7574000000000000000000"
+  },
+  {
+    "name": "result_catalogue",
+    "header": {
+      "op": "result",
+      "request": 42
+    },
+    "body_hex": "53444c327c56616c75657b313a75696e7433323a636f756e743b7d",
+    "packet_hex": "434502040000000900000000000000002a53444c327c56616c75657b313a75696e7433323a636f756e743b7d"
+  },
+  {
+    "name": "result_json",
+    "header": {
+      "op": "result",
+      "request": 1,
+      "content": "json"
+    },
+    "body_hex": "7b226f6b223a747275657d",
+    "packet_hex": "434502040000000f01000000000000000100046a736f6e7b226f6b223a747275657d"
+  },
+  {
+    "name": "result_error",
+    "header": {
+      "op": "result",
+      "request": 7,
+      "error": "entrée inconnue",
+      "error_code": "schema"
+    },
+    "body_hex": "",
+    "packet_hex": "43450204000000230600000000000000070010656e7472c3a96520696e636f6e6e75650006736368656d61"
+  },
+  {
+    "name": "deliver",
+    "header": {
+      "op": "deliver",
+      "request": 1,
+      "subscription": "direct",
+      "id": "generation:7",
+      "epoch": "epoch",
+      "sequence": 7,
+      "source_token": "generation",
+      "target_token": "consumer",
+      "source": "source",
+      "topic": "source.out",
+      "app_id": 18446744073709551615
+    },
+    "body_hex": "533250530200ff",
+    "packet_hex": "43450205000000600100000000000000010006646972656374000c67656e65726174696f6e3a37000565706f63680000000000000007000a67656e65726174696f6e0008636f6e73756d65720006736f75726365000a736f757263652e6f7574ffffffffffffffff533250530200ff"
+  },
+  {
+    "name": "control",
+    "header": {
+      "op": "parameters_open",
+      "request": 18446744073709551615,
+      "client": "client-été",
+      "token": null,
+      "value": {
+        "negative": -9223372036854775808,
+        "count": 18446744073709551615,
+        "flags": [
+          false,
+          true,
+          null
+        ],
+        "real": -1.25,
+        "zero": 0.0,
+        "text": "a\u0000b😀"
+      }
+    },
+    "body_hex": "",
+    "packet_hex": "43450200000000d4080000000500000006636c69656e74060000000c636c69656e742dc3a974c3a9000000026f70060000000f706172616d65746572735f6f70656e000000077265717565737403ffffffffffffffff00000005746f6b656e000000000576616c7565080000000600000005636f756e7403ffffffffffffffff00000005666c6167730700000003010200000000086e65676174697665048000000000000000000000047265616c05bff400000000000000000004746578740600000007610062f09f9880000000047a65726f050000000000000000"
+  },
+  {
+    "name": "extended_data",
+    "header": {
+      "op": "data",
+      "subscription": "link",
+      "id": "epoch:42",
+      "epoch": "epoch",
+      "sequence": 42,
+      "topic": "sensor.out",
+      "app_id": 18446744073709551615,
+      "extension": {
+        "new": 1
+      }
+    },
+    "body_hex": "5332505302ff",
+    "packet_hex": "43450200000000b50800000008000000066170705f696403ffffffffffffffff0000000565706f6368060000000565706f636800000009657874656e73696f6e0800000001000000036e6577030000000000000001000000026964060000000865706f63683a3432000000026f700600000004646174610000000873657175656e636503000000000000002a0000000c737562736372697074696f6e06000000046c696e6b00000005746f706963060000000a73656e736f722e6f75745332505302ff"
+  }
+]

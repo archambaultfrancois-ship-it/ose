@@ -1,4 +1,5 @@
 """Preflight recordings into immutable, disk-backed simulation inputs."""
+from ose.execution.plan import read_plan
 from collections import Counter
 from contextlib import contextmanager
 import hashlib
@@ -13,6 +14,20 @@ from ose.execution.ipc import MAX_SIZE
 from ose.execution.simulation.clock import MAX_NS, seconds_ns
 from ose.execution.simulation.scenario import Event
 from ose.recording.schema_adapter import SchemaAdapters
+from ose.delivery.messages import validate_app_id
+
+
+def recorded_app_id(record):
+    value = record.metadata.get("ose.app_id")
+    if value is None:
+        return None
+    try:
+        result = validate_app_id(int(value))
+        if str(result) != value:
+            raise ValueError("noncanonical integer")
+        return result
+    except (TypeError, ValueError) as error:
+        raise ValueError("recorded ose.app_id must be a canonical uint64 integer") from error
 
 
 def loop_count(value):
@@ -48,7 +63,7 @@ class RepeatedEvents:
         if cycle == 0:
             return event
         return Event(event.at + cycle * self.period_ns, cycle * len(self.events) + event.index,
-                     event.topic, event.path, event.digest)
+                     event.topic, event.path, event.digest, event.app_id)
 
     def __iter__(self):
         index = 0
@@ -105,6 +120,7 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
             target = mapping[source]
             desc = topics[target]
             try:
+                app_id = recorded_app_id(record)
                 if record.channel.root_type != desc["root"]:
                     raise ValueError('recorded root does not match the external topic')
                 if len(record.payload) + codec.api.ENVELOPE_HEADER_SIZE > MAX_SIZE:
@@ -128,13 +144,13 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
             index = len(events)
             envelope = Path(temporary) / f"{index}.s2ps"
             envelope.write_bytes(body)
-            events.append(Event(record.log_time_ns, index, target, envelope, hashlib.sha256(body).hexdigest()))
+            events.append(Event(record.log_time_ns, index, target, envelope, hashlib.sha256(body).hexdigest(), app_id))
             counts[source] += 1
         missing = sorted(set(mapping) - counts.keys())
         if missing:
             raise ValueError("no selected messages for mapped topics: " + ", ".join(missing))
         origin = min(event.at for event in events)
-        events = sorted((Event(event.at - origin, event.index, event.topic, event.path, event.digest)
+        events = sorted((Event(event.at - origin, event.index, event.topic, event.path, event.digest, event.app_id)
                          for event in events), key=lambda event: (event.at, event.index))
         yield events, {"source": str(Path(path).resolve()), "mapping": mapping,
                        "origin_log_time_ns": origin, "message_count": len(events),
@@ -153,7 +169,7 @@ async def run(path, plan_path, duration, *, mappings, start_ns=None, end_ns=None
         raise ValueError("workers must be a positive integer")
     plan_path = Path(plan_path).resolve()
     path = Path(path).resolve()
-    plan = json.loads(plan_path.read_text())
+    plan = read_plan(plan_path)
     diagnostic = (Path(plan["build_dir"]) / "last-status.json").resolve()
     if path in (plan_path, diagnostic):
         raise ValueError("recording cannot use the compiled plan or last-status.json path")

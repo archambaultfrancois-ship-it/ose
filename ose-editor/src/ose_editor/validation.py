@@ -135,6 +135,9 @@ class Validator:
                 env['SDL_ROOT'] = str(self.sdl_root)
                 env['PYTHONPATH'] = str(self.sdl_root / 'runtime/python') + os.pathsep + env.get('PYTHONPATH', '')
                 authored_model = loads(snapshot['documents'][model_key])
+                if (not isinstance(authored_model, dict) or type(authored_model.get('version')) is not int
+                        or authored_model['version'] != 2):
+                    raise ValueError('Application model v2 is required; migrate v1 triggers and callbacks')
                 for source, members in inputs.items():
                     if job['schema'] and source != job['schema']:
                         continue
@@ -163,7 +166,8 @@ class Validator:
                     consumers = []
                     for component in authored_model.get('components', {}).values():
                         publishers.extend(component.get('outputs', {}).values())
-                        consumers.extend(component.get('inputs', {}).values())
+                        consumers.extend(desc for desc in component.get('inputs', {}).values()
+                                         if desc.get('kind') != 'timer')
                     pairs = sorted({(publisher.get('schema', authored_model['schemas']),
                                      consumer.get('schema', authored_model['schemas']), publisher['root'])
                                     for publisher in publishers for consumer in consumers

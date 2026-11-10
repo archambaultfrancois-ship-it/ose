@@ -47,10 +47,12 @@ Observation and log `sequence` fields are decimal order strings.
 
 `GET /components` includes `topology`, or `null` until compatible observation
 metadata is available. Version 1 contains `components` keyed by component name
-(trigger, input and output descriptors), `external_topics` keyed by topic name,
+(input and output descriptors), `external_topics` keyed by topic name,
 and `subscriptions` keyed by subscription ID (`from`, `to`, resolved `policy`,
 optional `from_topic` and `routing`). Port descriptors include SDL `root` types
-when supplied by the runtime. This metadata comes from the running application's
+when supplied by the runtime. Input descriptors preserve Push/Pull modes, explicit
+timers, inactivity timeouts and event-to-output permissions. There is no
+component-wide trigger. This metadata comes from the running application's
 compiled plan through the shared status collector, without commands, environment
 variables, schema catalogues or parameter values. Topology is retained on
 connection loss; use the enclosing `error`, `observed_at` and `age_ms` to assess

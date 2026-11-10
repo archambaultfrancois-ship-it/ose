@@ -5,6 +5,7 @@ from pathlib import Path
 from ose.modeling.model import load, fields
 from ose.execution.ipc import MAX_SIZE
 from ose.execution.simulation.clock import seconds_ns
+from ose.delivery.messages import validate_app_id
 
 
 @dataclass(frozen=True)
@@ -14,6 +15,7 @@ class Event:
     topic: str
     path: Path
     digest: str
+    app_id: int | None = None
 
     def read(self):
         body = envelope_bytes(self.path)
@@ -60,7 +62,8 @@ def read_scenario(path, topics, codec, parameters=None):
             parameters.validate(key, payload)
             events.append(ParameterEvent(seconds_ns(event['at']), index, key, path, payload))
             continue
-        fields(event, ("at", "topic", "envelope"), ("at", "topic", "envelope"))
+        fields(event, ("at", "topic", "envelope", "app_id"), ("at", "topic", "envelope"))
+        app_id = validate_app_id(event["app_id"]) if "app_id" in event else None
         if not isinstance(event["topic"], str) or event["topic"] not in topics:
             raise ValueError("scenario must publish to a declared external topic")
         if not isinstance(event["envelope"], str) or not event["envelope"]:
@@ -71,5 +74,6 @@ def read_scenario(path, topics, codec, parameters=None):
         body = envelope_bytes(source)
         desc = topics[event["topic"]]
         codec.validate_only(desc["catalogue"], desc["root"], body)
-        events.append(Event(seconds_ns(event["at"]), index, event["topic"], source, hashlib.sha256(body).hexdigest()))
+        events.append(Event(seconds_ns(event["at"]), index, event["topic"], source,
+                            hashlib.sha256(body).hexdigest(), app_id))
     return sorted(events, key=lambda event: (event.at, event.index))

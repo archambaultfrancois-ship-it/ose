@@ -17,7 +17,7 @@ from mcap.data_stream import RecordBuilder
 from mcap.records import Channel, Header, Metadata, Schema
 from sdl_pcapng import PROFILE as PCAPNG_PROFILE
 from sdl_recording import (ENCODING, PROFILE, RecordingChannel, RecordingError,
-                           RecordingReader, RecordingRecord, RecordingWriter, _uint)
+                           RecordingReader, RecordingRecord, RecordingWriter, _uint, _message_metadata)
 from sdl_runtime import CodecError
 
 LIBRARY = 'sdl-recording/python-v1'
@@ -86,6 +86,7 @@ class _Layout:
       self.declarations = self.chunk_bytes = self.chunk_messages = self.chunk_indexes = 0
       self.chunk_channels = frozenset()
       self.metadata_indexes = 0
+      self.message_count = 0
       self.written = (60 + _packet_size(_record_size(Header(PCAPNG_PROFILE, LIBRARY)))
                       if format == 'pcapng' else 8 + _record_size(Header(PROFILE, LIBRARY)))
       for name, values in metadata:
@@ -128,6 +129,12 @@ class _Layout:
    def with_record(self, record):
       result = copy.copy(self)
       result.declare(record.channel)
+      if record.metadata:
+         metadata = _message_metadata(result.message_count, record.metadata)
+         size = _record_size(metadata)
+         result.written += _packet_size(size) if result.format == 'pcapng' else size
+         result.metadata_indexes += 29 + len(metadata.name.encode('utf-8'))
+      result.message_count += 1
       key = _channel_key(record.channel)
       if key not in result.used:
          result.used = result.used | {key}
@@ -334,7 +341,7 @@ class _Part:
    def write(self, record, timestamp, layout):
       channel = self.declare(record.channel)
       self.writer.write_encoded(channel, record.payload, log_time_ns=timestamp,
-         publish_time_ns=record.publish_time_ns, sequence=record.sequence)
+         publish_time_ns=record.publish_time_ns, sequence=record.sequence, metadata=record.metadata)
       self.layout = layout
       self.count += 1
       self.first = timestamp if self.first is None else min(self.first, timestamp)

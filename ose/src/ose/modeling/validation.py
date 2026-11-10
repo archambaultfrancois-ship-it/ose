@@ -1,5 +1,4 @@
 """Structural graph validation, independent of SDL and execution."""
-import math
 import re
 from ose.modeling.model import fields
 from ose.delivery.policies import SubscriptionPolicy, reception_policies
@@ -8,6 +7,10 @@ from ose.delivery.policies import SubscriptionPolicy, reception_policies
 def validate_graph(model, deployment):
     fields(model, ("version", "schemas", "components", "subscriptions", "external_topics", "shared_parameters"), ("version", "schemas", "components", "subscriptions"))
     fields(deployment, ("version", "components", "subscriptions", "max_frame", "max_datagram", "broker", "execution", "parameter_clients", "process_names"), ("version", "components"))
+    if type(model["version"]) is not int or model["version"] != 2:
+        raise ValueError("expected a version 2 application model")
+    if type(deployment["version"]) is not int or deployment["version"] != 1:
+        raise ValueError("expected a version 1 deployment")
     if deployment.get("execution", "local") not in ("local", "distributed"):
         raise ValueError("execution must be local or distributed")
     distributed = deployment.get("execution") == "distributed"
@@ -53,7 +56,8 @@ def validate_graph(model, deployment):
     for name, node in components.items():
         if not name or "." in name:
             raise ValueError("component names must be nonempty and contain no dots")
-        fields(node, ("inputs", "outputs", "trigger", "parameters", "parameter_bindings", "recording_types"), ("inputs", "outputs", "trigger"))
+        from ose.modeling.activation import component_inputs
+        component_inputs(node)
         if not isinstance(node.get("recording_types", {}), dict):
             raise ValueError("recording_types must map aliases to SDL type descriptions")
         for desc in node.get("recording_types", {}).values():
@@ -64,37 +68,6 @@ def validate_graph(model, deployment):
                 raise ValueError("invalid recording type schema")
         if not isinstance(node.get("parameters", {}), dict):
             raise ValueError("parameters must be an object")
-        for direction in ("inputs", "outputs"):
-            if not isinstance(node[direction], dict):
-                raise ValueError("ports must be an object")
-            for port, desc in node[direction].items():
-                if not port or "." in port:
-                    raise ValueError("port names must be nonempty and contain no dots")
-                fields(desc, ("root", "schema", "required", "timeout"), ("root",))
-                if not isinstance(desc["root"], str) or not desc["root"]:
-                    raise ValueError("port root must be a nonempty string")
-                if "required" in desc and type(desc["required"]) is not bool:
-                    raise ValueError("required must be boolean")
-                if "timeout" in desc:
-                    timeout = desc["timeout"]
-                    if direction != "inputs" or not desc.get("required", True):
-                        raise ValueError("timeout is only supported on required inputs")
-                    try:
-                        valid = type(timeout) in (int, float) and math.isfinite(timeout) and timeout > 0
-                    except OverflowError:
-                        valid = False
-                    if not valid:
-                        raise ValueError("timeout must be a finite positive number of seconds")
-                if "schema" in desc and (not isinstance(desc["schema"], str) or not desc["schema"]):
-                    raise ValueError("schema must be a nonempty path")
-        trigger = node["trigger"]
-        fields(trigger, ("mode", "period_ms"), ("mode",))
-        if trigger["mode"] not in ("periodic", "on_change"):
-            raise ValueError("unsupported trigger")
-        if trigger["mode"] == "periodic" and (type(trigger.get("period_ms")) is not int or trigger["period_ms"] <= 0):
-            raise ValueError("periodic trigger requires a positive period_ms")
-        if not node["inputs"] and trigger["mode"] != "periodic":
-            raise ValueError("sources must be periodic")
         execution = deployment["components"][name]
         fields(execution, ("command", "container", "build", "cwd", "env", "placement"))
         if ("command" in execution) == ("container" in execution):
@@ -107,6 +80,10 @@ def validate_graph(model, deployment):
                 raise ValueError("container language must be python, c, rust, java or ada")
             from ose.modeling.managed_containers import validate_names
             validate_names(language, name, node, container)
+            if language in ("rust", "c"):
+                methods = [f"publish_{port}{suffix}" for port in node["outputs"] for suffix in ("", "_with_id")]
+                if len(methods) != len(set(methods)):
+                    raise ValueError(f"{language.title()} output names conflict with generated publication ID methods")
             if not isinstance(container["handler"], str) or not container["handler"]:
                 raise ValueError("container handler must be a nonempty file path")
             if not name.isidentifier():
@@ -147,8 +124,7 @@ def validate_graph(model, deployment):
                 raise ValueError("commands must be nonempty argv lists")
     if set(external) & {f"{name}.{port}" for name, node in components.items() for port in node["outputs"]}:
         raise ValueError("external topic conflicts with an internal output")
-    edges = {name: set() for name in components}
-    targets, ids, subscriptions = set(), set(), []
+    ids, subscriptions = set(), []
     if not isinstance(model["subscriptions"], list):
         raise ValueError("subscriptions must be a list")
     for sub in model["subscriptions"]:
@@ -159,37 +135,19 @@ def validate_graph(model, deployment):
             raise ValueError("subscription IDs must be unique, nonempty strings")
         ids.add(sub["id"])
         if "from" in sub:
-            source, output = endpoint(sub["from"], components, "outputs")
+            endpoint(sub["from"], components, "outputs")
         elif sub["from_topic"] not in external:
             raise ValueError("unknown external topic")
-        target, input_port = endpoint(sub["to"], components, "inputs")
-        targets.add(sub["to"])
+        endpoint(sub["to"], components, "inputs")
         binding = deployment.get("subscriptions", {}).get(sub["id"], {})
         fields(binding, ("transport", "routing"))
         policy = SubscriptionPolicy.resolve(sub.get("qos"), binding.get("transport", "tcp"))
         subscriptions.append({"to": sub["to"], "policy": policy.to_dict()})
-        if "from" in sub:
-            edges[source].add(target)
     if set(deployment.get("subscriptions", {})) - ids:
         raise ValueError("unknown subscription in deployment")
     reception_policies(subscriptions)
-    for name, node in components.items():
-        for port, desc in node["inputs"].items():
-            if desc.get("required", True) and f"{name}.{port}" not in targets:
-                raise ValueError(f"unconnected required input {name}.{port}")
-    visiting, visited = set(), set()
-    def walk(node):
-        if node in visiting:
-            raise ValueError("graph contains a cycle")
-        if node in visited:
-            return
-        visiting.add(node)
-        for child in edges[node]:
-            walk(child)
-        visiting.remove(node)
-        visited.add(node)
-    for name in edges:
-        walk(name)
+    from ose.modeling.activation import activation_order
+    activation_order(model)
 
 
 def endpoint(value, components, direction):

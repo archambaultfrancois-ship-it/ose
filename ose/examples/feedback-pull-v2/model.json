@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "schemas": "value.sdl",
+  "components": {
+    "a": {
+      "inputs": {
+        "clock": {
+          "kind": "timer",
+          "timer": {"mode": "periodic", "delay": 0.01, "start": "automatic"},
+          "activates": {"timeout": ["out"]}
+        },
+        "feedback": {"root": "Value", "mode": "pull"}
+      },
+      "outputs": {"out": {"root": "Value"}}
+    },
+    "b": {
+      "inputs": {"input": {"root": "Value", "activates": {"message": ["out"]}}},
+      "outputs": {"out": {"root": "Value"}}
+    }
+  },
+  "subscriptions": [
+    {"id": "forward", "from": "a.out", "to": "b.input"},
+    {"id": "feedback", "from": "b.out", "to": "a.feedback"}
+  ]
+}

@@ -6,6 +6,16 @@ Executable component graphs with SDL2 contracts and per-subscription quality of
 service. See the [feature overview](docs/features.md) for the available user-facing services.
 The shared [technical glossary](../GLOSSARY.md) defines SDL, OSE and Web Console terminology.
 
+The [Push/Pull and CENV/2 transition](docs/cenv2-transition.md) tracks the staged
+execution-model and transport evolution. Python, Rust, C, Java and Ada components use model
+v2 input callbacks, timers and passive Pull inboxes in local/distributed real-time
+execution or local parallel simulation; see the [feedback example](examples/feedback-pull-v2/README.md).
+Network exchanges use [binary CENV/2](docs/cenv2.md); upgrade all peers together.
+See [Rust input callbacks](docs/rust-inputs.md), [C input callbacks](docs/c-inputs.md)
+and [Java input callbacks](docs/java-inputs.md). [Ada input callbacks](docs/ada-inputs.md)
+are qualified with GNAT 12 on Linux. Actual JVM 7 execution remains deferred;
+the Java 7 source/API target is qualified with JDK 17.
+
 Linux processes and SDK threads have short, stable names for `top` and `ps`.
 See [process identification](docs/process-names.md) for deployment aliases and instance prefixes.
 
@@ -177,17 +187,19 @@ in their deployment entry. Use `language: "c"` with a `.c` handler or
 `language: "rust"` with a `.rs` handler for native containers. The builder generates
 the executable wrapper, native compilation commands, typed decoding and
 publication methods, and creates a handler skeleton only
-if the file is missing. See [callback containers](docs/callbacks.md) for the API,
-snapshot callbacks, lifecycle hooks and regeneration rules.
+if the file is missing. Runnable examples use single-input callbacks and explicit
+timers. See [model v2 migration](docs/model-v2-migration.md) for the model and API
+changes, and [callback containers](docs/callbacks.md) for generation and lifecycle rules.
 
-Required inputs can set `"timeout": 0.5` (seconds). At expiry, the existing
-processing callback receives `None` in Python, `NULL` in C or `None` in Rust.
-All required inputs must have a value or an expired timeout before a tick starts.
-An input without a timeout keeps waiting indefinitely. See
-[required-input timeouts](docs/runtime.md#required-input-timeouts).
+Push inputs can set `"timeout": 0.5` (seconds). At expiry, their callback receives
+a timeout reference without a message. Push inputs activate independently;
+Pull inboxes are accessed explicitly during another callback. Output activation
+permissions are declared per input event. See the [v2 execution rules](docs/cenv2-transition.md).
 
-The public Python component entry point is
-`from ose.execution.component import ComponentSession`.
+Raw Python components use
+`from ose.execution.input_process import InputSession`; the
+`sdk/python/sdl_ose_component.py` entry point also exports the CH/2 session,
+typed callback context and input references.
 The C stdio SDK is compiled from `sdk/c`; its optional callback runner uses SDL.
 The dependency-free Rust stdio crate lives in
 `sdk/rust`. They expose the same binary lifecycle while generated SDL bindings
@@ -214,13 +226,16 @@ directly without it skips SDL-dependent tests.
 
 Backpressure regressions also cover 1100 queued TCP messages with a delayed
 catalogue reply, independent input admission and sender retries, per-port schema
-checks, complete snapshot reservation and bounded shutdown of a non-reading child.
+checks, callback-scoped inbox access and bounded shutdown of a non-reading child.
 Delivery-limit regressions cover a real blocked TCP reader, outgoing packet
 size checks, a 20-second admission wait and status/metrics exceeding 64 KiB.
-Generated-container tests cover typed publication, complete snapshots, optional
-inputs, schema evolution, initialization failures and preservation of user code.
-Native-container tests compile and run C/Rust sources, named callbacks and
-snapshots, check cleanup after failures and Rust panics, and test initial scaffolds.
+CH/2 generated-container tests cover typed publications, Push/Pull references,
+timers, dynamic schema evolution, deferred withdrawals, callback failure and
+preservation of user code. All five SDKs run feedback examples and shared services;
+Java's default source/API/bytecode target is checked with JDK 17, while actual
+JVM 7 execution is deferred. Application models and plans require version 2;
+CH/1 execution and the snapshot scheduler are removed. See the
+[transition status](docs/cenv2-transition.md).
 RAM tests verify shared binary payloads, bounded retry indexes, wakeups and loss
 of queued state on restart. Delivery has no SQLite dependency or file I/O.
 

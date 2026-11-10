@@ -48,6 +48,15 @@ class InputRecordingTests(unittest.TestCase):
         self.assertEqual((port, desc["catalogue"], tick), ("value", CAT, 7))
         self.assertEqual(self.codec.validate(CAT, "Value", envelope).fields, dict(sequence=3, value=4.))
 
+    def test_projection_keeps_application_id_separate_from_tick_sequence(self):
+        self.active.add("value")
+        for app_id in (0, (1 << 64) - 1):
+            record = self.record()
+            record["app_id"] = app_id
+            self.recording.observe({"value": record}, 7)
+            self.assertEqual(self.emit.call_args.kwargs, {"app_id": app_id})
+            self.assertEqual(self.emit.call_args.args[3], 7)
+
     def test_input_discovery_retains_natural_name_and_separates_same_named_output(self):
         self.node["outputs"]["value"] = dict(root="Value", catalogue=CAT)
         plan = dict(components={"node": self.node}, subscriptions=[

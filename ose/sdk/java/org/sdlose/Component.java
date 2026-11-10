@@ -7,7 +7,7 @@ import java.nio.charset.*;
 import java.util.*;
 import sdl.runtime.SdlCodec;
 
-/** CH/1 component runtime. Standard output belongs exclusively to this protocol. */
+/** CH/2 component runtime. Standard output belongs exclusively to this protocol. */
 public final class Component {
     private static void nameProcess() {
         // The JVM's main Java thread need not be the Linux thread-group leader.
@@ -51,7 +51,6 @@ public final class Component {
     public static void logf(OutputStream output, LogLevel level, String logger, String format, Object... arguments) throws IOException {
         depositLog(output, level, logger, String.format(Locale.ROOT, format, arguments));
     }
-    private static final BigInteger MAX_U64 = BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE);
     public static String text(byte[] bytes) throws IOException {
         return UTF8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
             .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
@@ -68,12 +67,12 @@ public final class Component {
     public static Frame read(InputStream input) throws IOException {
         DataInputStream in = new DataInputStream(input);
         int size = in.readInt();
-        if (size < 1 || size > MAX_FRAME) throw new IOException("invalid CH/1 frame size");
+        if (size < 1 || size > MAX_FRAME) throw new IOException("invalid CH/2 frame size");
         int op = in.readUnsignedByte(); byte[] body = new byte[size - 1]; in.readFully(body);
         return new Frame(op, body);
     }
     public static void send(OutputStream output, int op, byte[] body) throws IOException {
-        if (body.length >= MAX_FRAME) throw new IOException("CH/1 frame exceeds limit");
+        if (body.length >= MAX_FRAME) throw new IOException("CH/2 frame exceeds limit");
         DataOutputStream out = new DataOutputStream(output);
         out.writeInt(body.length + 1); out.writeByte(op); out.write(body); out.flush();
     }
@@ -92,14 +91,14 @@ public final class Component {
     public static final class Port {
         public final String name, root, catalogue;
         public final Class<? extends SdlCodec.Message> type;
-        public final boolean required, timed;
+        public final boolean timed;
         private String remote;
         private SdlCodec.Context decoder;
         final SdlCodec.Context encoder;
         public Port(String name, String root, String catalogue, Class<? extends SdlCodec.Message> type,
-                    boolean required, boolean timed) {
+                    boolean timed) {
             this.name = name; this.root = root; this.catalogue = catalogue; this.type = type;
-            this.required = required; this.timed = timed;
+            this.timed = timed;
             encoder = SdlCodec.prepare(catalogue, type);
         }
         Object decode(String cat, byte[] bytes) throws IOException {
@@ -111,6 +110,20 @@ public final class Component {
             Object value = SdlCodec.decode(decoder, bytes);
             if (!type.isInstance(value)) throw new IOException("wrong message root for " + name);
             return value;
+        }
+    }
+    public static final class InputSpec {
+        public final String name;
+        public final Port port; // null for SDL-free timers
+        public final InputProtocol.Mode mode;
+        private final Set<String> messageOutputs, timeoutOutputs;
+        public InputSpec(String name, Port port, InputProtocol.Mode mode, String[] message, String[] timeout) {
+            if (name == null || name.length() == 0 || mode == null ||
+                ((mode == InputProtocol.Mode.PUSH || mode == InputProtocol.Mode.PULL) != (port != null)) ||
+                (port != null && !name.equals(port.name))) throw new IllegalArgumentException("invalid input declaration");
+            this.name = name; this.port = port; this.mode = mode;
+            messageOutputs = Collections.unmodifiableSet(new HashSet<String>(Arrays.asList(message)));
+            timeoutOutputs = Collections.unmodifiableSet(new HashSet<String>(Arrays.asList(timeout)));
         }
     }
     public static class Context {
@@ -132,6 +145,16 @@ public final class Component {
         private Port[] parameters = new Port[0];
         private boolean[] parameterRead = new boolean[0], parameterWrite = new boolean[0];
         private byte[][] parameterValues = new byte[0][];
+        private InputSpec[] inputSpecs;
+        private InputSpec origin;
+        private InputProtocol.Event originEvent;
+        protected final void configureInputs(InputSpec[] inputs) {
+            if (inputSpecs != null) throw new IllegalStateException("input declarations already configured");
+            inputSpecs = inputs.clone();
+            Set<String> names = new HashSet<String>();
+            for (InputSpec spec : inputSpecs)
+                if (!names.add(spec.name)) throw new IllegalArgumentException("duplicate input name");
+        }
         protected final void configureParameters(Port[] ports, boolean[] readable, boolean[] writable) {
             parameters = ports; parameterRead = readable; parameterWrite = writable;
             parameterValues = new byte[ports.length][];
@@ -180,6 +203,7 @@ public final class Component {
         }
         public BigInteger timeNs() { return time; }
         public BigInteger tickIndex() { return index; }
+        public BigInteger activationIndex() { return index; }
         public double now() { return time.doubleValue() / 1000000000.0; }
         public final void declareMeasurement(String name) throws IOException {
             if (!initializing || owner != Thread.currentThread() || measurements.contains(name) ||
@@ -192,7 +216,7 @@ public final class Component {
         }
         public final void measure(String name, double value) throws IOException {
             if (initializing || owner != Thread.currentThread() || !measurements.contains(name))
-                throw new IllegalStateException("measurement requires a declared name and the active tick callback");
+                throw new IllegalStateException("measurement requires a declared name and the active input callback");
             if (Double.isNaN(value) || Double.isInfinite(value)) throw new IllegalArgumentException("measurement requires a finite fl64");
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(); DataOutputStream out = new DataOutputStream(bytes);
             byte[] local = utf8(name); out.writeShort(local.length); out.write(local); out.writeDouble(value);
@@ -207,7 +231,7 @@ public final class Component {
             if (description == null || description.indexOf(0) >= 0 || utf8(description).length > 1024)
                 throw new IllegalArgumentException("invalid recording description");
             String root = SdlCodec.messageName(type), catalogue = SdlCodec.description(type);
-            Port point = new Port(name, root, catalogue, type, false, false);
+            Port point = new Port(name, root, catalogue, type, false);
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(); DataOutputStream out = new DataOutputStream(bytes);
             byte[] local = utf8(name); out.writeShort(local.length); out.write(local);
             out.write(utf8(root)); out.writeByte(0); out.write(utf8(description)); out.writeByte(0); out.write(utf8(catalogue));
@@ -219,7 +243,7 @@ public final class Component {
         }
         public final RecordResult record(String name, SdlCodec.Message value) throws IOException {
             if (initializing || owner != Thread.currentThread())
-                throw new IllegalStateException("recording requires the active tick callback");
+                throw new IllegalStateException("recording requires the active input callback");
             Port point = recordingPoints.get(name);
             if (point == null || !point.type.isInstance(value)) throw new IllegalArgumentException("unknown point or wrong recording type");
             if (!recordingActive.contains(name)) return RecordResult.DISABLED;
@@ -241,34 +265,97 @@ public final class Component {
             }
         }
         protected final void publish(int index, SdlCodec.Message message) throws IOException {
-            if (owner != Thread.currentThread()) throw new IllegalStateException("publication requires the active tick callback");
-            Port port = outputs[index];
-            if (!port.type.isInstance(message)) throw new IllegalArgumentException("wrong output type");
-            byte[] name = utf8(port.name), payload = SdlCodec.encode(port.encoder, message);
-            if (name.length > 65535 || payload.length == 0 || name.length + payload.length > MAX_FRAME - 3)
-                throw new IOException("invalid publication size");
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream(); DataOutputStream out = new DataOutputStream(bytes);
-            out.writeShort(name.length); out.write(name); out.write(payload); send(stream, 'P', bytes.toByteArray());
+            publish(index, message, null);
         }
-        private void tick(byte[] bytes) throws IOException {
-            if (bytes.length == 0) { time = BigInteger.ZERO; index = index.add(BigInteger.ONE); }
-            else if (bytes.length == 16) {
-                time = new BigInteger(1, Arrays.copyOfRange(bytes, 0, 8));
-                index = new BigInteger(1, Arrays.copyOfRange(bytes, 8, 16));
-            } else throw new IOException("invalid TICK body");
-            if (index.signum() == 0 || index.compareTo(MAX_U64) > 0) throw new IOException("invalid tick index");
+        protected final void publish(int index, SdlCodec.Message message, BigInteger appId) throws IOException {
+            if (owner != Thread.currentThread()) throw new IllegalStateException("publication requires the active input callback");
+            Port port = outputs[index];
+            if (origin == null || !(originEvent == InputProtocol.Event.MESSAGE ? origin.messageOutputs : origin.timeoutOutputs).contains(port.name))
+                throw new IllegalStateException("input event cannot activate output " + port.name);
+            if (!port.type.isInstance(message)) throw new IllegalArgumentException("wrong output type");
+            byte[] payload = SdlCodec.encode(port.encoder, message);
+            send(stream, 'P', InputProtocol.publication(port.name, payload, appId));
+        }
+        private InputSpec pullInput(int slot) {
+            if (inputSpecs == null || initializing || owner != Thread.currentThread() || origin == null)
+                throw new IllegalStateException("input access requires an active callback");
+            if (slot < 0 || slot >= inputSpecs.length || inputSpecs[slot].mode != InputProtocol.Mode.PULL)
+                throw new IllegalArgumentException("message access requires a Pull input");
+            return inputSpecs[slot];
+        }
+        private byte[] inputRequest(int operation, String port, InputProtocol.Selector selector, BigInteger delay) throws IOException {
+            send(stream, 'Q', InputProtocol.request(operation, port, selector, delay));
+            return InputProtocol.reply(read(inputStream));
+        }
+        private Object decodeRecord(InputSpec spec, InputProtocol.Record record) throws IOException {
+            if (record.receivedNs.compareTo(time) > 0) throw new IOException("input received in the future");
+            SdlCodec.Envelope envelope = SdlCodec.unpackEnvelope(record.envelope);
+            if (envelope.catalogueId != SdlCodec.catalogueId(record.catalogue))
+                throw new IOException("input catalogue identity mismatch");
+            return spec.port.decode(record.catalogue, envelope.payload);
+        }
+        protected final <T extends SdlCodec.Message> InputProtocol.Reference<T> getInput(
+                int slot, InputProtocol.Selector selector, Class<T> type, boolean consume) throws IOException {
+            InputSpec spec = pullInput(slot);
+            if (spec.port.type != type) throw new IllegalArgumentException("wrong input reference type");
+            InputProtocol.Record record = InputProtocol.record(inputRequest(consume ? 2 : 1, spec.name, selector, null));
+            if (record == null) return null;
+            T value = type.cast(decodeRecord(spec, record));
+            return new InputProtocol.Reference<T>(spec.name, InputProtocol.Event.MESSAGE, value,
+                record.handle, record.source, record.appId, BigInteger.ONE, record.receivedNs);
+        }
+        protected final boolean removeInput(int slot, InputProtocol.Selector selector) throws IOException {
+            InputSpec spec = pullInput(slot);
+            byte[] result = inputRequest(3, spec.name, selector, null);
+            if (result.length != 1 || (result[0] != 0 && result[0] != 1)) throw new IOException("invalid removal reply");
+            return result[0] == 1;
+        }
+        private void timerControl(int operation, String port, BigInteger delayNs) throws IOException {
+            if (inputSpecs == null || owner != Thread.currentThread() || (!initializing && origin == null))
+                throw new IllegalStateException("timer control requires initialization or an active callback");
+            InputSpec timer = null;
+            for (InputSpec spec : inputSpecs) if (spec.name.equals(port)) timer = spec;
+            if (timer == null || (timer.mode != InputProtocol.Mode.PERIODIC && timer.mode != InputProtocol.Mode.ONE_SHOT))
+                throw new IllegalArgumentException("timer control requires a declared timer");
+            if (inputRequest(operation, port, null, delayNs).length != 0) throw new IOException("invalid timer reply");
+        }
+        public final void arm(String port) throws IOException { arm(port, null); }
+        public final void arm(String port, BigInteger delayNs) throws IOException { timerControl(4, port, delayNs); }
+        public final void disarm(String port) throws IOException { timerControl(5, port, null); }
+        private void activate(Frame event, InputCallbacks callbacks) throws Exception {
+            InputProtocol.Activation activation = new InputProtocol.Activation(event.body);
+            if (!activation.index.equals(index.add(BigInteger.ONE)) || activation.timeNs.compareTo(time) < 0)
+                throw new IOException("non-monotonic CH/2 activation");
+            InputSpec selected = null;
+            for (InputSpec spec : inputSpecs) if (spec.name.equals(activation.port)) selected = spec;
+            if (selected == null || selected.mode == InputProtocol.Mode.PULL ||
+                (activation.event == InputProtocol.Event.MESSAGE && selected.mode != InputProtocol.Mode.PUSH) ||
+                (activation.event == InputProtocol.Event.TIMEOUT && selected.mode == InputProtocol.Mode.PUSH && !selected.port.timed) ||
+                (selected.mode == InputProtocol.Mode.ONE_SHOT && !activation.elapsed.equals(BigInteger.ONE)))
+                throw new IOException("invalid input activation");
+            time = activation.timeNs; index = activation.index;
+            InputProtocol.Record record = activation.record;
+            Object value = record == null ? null : decodeRecord(selected, record);
+            InputProtocol.Reference<Object> reference = new InputProtocol.Reference<Object>(selected.name, activation.event,
+                value, record == null ? null : record.handle, record == null ? null : record.source,
+                record == null ? null : record.appId, activation.elapsed, activation.dueNs);
+            origin = selected; originEvent = activation.event;
+            owner = Thread.currentThread(); recordingBytes = 0;
+            try { callbacks.activate(reference); }
+            finally { owner = null; origin = null; originEvent = null; }
         }
     }
     public enum RecordResult { QUEUED, DISABLED, DROPPED }
-    public interface Callbacks {
+    public interface InputCallbacks {
         void start() throws Exception;
-        void tick(Object[] inputs) throws Exception;
+        void activate(InputProtocol.Reference<?> input) throws Exception;
         void stop() throws Exception;
     }
-    public static void run(Context ctx, Port[] inputs, Callbacks callbacks) throws Exception {
-        run(ctx, inputs, callbacks, System.in);
+    public static void runInputs(Context ctx, InputCallbacks callbacks) throws Exception {
+        runInputs(ctx, callbacks, System.in);
     }
-    public static void run(Context ctx, Port[] inputs, Callbacks callbacks, InputStream stream) throws Exception {
+    public static void runInputs(Context ctx, InputCallbacks callbacks, InputStream stream) throws Exception {
+        if (ctx.inputSpecs == null) throw new IllegalStateException("CH/2 input declarations are required");
         Frame init = read(stream);
         if (init.op != 'I') throw new IOException("expected INIT");
         ctx.configJson = text(init.body);
@@ -284,44 +371,18 @@ public final class Component {
             ctx.initializing = true;
             try { callbacks.start(); } finally { ctx.owner = null; }
             ctx.initializing = false;
-            send(ctx.stream, 'R', new byte[]{(byte)(ctx.parameters.length == 0 ? 1 : 3)});
-            Object[] selected = new Object[inputs.length]; boolean[] present = new boolean[inputs.length];
+            send(ctx.stream, 'R', new byte[]{2});
             for (;;) {
                 Frame event = read(stream);
                 if (event.op == 'X') { if (event.body.length != 0) throw new IOException("invalid STOP"); break; }
                 if (event.op == 'U') { ctx.parameterUpdate(event, false); continue; }
                 if (event.op == 'E') { ctx.recordingUpdate(event.body); continue; }
-                if (event.op == 'D') {
-                    DataInputStream data = new DataInputStream(new ByteArrayInputStream(event.body));
-                    int size = data.readUnsignedShort();
-                    if (size == 0 || size > data.available() - 4) throw new IOException("invalid input port size");
-                    byte[] portBytes = new byte[size]; data.readFully(portBytes); String name = text(portBytes);
-                    int slot = -1;
-                    for (int i = 0; i < inputs.length; ++i) if (inputs[i].name.equals(name)) slot = i;
-                    if (slot < 0 || present[slot]) throw new IOException("unknown or duplicate input " + name);
-                    int catSize = data.readInt();
-                    if (catSize < 0 || catSize > data.available()) throw new IOException("invalid catalogue size");
-                    byte[] cat = new byte[catSize]; data.readFully(cat);
-                    byte[] payload = new byte[data.available()]; data.readFully(payload);
-                    Port port = inputs[slot];
-                    if (catSize == 0 && payload.length == 0) {
-                        if (!port.required || !port.timed) throw new IOException("unexpected null input");
-                    } else {
-                        if (catSize == 0 || payload.length == 0) throw new IOException("incomplete input");
-                        selected[slot] = port.decode(text(cat), payload);
-                    }
-                    present[slot] = true;
-                } else if (event.op == 'T') {
-                    for (int i = 0; i < inputs.length; ++i)
-                        if (inputs[i].required && !present[i]) throw new IOException("missing required input " + inputs[i].name);
-                    ctx.tick(event.body); ctx.owner = Thread.currentThread();
-                    ctx.recordingBytes = 0;
-                    try { callbacks.tick(selected); } finally { ctx.owner = null; }
-                    Arrays.fill(selected, null); Arrays.fill(present, false); send(ctx.stream, 'F', new byte[0]);
-                } else throw new IOException("unexpected CH/1 opcode");
+                if (event.op != 'T') throw new IOException("unexpected CH/2 opcode");
+                ctx.activate(event, callbacks); send(ctx.stream, 'F', new byte[0]);
             }
         } catch (Throwable error) { failure = error; throw error; }
         finally {
+            ctx.owner = null; ctx.origin = null; ctx.originEvent = null; ctx.initializing = false;
             if (started) try { callbacks.stop(); }
             catch (Throwable stop) { if (failure != null) failure.addSuppressed(stop); else throw stop; }
         }

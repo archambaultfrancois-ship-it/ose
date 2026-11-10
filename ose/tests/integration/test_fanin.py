@@ -26,18 +26,18 @@ class FaninFixture:
         cls.addClassCleanup(temporary.cleanup)
         cls.root = Path(temporary.name)
         (cls.root / "measurement.sdl").write_text("message Measurement {uint64 sequence; fl64 value;}")
-        (cls.root / "idle.py").write_text("def on_tick(ctx): pass\n")
+        (cls.root / "idle.py").write_text("# Publications are injected by the test transport driver.\n")
         (cls.root / "sink.py").write_text(
-            "import json\ndef on_input(ctx, message):\n"
+            "import json\ndef on_input(ctx, input):\n message=input.message\n"
             " with open(ctx.parameters['path'], 'a') as stream: stream.write(json.dumps(message.sequence)+'\\n')\n")
         desc = {"root": "Measurement"}
-        model = dict(version=1, schemas="measurement.sdl", components={
-            name: dict(inputs={}, outputs={"out": desc}, trigger=dict(mode="periodic", period_ms=1000))
+        model = dict(version=2, schemas="measurement.sdl", components={
+            name: dict(inputs={}, outputs={"out": desc})
             for name in ("left", "right")}, subscriptions=[
                 dict(id=name, **{"from": name + ".out", "to": "sink.input"}) for name in ("left", "right")])
         model["components"]["sink"] = dict(inputs={"input": desc},
             outputs={"input": desc} if getattr(cls, "sink_output", False) else {},
-            trigger=dict(mode="periodic", period_ms=5), parameters={"path": "unused"})
+            parameters={"path": "unused"})
         deployment = dict(version=1, components={name: dict(container=dict(language="python",
             handler="sink.py" if name == "sink" else "idle.py")) for name in model["components"]})
         (cls.root / "model.json").write_text(json.dumps(model))
@@ -103,8 +103,11 @@ class FaninFixture:
             await self.until(lambda: "sink" in self.server.ready)
             self.server.enabled = True
             await self.until(lambda: self.sink.activated_at_ns)
-        # Accumulate admissions before allowing the unchanged callback to run.
-        self.sink.scheduler.next_tick = float("inf")
+        # Pause activation selection, while transport admission stays live.
+        self.select = self.sink.scheduler.select
+        self.next_event = self.sink.scheduler.next_event
+        self.sink.scheduler.select = lambda *args: None
+        self.sink.scheduler.next_event = lambda *args: None
         self.buffer = self.sink.buffers["input"]
 
     async def publish(self, source, number):
@@ -121,7 +124,8 @@ class FaninFixture:
         return [json.loads(line) for line in self.path.read_text().splitlines()] if self.path.exists() else []
 
     async def resume(self, expected):
-        self.sink.scheduler.next_tick = 0
+        self.sink.scheduler.select = self.select
+        self.sink.scheduler.next_event = self.next_event
         self.sink.activity.set()
         await self.until(lambda: len(self.values()) >= len(expected))
         self.assertEqual(self.values()[:len(expected)], expected)

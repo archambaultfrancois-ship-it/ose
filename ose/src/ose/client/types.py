@@ -6,6 +6,7 @@ class MessageInfo:
     topic: str
     epoch: str
     sequence: int
+    app_id: int | None = None
 
 @dataclass(frozen=True)
 class PublishResult:

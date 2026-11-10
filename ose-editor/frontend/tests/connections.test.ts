@@ -10,9 +10,9 @@ import { useProject } from '../src/store'
 
 function project() {
   return { revision: 'r1', model: 'model.json', documents: { 'model.json': { value: {
-    schemas: 'schemas', components: {
-      source: { inputs: { feedback: { root: 'Reading' } }, outputs: { out: { root: 'Reading' } } },
-      compute: { inputs: { input: { root: 'Reading', schema: 'consumer' } }, outputs: { out: { root: 'Reading' } } },
+    version: 2, schemas: 'schemas', components: {
+      source: { inputs: { feedback: { root: 'Reading', activates: { message: ['out'] } } }, outputs: { out: { root: 'Reading' } } },
+      compute: { inputs: { input: { root: 'Reading', schema: 'consumer', activates: { message: ['out'] } } }, outputs: { out: { root: 'Reading' } } },
       wrong: { inputs: { input: { root: 'Other' } }, outputs: {} },
     }, external_topics: { 'ambient.topic': { root: 'Reading' } },
     subscriptions: [{ id: 'existing', from: 'source.out', to: 'compute.input' }],
@@ -25,6 +25,11 @@ function report(compatible = true) {
 }
 
 describe('connection guidance', () => {
+  it('requires migration before connecting a v1 model', () => {
+    const state = project()
+    state.documents['model.json'].value.version = 1
+    expect(assessConnection(state, source, 'compute.input')).toMatchObject({ status: 'incompatible', message: expect.stringContaining('Migrate') })
+  })
   it('rejects missing ports, different roots and direct or transitive cycles', () => {
     const state = project()
     expect(assessConnection(state, source, 'missing.input').status).toBe('incompatible')

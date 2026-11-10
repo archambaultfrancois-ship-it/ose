@@ -1,128 +1,96 @@
-# Component protocol CH/1
+# Component IPC framing and shared services
 
-stdin/stdout are binary protocol streams. Diagnostics go to stderr. Each frame
-is `uint32 big-endian length | uint8 opcode | body`. Length includes the opcode;
-valid lengths are 1 through 1,048,576. Readers must handle partial reads. Ports
-and catalogues are UTF-8. Payloads are ordinary SDL2 bytes, including their
-catalogue-relative message ID, without S2PS/2 (the adapter adds/removes it).
+Application model v2 uses [CH/2 input callbacks](input-protocol.md) in Python,
+C, Rust, Java and Ada. This page specifies common framing, lifecycle and context
+services, independently of the network [CENV/2](../docs/cenv2.md) envelope.
+Rebuild generated containers when upgrading the component protocol.
+
+## Framing and lifecycle
+
+stdin/stdout are binary protocol streams; diagnostics go to stderr. Each frame
+is `u32 big-endian length | u8 ASCII opcode | body`. Length includes the opcode
+and is between 1 and 1,048,576 bytes. Readers handle partial reads.
+
+All lengths are unsigned and big endian. Port and local names are UTF-8,
+encoded as `u16 byte_length | bytes`. Catalogue text uses a u32 byte length.
+SDL payloads in parameter, recording and publication frames contain ordinary
+SDL bytes without S2PS/2; CH/2 input records carry complete S2PS/2 envelopes.
+Each message retains its catalogue association and dynamic contract checks.
 
 | Opcode | Direction | Body |
 | --- | --- | --- |
-| `I` INIT | Adapter → component | JSON component configuration, parameters and port catalogues |
-| `R` READY | Component → engine | Empty (legacy), byte `0x01` for timestamped TICKs, or `0x03` for ticks and shared parameters |
-| `D` INPUT | Adapter → component | u16 port length, port, u32 catalogue length, catalogue, SDL2 payload |
-| `T` TICK | Engine → component | Empty (legacy), or u64 time_ns then u64 tick_index; preceding INPUTs form the snapshot |
-| `P` PUBLISH | Component → adapter | u16 port length, port, SDL2 payload |
-| `F` FINISHED | Component → adapter | Empty |
-| `X` STOP | Adapter → component | Empty |
-| `U` PARAMETER UPDATE | Adapter → component | Alias/catalogue/SDL payload, same layout as INPUT |
-| `S` PARAMETER SET | Component → adapter | Alias/SDL payload, same layout as PUBLISH |
-| `A` PARAMETER RESULT | Adapter → component | Byte 1, or byte 0 followed by a UTF-8 error |
-| `N` RECORDING DECLARE | Component → engine, before READY | u16 local-name length, name, root, NUL, description, NUL, catalogue (UTF-8) |
-| `E` RECORDING ENABLE | Engine → component, between ticks | NUL-separated active local names; empty disables all |
-| `C` RECORDING SAMPLE | Component → engine, during TICK | u16 local-name length, name, SDL2 payload |
-| `M` MEASUREMENT DECLARE | Component → engine, before READY | u16 local-name length, name (UTF-8), no trailing bytes |
-| `V` MEASUREMENT VALUE | Component → engine, during TICK | u16 local-name length, name, exactly one big-endian IEEE-754 fl64 |
-| `L` LOG | Component → engine, during initialization, ticks or shutdown | u8 level, u16 category length, UTF-8 category, remaining UTF-8 message |
+| `I` INIT | Engine → component | JSON component configuration, parameters and port catalogues |
+| `R` READY | Component → engine | Exactly byte `0x02` |
+| `T` ACTIVATE | Engine → component | One input reference; see [CH/2](input-protocol.md#activation-and-publication) |
+| `P` PUBLISH | Component → engine | Output name, optional application ID and SDL payload; see CH/2 |
+| `F` FINISHED | Component → engine | Empty |
+| `X` STOP | Engine → component | Empty |
+| `U` PARAMETER UPDATE | Engine → component | Name, catalogue text, remaining SDL payload |
+| `S` PARAMETER SET | Component → engine | Name, remaining SDL payload |
+| `A` RESULT | Engine → component | Byte 1 and operation-specific result, or byte 0 and UTF-8 error |
+| `N` RECORDING DECLARE | Component → engine, before READY | Name, root, NUL, description, NUL, catalogue |
+| `E` RECORDING ENABLE | Engine → component, between callbacks | NUL-separated active local names; empty disables all |
+| `C` RECORDING SAMPLE | Component → engine, during a callback | Name, remaining SDL payload |
+| `M` MEASUREMENT DECLARE | Component → engine, before READY | Name, no trailing bytes |
+| `V` MEASUREMENT VALUE | Component → engine, during a callback | Name, exactly one big-endian IEEE-754 fl64 |
+| `L` LOG | Component → engine, including initialization and shutdown | u8 level, category name, remaining UTF-8 message |
+| `Q` INPUT REQUEST | Component → engine | [CH/2 inbox or timer operation](input-protocol.md#input-requests) |
+
+The engine sends INIT followed by initial readable parameter blocks. The
+component initializes codecs, invokes its optional start hook and sends READY.
+Only one callback is in flight per component. Successful completion sends an
+empty FINISHED; failure sends none. CH/2 defines deferred withdrawals and staged
+publications. Parameter writes and input requests are synchronous: each RESULT
+belongs to the outstanding SET or INPUT REQUEST. Parameter updates never
+interrupt an active callback. See [shared parameters](../docs/parameters.md).
+
+STOP requests clean exit, including while waiting for an activation. The
+adapter's 0.5-second grace period includes both writing STOP and waiting for exit;
+a full stdin pipe cannot postpone it. It then sends SIGTERM, waits up to one
+second and kills/reaps the component if necessary.
+
+## Logs
 
 LOG levels are 10 DEBUG, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL and 60 FATAL.
 Categories are at most 200 bytes; messages are nonempty and at most 8192 bytes.
-SDKs truncate oversized text at UTF-8 boundaries and append `… [truncated]` within
-that limit. Truncation does not fail the component.
-NUL is forbidden in both. LOG frames are buffered in bounded volatile memory and
-forwarded to the runtime log stream independently of application queues. FATAL
-does not stop the component automatically. See [logs](../docs/logs.md) for SDK,
-CLI, retention, loss reporting, and web-console semantics.
+SDKs truncate oversized text at UTF-8 boundaries and append `… [truncated]`
+within that limit. Truncation does not fail the component. NUL is forbidden
+in both fields.
+
+LOG frames are buffered in bounded volatile memory and forwarded independently
+of application queues. FATAL does not stop the component automatically. See
+[logs](../docs/logs.md) for retention, loss reporting and console semantics.
+
+## Measurements
 
 Measurements retain one current finite fl64 per declared name, initially absent.
-Names have the same dot-separated ASCII syntax and 200-byte limit as internal
-recording points, with up to 128 independent measurement names per component.
-Duplicate/late declarations, undeclared emissions, malformed bodies and nonfinite
-values fail the component. Measurement values are raw eight-byte scalars rather
-than SDL2 message payloads. They never enter application delivery queues, recording
-points or logical traces. They are volatile and appear in live status; see
-[current measurements](../docs/measurements.md) for SDK and CLI APIs.
+Names use dot-separated ASCII identifiers and a 200-byte limit, with up to 128
+independent names per component. Duplicate or late declarations, undeclared
+emissions, malformed bodies and nonfinite values fail the component.
 
-Internal recording declarations are scoped to one component generation and are
-fixed before READY. Names are dot-separated ASCII identifiers, at most 200 bytes;
-descriptions are at most 1024 UTF-8 bytes. NUL is forbidden in declaration fields.
-Up to 128 points may be declared. The engine validates the catalogue and root,
-and exposes `<instance>.record.<local-name>` only through the recording service.
-Samples never enter application subscriptions. An engine sends ENABLE frames
-only to components that declared points; activation is applied before the next
-TICK and stays fixed throughout the callback. Components start with all points
-disabled. Existing READY capability bytes remain valid.
+These eight-byte scalars never enter application queues, recording points or
+logical traces. They are volatile and appear in live status; see
+[current measurements](../docs/measurements.md).
 
-The typed contexts own hash maps containing the points, prepared encoders and
-activation state. They skip encoding disabled points. Each tick may emit at most
-256 KiB of SAMPLE bodies, including the encoded local names. SDK emission returns
-`queued`, `disabled` or `dropped`; `queued` means handed to local IPC, not persisted.
-The local adapter drains samples into an independent bounded queue (64 waiting
-samples, 1 MiB including its in-flight sample) and transfers them to the broker
-separately from application processing. Its overflow count is included in component
-metrics. Workers feed their local recording taps directly. Both retain normal
-CH/1 pipe flow control: capture is best effort, not a hard real-time guarantee.
-Simulation accepts declarations with every point disabled. See
+## Internal recording
+
+Declarations are fixed before READY and scoped to one component generation.
+Names are dot-separated ASCII identifiers, at most 200 bytes. Descriptions
+contain at most 1024 UTF-8 bytes; NUL is forbidden in declaration fields. Up to
+128 points may be declared. The engine validates the catalogue and root and
+exposes `<instance>.record.<local-name>` through the recording service.
+
+Samples never enter application subscriptions. ENABLE applies before the next
+callback and stays fixed during it. Components start with all points disabled.
+Typed contexts own prepared encoders and skip encoding disabled points.
+
+Each callback may emit at most 256 KiB of SAMPLE bodies, including encoded
+local names. Emission returns `queued`, `disabled` or `dropped`; queued means
+handed to local IPC, not persisted. The local adapter drains samples into an
+independent bounded queue (64 waiting samples, 1 MiB including its in-flight
+sample) and transfers them to the broker separately from application processing.
+Workers feed local recording taps directly. Pipe flow control still applies;
+capture is best effort.
+
+Simulation accepts declarations with points disabled. See
 [component recording APIs](../docs/recording.md#component-owned-internal-points).
-
-Timestamp fields are unsigned and big endian. An extended TICK has exactly 16
-body bytes and a positive component-local tick index, starting at one. A component
-advertises support with READY body `0x01`. The real-time adapter sends extended
-ticks only to capable components and retains empty ticks for legacy READYs.
-Simulation requires the capability and rejects legacy components before ticking.
-READY `0x03` also supports shared parameter blocks; other bodies and malformed
-TICK contexts are rejected. See [shared parameters](../docs/parameters.md) for
-initial UPDATE frames before user initialization, typed APIs and snapshot rules.
-
-Updated generated containers advertise the capability automatically and accept
-empty historical ticks too, using time zero and the next local index. Raw Python
-components use `ComponentSession(timed_ticks=True)`; C uses `ose_ready()` and
-`ose_tick()`; Rust uses `send(b'R', TICK_CONTEXT)` and `tick()`. The raw Rust
-`initialize()` convenience function retains the legacy empty READY. Lifecycle
-ordering and callback signatures are unchanged. The [simulation guide](../docs/simulation.md)
-documents the clock context in all five languages. Java uses unsigned `BigInteger`
-clock values; Ada uses `Interfaces.Unsigned_64`.
-
-An INPUT with both catalogue length zero and an empty SDL2 payload represents
-an explicit null on a required input with a configured timeout. It has the same
-`D` opcode and port encoding. Other INPUT frames contain a nonempty catalogue
-and valid SDL2 payload. Generated containers reject explicit nulls for untimed
-or optional inputs, duplicate INPUTs and missing required INPUT frames.
-Application callbacks receive only `None`/`NULL`, without timeout event metadata.
-
-All lengths are big endian. The component receives INIT, initializes its local
-codec and sends READY. After zero or more INPUT frames, TICK permits processing.
-It may publish zero or more outputs, then sends FINISHED. One tick is in flight
-at a time. STOP requests clean exit, including while waiting for the next tick.
-The adapter's 0.5-second grace period includes both writing STOP and waiting for
-exit. A full stdin pipe cannot postpone this deadline. It then sends SIGTERM,
-waits up to one second, and kills/reaps the component if necessary.
-
-FINISHED removes selected FIFO inputs after processing; it is not a network ACK.
-Null inputs consume no FIFO record. Required-input deadlines rearm after the
-adapter completes the tick. Timeouts do not create network messages or ACKs.
-An error must terminate the component with a nonzero status. All pending inputs
-are volatile and disappear on restart. Network retries can repeat transmissions;
-the adapter deduplicates them within its bounded, in-memory history.
-
-Python: `ComponentSession` supplies configuration, `ticks()` and `publish()`.
-Generated Python/C/Rust/Java/Ada containers supply typed callback dispatch and output
-methods on top of the binary SDK. They defer READY until codec and handler initialization
-succeed, and send FINISHED only after callbacks return successfully. Their
-callbacks run at TICK, never directly on a network receive; see
-[callback containers](../docs/callbacks.md).
-C: `OseEvent.data` owns the body and must be released; `ose_input()` returns
-borrowed fields, with catalogues explicitly sized rather than NUL terminated.
-Rust: `initialize()` returns INIT JSON bytes; `input()` borrows the decoded
-fields from its event and `Input::is_null()` recognizes an explicit null frame.
-Python `ComponentSession.ticks()` maps that frame to a `None` entry; normal entries
-remain `(catalogue, payload)` pairs. In C, `ose_input()` returns zero catalogue
-and payload sizes for an explicit null. Raw SDK users must handle this value when
-enabling input timeouts. The C and Rust stdio SDKs do not depend on a JSON parser
-or SDL. The optional C callback runner and generated Rust container use the
-public SDL runtime to decode and release typed snapshots.
-
-Java and Ada use the same frames and capability byte. Java owns decoded objects
-through the JVM; Ada containers own selected values and expose borrowed constant
-references during callbacks. See [Java and Ada SDKs](../docs/java-ada.md) for
-public APIs, timeout nulls and lifetime rules.

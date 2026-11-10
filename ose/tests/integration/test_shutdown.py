@@ -35,18 +35,20 @@ def on_start(ctx):
         while not Path(ctx.parameters["resume"]).exists():
             time.sleep(.005)
 
-def on_tick(ctx, inputs=None):
-    if ctx.name == "source":
-        ctx.publish("value", Value(sequence=ctx.tick_index))
+def on_clock(ctx, input):
+    ctx.publish("value", Value(sequence=ctx.tick_index))
+
+def on_input(ctx, input):
+    pass
 
 def on_stop(ctx):
     mark(ctx, "stop")
 ''')
         port = {"root": "Value"}
-        model = dict(version=1, schemas="value.sdl", components={
-            "source": dict(inputs={}, outputs={"value": port},
-                           trigger=dict(mode="periodic", period_ms=10)),
-            "sink": dict(inputs={"input": port}, outputs={}, trigger=dict(mode="on_change")),
+        model = dict(version=2, schemas="value.sdl", components={
+            "source": dict(inputs={"clock": dict(kind="timer", timer=dict(mode="periodic", delay=.01),
+                                               activates={"timeout": ["value"]})}, outputs={"value": port}),
+            "sink": dict(inputs={"input": port}, outputs={}),
         }, subscriptions=[dict(id="link", **{"from": "source.value", "to": "sink.input"})])
         deployment = dict(version=1, components={name: dict(container=dict(language="python", handler="handler.py"))
                                                 for name in model["components"]})

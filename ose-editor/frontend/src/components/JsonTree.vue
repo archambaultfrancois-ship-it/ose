@@ -4,7 +4,7 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import { useProject } from '../store'
-import { keysFor, choices, nodeLabel } from '../hints'
+import { keysFor, choicesFor, nodeLabel } from '../hints'
 import { parameterShape } from '../schema'
 const props = defineProps<{ node: any; file: string; role: string; depth?: number; readonly?: boolean }>()
 const store = useProject(), page = ref(0), key = ref(''), literal = ref('null'), showAdd = ref(false), rename = ref(false), newName = ref('')
@@ -13,7 +13,9 @@ const expanded = ref(new Set<string>((props.depth || 0) < 1 ? props.node.childre
 const collection = computed(() => ['array', 'object'].includes(props.node.kind))
 const children = computed(() => props.node.children.slice(page.value * 40, (page.value + 1) * 40))
 const shape = computed(() => parameterShape(store.project, props.node.path))
-const hints = computed(() => ({ ...keysFor(props.role, props.node.path), ...shape.value?.suggestions }))
+const model = computed(() => store.project?.documents?.[props.file]?.value)
+const hints = computed(() => ({ ...keysFor(props.role, props.node.path, model.value), ...shape.value?.suggestions }))
+const options = computed(() => shape.value?.enums || choicesFor(props.role, props.node.path, model.value))
 const suggestions = computed(() => Object.keys(hints.value).filter(k => !props.node.children.some((n: any) => n.name === k)))
 watch(() => [props.node.literal, props.node.kind], () => {
   type.value = props.node.kind
@@ -51,7 +53,7 @@ function add() { store.command({ action: 'set', file: props.file, path: [...prop
     <div v-else class="scalar-editor">
       <Select v-model="type" :options="['string', 'number', 'boolean', 'null', 'object', 'array']" aria-label="Value type" :disabled="readonly" />
       <Select v-if="type === 'boolean'" v-model="value" :options="['true', 'false']" aria-label="Boolean value" :disabled="readonly" />
-      <Select v-else-if="type === 'string' && (choices[node.name] || shape?.enums)" v-model="value" :options="shape?.enums || choices[node.name]" editable aria-label="Property value" :disabled="readonly" />
+      <Select v-else-if="type === 'string' && options" v-model="value" :options="options" editable aria-label="Property value" :disabled="readonly" />
       <InputText v-else-if="type !== 'null'" v-model="value" :type="node.name === 'token' ? 'password' : 'text'" :aria-label="node.name || 'Value'" :disabled="readonly" />
       <Button v-if="!readonly" label="Preview change" size="small" @click="commit" />
       <small v-if="type === 'number'">Exact numeric literal; no JavaScript rounding.</small>

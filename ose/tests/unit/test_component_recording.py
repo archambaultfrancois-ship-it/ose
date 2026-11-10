@@ -3,16 +3,18 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from ose.execution.component import ComponentSession, RecordResult
-from ose.execution.callbacks import CallbackContext
+from ose.execution.component_io import RecordResult
+from ose.execution.context import ComponentContext
+from ose.execution.input_process import InputSession
 from ose.execution.ipc import frame, port_data
 from ose.recording.component import ComponentRecording, RemoteRecording, MAX_TICK_BYTES, validate_name
+from tests.component_driver import timer_frame
 
 
 class RecordingRegistryTests(unittest.TestCase):
     def session(self, events=b""):
         self.output = io.BytesIO()
-        return ComponentSession(io.BytesIO(frame("I", b"{}") + events), self.output, auto_ready=False)
+        return InputSession(io.BytesIO(frame("I", b"{}") + events), self.output, auto_ready=False)
 
     def test_namespaced_registry_duplicate_and_lifecycle_validation(self):
         session = self.session()
@@ -28,33 +30,33 @@ class RecordingRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "initialization"):
             session.declare_recording_point("late", "Diagnostic", "cat")
 
-    def test_activation_snapshot_budget_and_no_emission_when_disabled(self):
-        session = self.session(frame("T") + frame("E", b"dsp.fft") + frame("T") +
-                               frame("E") + frame("T") + frame("X"))
+    def test_activation_changes_budget_and_no_emission_when_disabled(self):
+        session = self.session(timer_frame(1) + frame("E", b"dsp.fft") + timer_frame(2) +
+                               frame("E") + timer_frame(3) + frame("X"))
         session.declare_recording_point("dsp.fft", "Diagnostic", "cat")
         session.ready()
-        ticks = session.ticks()
-        next(ticks)
+        activations = session.activations()
+        next(activations)
         self.assertEqual(session.record("dsp.fft", b"payload"), RecordResult.DISABLED)
-        next(ticks)
+        next(activations)
         self.assertTrue(session.recording_enabled("dsp.fft"))
         self.assertEqual(session.record("dsp.fft", b"a" * MAX_TICK_BYTES), RecordResult.DROPPED)
         self.assertEqual(session.record("dsp.fft", b"payload"), RecordResult.QUEUED)
-        next(ticks)
+        next(activations)
         self.assertFalse(session.recording_enabled("dsp.fft"))
         with self.assertRaises(StopIteration):
-            next(ticks)
+            next(activations)
         self.assertEqual(self.output.getvalue().count(frame("C", port_data("dsp.fft", b"payload"))), 1)
-        with self.assertRaisesRegex(RuntimeError, "active tick"):
+        with self.assertRaisesRegex(RuntimeError, "active callback"):
             session.record("dsp.fft", b"payload")
 
     def test_unknown_and_duplicate_activation_is_rejected(self):
         for active in (b"other", b"dsp.fft\0dsp.fft", b"dsp.fft\0"):
-            session = self.session(frame("E", active) + frame("T"))
+            session = self.session(frame("E", active) + timer_frame(1))
             session.declare_recording_point("dsp.fft", "Diagnostic", "cat")
             session.ready()
             with self.subTest(active=active), self.assertRaisesRegex(ValueError, "active recording"):
-                next(session.ticks())
+                next(session.activations())
 
     def test_disabled_typed_point_never_encodes_and_wrong_type_is_rejected(self):
         class Diagnostic: pass
@@ -62,7 +64,7 @@ class RecordingRegistryTests(unittest.TestCase):
             description=lambda classes: "catalogue", prepare=lambda *args: object(), encode=Mock()))
         session = self.session()
         session.config.update(inputs={}, outputs={})
-        ctx = CallbackContext(session, "source", {}, {}, codec)
+        ctx = ComponentContext(session, "source", {}, {}, codec)
         ctx.declare_recording_point("dsp.fft", Diagnostic)
         ctx._active = True
         self.assertEqual(ctx.record("dsp.fft", Diagnostic()), RecordResult.DISABLED)

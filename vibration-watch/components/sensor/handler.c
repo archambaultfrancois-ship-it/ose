@@ -46,7 +46,8 @@ static int on_start(OseContext *ctx) {
     return ose_logf(ctx, OSE_LOG_INFO, "lifecycle", "Sensor started");
 }
 
-static int on_tick(OseContext *ctx) {
+static int on_clock(OseContext *ctx, const Input_clock *input) {
+    (void)input;
     const SensorSettings *p = parameters_signal(ctx);
     if (!apply_settings(ctx, p)) return 0;
     double level = p->amplitude + p->ramp_per_second * ose_now(ctx);
@@ -61,7 +62,7 @@ static int on_tick(OseContext *ctx) {
     message.sample_rate_hz = p->sample_rate_hz;
     message.samples_count = count;
     message.samples = samples;
-    if (!publish_signal(ctx, &message)) return 0;
+    if (!publish_signal_with_id(ctx, &message, message.sequence)) return 0;
     if (message.sequence == 1 || message.sequence % 10 == 0)
         return ose_logf(ctx, OSE_LOG_DEBUG, "acquisition",
             "Published signal: machine=%" PRIu32 " sequence=%" PRIu64
@@ -78,5 +79,5 @@ static int on_stop(OseContext *ctx) {
 }
 
 const ComponentCallbacks component_callbacks = {
-    .on_start = on_start, .on_tick = on_tick, .on_stop = on_stop
+    .on_start = on_start, .on_clock = on_clock, .on_stop = on_stop
 };

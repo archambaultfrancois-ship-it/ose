@@ -29,21 +29,21 @@ class LogStreamTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(.02)
 
     async def test_local_and_distributed_sdk_cli_stream_and_retention_after_disconnect(self):
-        code = '''from ose.execution.component import ComponentSession
-s = ComponentSession(auto_ready=False, timed_ticks=True)
+        code = '''from ose.execution.input_process import InputSession
+s = InputSession(auto_ready=False)
 s.log('INFO', 'started', 'lifecycle')
 s.ready()
-for _ in s.ticks():
+for input in s.activations():
     s.log('FATAL', 'Échec moteur', 'detection')
 s.log('INFO', 'stopped', 'lifecycle')
 '''
         with tempfile.TemporaryDirectory() as directory:
             for distributed in (False, True):
                 with self.subTest(distributed=distributed):
-                    plan = dict(sdl_root=os.environ['SDL_ROOT'], execution='distributed' if distributed else 'local',
+                    plan = dict(version=2, sdl_root=os.environ['SDL_ROOT'], execution='distributed' if distributed else 'local',
                         max_frame=1024**2, max_datagram=1200, subscriptions=[], components={'source': dict(
-                            command=[sys.executable, '-c', code], cwd=directory, inputs={}, outputs={},
-                            trigger=dict(mode='periodic', period_ms=50))})
+                            command=[sys.executable, '-c', code], cwd=directory, execution_model=2,
+                            inputs={'clock': dict(kind='timer', timer=dict(mode='periodic', delay=.05))}, outputs={})})
                     server = Coordinator(plan) if distributed else Broker(plan)
                     await server.start()
                     component = Worker(plan, 'source', '127.0.0.1', server.port) if distributed else Adapter(plan, 'source')
@@ -84,18 +84,18 @@ s.log('INFO', 'stopped', 'lifecycle')
                         await server.close()
 
     async def test_fatal_startup_deposit_survives_failed_initialization(self):
-        code = '''from ose.execution.component import ComponentSession
-s = ComponentSession(auto_ready=False, timed_ticks=True)
+        code = '''from ose.execution.input_process import InputSession
+s = InputSession(auto_ready=False)
 s.log('FATAL', 'startup failed', 'lifecycle')
 raise SystemExit(1)
 '''
         with tempfile.TemporaryDirectory() as directory:
             for distributed in (False, True):
                 with self.subTest(distributed=distributed):
-                    plan = dict(sdl_root=os.environ['SDL_ROOT'], execution='distributed' if distributed else 'local',
+                    plan = dict(version=2, sdl_root=os.environ['SDL_ROOT'], execution='distributed' if distributed else 'local',
                         max_frame=1024**2, max_datagram=1200, subscriptions=[], components={'source': dict(
-                            command=[sys.executable, '-c', code], cwd=directory, inputs={}, outputs={},
-                            trigger=dict(mode='periodic', period_ms=50))})
+                            command=[sys.executable, '-c', code], cwd=directory, execution_model=2,
+                            inputs={'clock': dict(kind='timer', timer=dict(mode='periodic', delay=.05))}, outputs={})})
                     server = Coordinator(plan) if distributed else Broker(plan)
                     await server.start()
                     component = Worker(plan, 'source', '127.0.0.1', server.port) if distributed else Adapter(plan, 'source')

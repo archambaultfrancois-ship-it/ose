@@ -11,13 +11,14 @@ from ose.codec.sdl2 import SDL2
 from ose.execution.ipc import frame, unpack_port
 from ose.recording.component import declaration
 from tests.internal_recording import build_component
+from tests.component_driver import timer_frame
 
 SDL_ROOT = os.environ.get("SDL_ROOT")
 
 
 def check_component(test, plan, codec):
-    events = frame("T") + frame("E", b"dsp.fft.intermediaire\0dsp.etat") + frame("T") + \
-             frame("E", b"dsp.etat") + frame("T") + frame("E") + frame("T") + frame("X")
+    events = timer_frame(1) + frame("E", b"dsp.fft.intermediaire\0dsp.etat") + timer_frame(2) + \
+             frame("E", b"dsp.etat") + timer_frame(3) + frame("E") + timer_frame(4) + frame("X")
     node = plan["components"]["source"]
     result = subprocess.run(node["command"], input=frame("I", json.dumps(node).encode()) + events,
                             capture_output=True, timeout=15, cwd=node["cwd"])
@@ -27,6 +28,7 @@ def check_component(test, plan, codec):
         size, = struct.unpack(">I", stream.read(4)); body = stream.read(size)
         frames.append((chr(body[0]), body[1:]))
     test.assertEqual([op for op, _ in frames], ["N", "N", "R", "F", "C", "C", "F", "C", "F", "F"])
+    test.assertEqual(next(body for op, body in frames if op == 'R'), b'\2')
     points = dict(declaration(body) for op, body in frames if op == "N")
     test.assertEqual(points["dsp.fft.intermediaire"]["description"], "Spectre avant filtrage")
     samples = []

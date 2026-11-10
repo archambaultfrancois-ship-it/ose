@@ -1,5 +1,6 @@
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.math.BigInteger;
 import org.sdlose.client.Client;
 import sdl.globaltypes.measurement.Measurement;
 public class ExternalProbe {
@@ -22,6 +23,36 @@ public class ExternalProbe {
     if (!done.await(5, TimeUnit.SECONDS)) throw new Exception("delivery timed out");
     sub.stats(); sub.unsubscribe();
     if (!sub.waitClosed(3000)) throw new Exception("workers did not stop"); sub.close(); sub.close();
+   }
+   BigInteger maximum = BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE);
+   BigInteger[] identities = {null, BigInteger.ZERO, BigInteger.ONE.shiftLeft(53).add(BigInteger.ONE), maximum};
+   for (boolean udp : new boolean[]{false, true}) {
+    for (int index = 0; index < identities.length; ++index) {
+     final BigInteger expected = identities[index];
+     String topic = "java.ids." + udp + "." + index;
+     Client.Publisher<Measurement> ids = client.publisher(topic, Measurement.class);
+     final CountDownLatch done = new CountDownLatch(1);
+     Client.Options options = Client.Options.fifo();
+     options.udp = udp; options.ackReceived = true; options.maxRetries = 2;
+     Client.Subscription sub = client.subscribe(topic, Measurement.class, options, new Client.Callback<Measurement>() {
+      public void onMessage(Measurement value, Client.MessageInfo info) throws Exception {
+       if (expected == null ? info.appId != null : !expected.equals(info.appId)) throw new Exception("incorrect application ID");
+       done.countDown();
+      }
+     });
+     Measurement value = new Measurement(); value.sequence = -1; value.value = 3.5;
+     if (expected == null) ids.publish(value); else ids.publish(value, expected);
+     if (!done.await(5, TimeUnit.SECONDS)) throw new Exception("ID delivery timed out");
+     sub.unsubscribe(); if (!sub.waitClosed(3000)) throw new Exception("ID workers did not stop");
+     sub.close(); ids.close();
+    }
+   }
+   Measurement invalid = new Measurement(); invalid.sequence = 1; invalid.value = 1.;
+   for (BigInteger id : new BigInteger[]{BigInteger.valueOf(-1), BigInteger.ONE.shiftLeft(64)}) {
+    try { publisher.publish(invalid, id); throw new AssertionError("invalid ID accepted"); }
+    catch (java.io.IOException expected) {
+     if (!expected.getMessage().contains("uint64")) throw expected;
+    }
    }
    if (!client.listTopics().contains("java.")) throw new Exception("missing topic");
    Client broken = Client.connect("127.0.0.1", Integer.parseInt(args[0]), "java-failure");

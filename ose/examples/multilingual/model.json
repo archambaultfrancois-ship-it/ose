@@ -1,101 +1,135 @@
 {
-  "version": 1,
+  "version": 2,
   "schemas": "schemas",
   "components": {
     "source": {
-      "inputs": {},
+      "inputs": {
+        "clock": {
+          "kind": "timer",
+          "timer": {
+            "mode": "periodic",
+            "delay": 0.1
+          },
+          "activates": {
+            "timeout": [
+              "value"
+            ]
+          }
+        }
+      },
       "outputs": {
         "value": {
           "root": "Measurement"
         }
-      },
-      "trigger": {
-        "mode": "periodic",
-        "period_ms": 100
       }
     },
     "c_worker": {
       "inputs": {
         "input": {
-          "root": "Measurement"
+          "root": "Measurement",
+          "activates": {
+            "message": [
+              "value"
+            ]
+          }
         }
       },
       "outputs": {
         "value": {
           "root": "Measurement"
         }
-      },
-      "trigger": {
-        "mode": "on_change"
       }
     },
     "rust_worker": {
       "inputs": {
         "input": {
-          "root": "Measurement"
+          "root": "Measurement",
+          "activates": {
+            "message": [
+              "value"
+            ]
+          }
         }
       },
       "outputs": {
         "value": {
           "root": "Measurement"
         }
-      },
-      "trigger": {
-        "mode": "on_change"
       }
     },
     "java_worker": {
       "inputs": {
         "input": {
-          "root": "Measurement"
+          "root": "Measurement",
+          "activates": {
+            "message": [
+              "value"
+            ]
+          }
         }
       },
       "outputs": {
         "value": {
           "root": "Measurement"
         }
-      },
-      "trigger": {
-        "mode": "on_change"
       }
     },
     "ada_worker": {
       "inputs": {
         "input": {
-          "root": "Measurement"
+          "root": "Measurement",
+          "activates": {
+            "message": [
+              "value"
+            ]
+          }
         }
       },
       "outputs": {
         "value": {
           "root": "Measurement"
         }
-      },
-      "trigger": {
-        "mode": "on_change"
       }
     },
     "join": {
       "inputs": {
         "c_worker": {
-          "root": "Measurement"
+          "root": "Measurement",
+          "activates": {
+            "message": [
+              "value"
+            ]
+          }
         },
         "rust_worker": {
-          "root": "Measurement"
+          "root": "Measurement",
+          "activates": {
+            "message": [
+              "value"
+            ]
+          }
         },
         "java_worker": {
-          "root": "Measurement"
+          "root": "Measurement",
+          "activates": {
+            "message": [
+              "value"
+            ]
+          }
         },
         "ada_worker": {
-          "root": "Measurement"
+          "root": "Measurement",
+          "activates": {
+            "message": [
+              "value"
+            ]
+          }
         }
       },
       "outputs": {
         "value": {
           "root": "Measurement"
         }
-      },
-      "trigger": {
-        "mode": "on_change"
       }
     }
   },

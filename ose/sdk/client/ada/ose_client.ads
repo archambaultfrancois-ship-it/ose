@@ -29,6 +29,8 @@ package Ose_Client is
    type Message_Info is record
       Publication_Id, Topic, Epoch : Ada.Strings.Unbounded.Unbounded_String;
       Sequence : Interfaces.Unsigned_64;
+      Has_App_Id : Boolean := False;
+      App_Id : Interfaces.Unsigned_64 := 0;
    end record;
 private
    subtype Handle is System.Address;

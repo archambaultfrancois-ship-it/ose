@@ -6,7 +6,7 @@ import { layoutGraph } from '../src/layout'
 describe('auto layout port order', () => {
   it('places branch 1 above branch 2 to match the visible alarm input order', async () => {
     const port = { root: 'Reading' }
-    const model = { components: {
+    const model = { version: 2, components: {
       sensor_1: { inputs: {}, outputs: { signal: port } },
       analyzer_1: { inputs: { input: port }, outputs: { result: port } },
       sensor_2: { inputs: {}, outputs: { signal: port } },

@@ -3,7 +3,10 @@ export function layoutGraph(nodes: any[], edges: any[]) {
     id: 'root',
     layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.spacing.nodeNode': '70', 'elk.layered.spacing.nodeNodeBetweenLayers': '100' },
     children: nodes.map(node => ({
-      id: node.id, width: 270, height: 80 + (node.data.inputs.length + node.data.outputs.length) * 34,
+      id: node.id, width: node.data.kind === 'component' ? 400 : 270,
+      height: node.data.kind === 'component'
+        ? 80 + Math.max(node.data.inputs.length, node.data.outputs.length, 1) * 64
+        : 80 + (node.data.inputs.length + node.data.outputs.length) * 34,
       layoutOptions: { 'elk.portConstraints': 'FIXED_ORDER' },
       // ELK numbers ports clockwise: west-side inputs run bottom to top,
       // whereas our component rows are rendered top to bottom on both sides.

@@ -3,6 +3,8 @@
 Two Python detectors read individual `DetectionParams` blocks and a common
 `SafetySettings` block. They print their effective settings whenever these change.
 The example needs only Python and the sibling SDL checkout.
+Each detector uses an explicit 100 ms timer input and `on_clock(ctx, input)`;
+the application model is version 2 and the deployment/scenario remain version 1.
 
 ```sh
 cd ose/examples/shared_parameters

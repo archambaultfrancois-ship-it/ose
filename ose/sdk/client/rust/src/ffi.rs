@@ -9,6 +9,14 @@ fn cstring(s: impl AsRef<str>) -> CString {
     CString::new(s.as_ref().replace('\0', "\\0")).unwrap()
 }
 fn guard<T: Default>(f: impl FnOnce() -> Result<T>) -> T {
+    guard_or(T::default(), f)
+}
+// Raw pointers did not implement Default on the supported Rust 1.85 toolchain.
+// Keep the C ABI's null failure value explicit, independent of that trait.
+fn guard_pointer<T>(f: impl FnOnce() -> Result<*mut T>) -> *mut T {
+    guard_or(std::ptr::null_mut(), f)
+}
+fn guard_or<T>(failure: T, f: impl FnOnce() -> Result<T>) -> T {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
         Ok(Ok(v)) => v,
         other => {
@@ -17,7 +25,7 @@ fn guard<T: Default>(f: impl FnOnce() -> Result<T>) -> T {
                 _ => "internal: SDK panic".into(),
             };
             ERROR.with(|e| *e.borrow_mut() = cstring(msg));
-            T::default()
+            failure
         }
     }
 }
@@ -36,7 +44,7 @@ pub unsafe extern "C" fn cenv_parameters_connect(
     certificate: *const c_char,
     key: *const c_char,
 ) -> *mut parameters::ParameterClient {
-    guard(|| {
+    guard_pointer(|| {
         let result = if ca.is_null() && certificate.is_null() && key.is_null() {
             parameters::ParameterClient::connect(
                 string(host)?,
@@ -73,7 +81,7 @@ pub unsafe extern "C" fn cenv_parameters_request(
     payload: *const u8,
     size: usize,
 ) -> *mut ParameterPacket {
-    guard(|| {
+    guard_pointer(|| {
         let client = client
             .as_ref()
             .ok_or_else(|| Error::new("argument", "NULL parameter client"))?;
@@ -105,7 +113,7 @@ pub unsafe extern "C" fn cenv_parameter_path_request(
     payload: *const u8,
     size: usize,
 ) -> *mut ParameterPacket {
-    guard(|| {
+    guard_pointer(|| {
         let client = client
             .as_ref()
             .ok_or_else(|| Error::new("argument", "NULL parameter client"))?;
@@ -125,7 +133,7 @@ pub unsafe extern "C" fn cenv_parameter_packet_text(
     packet: *const ParameterPacket,
     key: *const c_char,
 ) -> *mut c_char {
-    guard(|| {
+    guard_pointer(|| {
         let packet = packet
             .as_ref()
             .ok_or_else(|| Error::new("argument", "NULL parameter packet"))?;
@@ -182,7 +190,7 @@ pub unsafe extern "C" fn cenv_set_error(code: *const c_char, message: *const c_c
 /// Copy UTF-8 into an owned ABI string for language bridges.
 #[no_mangle]
 pub unsafe extern "C" fn cenv_copy_string(p: *const c_char) -> *mut c_char {
-    guard(|| Ok(cstring(string(p)?).into_raw()))
+    guard_pointer(|| Ok(cstring(string(p)?).into_raw()))
 }
 #[no_mangle]
 pub unsafe extern "C" fn cenv_string_free(p: *mut c_char) {
@@ -196,7 +204,7 @@ pub unsafe extern "C" fn cenv_connect(
     port: u16,
     id: *const c_char,
 ) -> *mut Client {
-    guard(|| {
+    guard_pointer(|| {
         Ok(Box::into_raw(Box::new(Client::connect(
             string(host)?,
             port,
@@ -227,7 +235,7 @@ pub unsafe extern "C" fn cenv_run(p: *mut Client) -> c_int {
 }
 #[no_mangle]
 pub unsafe extern "C" fn cenv_list_topics(p: *mut Client) -> *mut c_char {
-    guard(|| {
+    guard_pointer(|| {
         Ok(cstring(
             p.as_ref()
                 .ok_or_else(|| Error::new("argument", "NULL client"))?
@@ -272,11 +280,29 @@ pub unsafe extern "C" fn cenv_publish_envelope(
     data: *const u8,
     size: usize,
 ) -> *mut c_char {
-    guard(|| {
-        let r = p
+    publish_envelope(p, topic, data, size, None)
+}
+#[no_mangle]
+pub unsafe extern "C" fn cenv_publish_envelope_with_id(
+    p: *mut Client,
+    topic: *const c_char,
+    data: *const u8,
+    size: usize,
+    id: u64,
+) -> *mut c_char {
+    publish_envelope(p, topic, data, size, Some(id))
+}
+unsafe fn publish_envelope(
+    p: *mut Client, topic: *const c_char, data: *const u8, size: usize, app_id: Option<u64>,
+) -> *mut c_char {
+    guard_pointer(|| {
+        let client = p
             .as_ref()
-            .ok_or_else(|| Error::new("argument", "NULL client"))?
-            .publish_envelope(string(topic)?, bytes(data, size)?)?;
+            .ok_or_else(|| Error::new("argument", "NULL client"))?;
+        let r = match app_id {
+            Some(id) => client.publish_envelope_with_id(string(topic)?, bytes(data, size)?, id)?,
+            None => client.publish_envelope(string(topic)?, bytes(data, size)?)?,
+        };
         Ok(cstring(
             object([
                 ("publication_id", r.publication_id.into()),
@@ -298,6 +324,8 @@ pub struct Info {
     topic: *const c_char,
     epoch: *const c_char,
     sequence: u64,
+    has_app_id: c_int,
+    app_id: u64,
 }
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -339,7 +367,7 @@ pub unsafe extern "C" fn cenv_subscribe_raw(
     hooks: Hooks,
 ) -> *mut Subscription {
     let state = Arc::new(Foreign(hooks)); // Takes ownership, including on failure.
-    guard(|| {
+    guard_pointer(|| {
         let c = p
             .as_ref()
             .ok_or_else(|| Error::new("argument", "NULL client"))?;
@@ -409,6 +437,8 @@ pub unsafe extern "C" fn cenv_subscribe_raw(
                     topic: topic.as_ptr(),
                     epoch: epoch.as_ptr(),
                     sequence: i.sequence,
+                    has_app_id: i.app_id.is_some() as c_int,
+                    app_id: i.app_id.unwrap_or(0),
                 };
                 if call(cb.0.user, value.pointer, &info) == 0 {
                     return Err(Error::new("callback_failed", "C callback returned zero"));
@@ -444,7 +474,7 @@ pub unsafe extern "C" fn cenv_subscription_free(s: *mut Subscription) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn cenv_subscription_stats(s: *mut Subscription) -> *mut c_char {
-    guard(|| {
+    guard_pointer(|| {
         Ok(cstring(
             s.as_ref()
                 .ok_or_else(|| Error::new("argument", "NULL subscription"))?
@@ -453,4 +483,35 @@ pub unsafe extern "C" fn cenv_subscription_stats(s: *mut Subscription) -> *mut c
         )
         .into_raw())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ffi_errors_return_null_or_zero_and_keep_an_error_message() {
+        unsafe {
+            assert!(cenv_copy_string(std::ptr::null()).is_null());
+            assert!(CStr::from_ptr(cenv_last_error()).to_str().unwrap().contains("NULL string"));
+            assert!(cenv_list_topics(std::ptr::null_mut()).is_null());
+            assert_eq!(cenv_run(std::ptr::null_mut()), 0);
+            assert!(CStr::from_ptr(cenv_last_error()).to_str().unwrap().contains("NULL client"));
+            let source = CString::new("copied UTF-8: é").unwrap();
+            let copy = cenv_copy_string(source.as_ptr());
+            drop(source);
+            assert!(!copy.is_null());
+            assert_eq!(CStr::from_ptr(copy).to_str().unwrap(), "copied UTF-8: é");
+            cenv_string_free(copy);
+        }
+    }
+
+    #[test]
+    fn panics_are_contained_for_pointer_and_status_results() {
+        assert!(guard_pointer::<u8>(|| panic!("injected pointer panic")).is_null());
+        assert_eq!(guard::<c_int>(|| panic!("injected status panic")), 0);
+        unsafe {
+            assert_eq!(CStr::from_ptr(cenv_last_error()).to_str().unwrap(), "internal: SDK panic");
+        }
+    }
 }

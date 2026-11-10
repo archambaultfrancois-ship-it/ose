@@ -1,4 +1,5 @@
 """Publish preflighted recordings to a live local broker or coordinator."""
+from ose.execution.plan import read_plan
 import asyncio
 from collections import Counter
 from contextlib import asynccontextmanager
@@ -53,9 +54,10 @@ async def publisher(plan, topics, *, host, port, distributed=False, context=None
                 desc = plan["external_topics"][topic]
                 await client.request("declare_publisher", desc["catalogue"].encode(), topic=topic, root=desc["root"])
 
-        async def publish(topic, body):
-            result, _ = (await client.request("external_publish", body, token=token, topic=topic)
-                         if distributed else await client.request("publish", body, topic=topic))
+        async def publish(topic, body, *, app_id=None):
+            extra = {"app_id": app_id} if app_id is not None else {}
+            result, _ = (await client.request("external_publish", body, token=token, topic=topic, **extra)
+                         if distributed else await client.request("publish", body, topic=topic, **extra))
             return result["delivery"]
         yield publish
     finally:
@@ -155,7 +157,9 @@ async def play(events, publish, *, speed=1, duration=None, loops=1, interactive=
                 break
             status["last_lag_seconds"] = lag
             status["max_lag_seconds"] = max(lag, status["max_lag_seconds"])
-            deliveries.update((await publish(event.topic, event.read())).values())
+            app_id = getattr(event, "app_id", None)
+            extra = {"app_id": app_id} if app_id is not None else {}
+            deliveries.update((await publish(event.topic, event.read(), **extra)).values())
             status["published"] += 1
             if (index + 1) % len(events) == 0:
                 status["completed_loops"] += 1
@@ -187,7 +191,7 @@ async def run(path, plan_path, duration=None, *, mappings, speed=1, start_ns=Non
     if duration is not None:
         seconds_ns(duration, positive=True)
     plan_path, path = Path(plan_path).resolve(), Path(path).resolve()
-    plan = json.loads(plan_path.read_text())
+    plan = read_plan(plan_path)
     from ose.execution.identity import identify
     identify("replay", plan)
     if path in (plan_path, (Path(plan["build_dir"]) / "last-status.json").resolve()):

@@ -1,7 +1,7 @@
 import asyncio
 import json
 import struct
-from ose.transport.protocol import encode, decode
+from ose.transport.protocol import encode, decode, PREFIX_SIZE
 
 
 class RemoteError(ValueError):
@@ -31,7 +31,7 @@ class _FrameReader(asyncio.StreamReader):
                 self._incomplete(4)
             await self._wait_for_data('read_frame')
         size = struct.unpack_from('>I', self._buffer)[0]
-        if not 7 <= size <= limit:
+        if not PREFIX_SIZE <= size <= limit:
             del self._buffer[:4]
             self._maybe_resume_transport()
             raise ValueError('invalid TCP frame length')
@@ -77,7 +77,7 @@ class TCP:
         if isinstance(self.reader, _FrameReader):
             return await self.reader.read_frame(self.limit)
         size = struct.unpack(">I", await self.reader.readexactly(4))[0]
-        if not 7 <= size <= self.limit:
+        if not PREFIX_SIZE <= size <= self.limit:
             raise ValueError("invalid TCP frame length")
         return decode(await self.reader.readexactly(size), self.limit)
 

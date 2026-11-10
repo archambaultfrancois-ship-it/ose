@@ -11,15 +11,17 @@ from ose.recording.replay import recording_reader, run
 
 
 HANDLERS = {
-    'python': ('sink.py', '''def on_input(ctx, message):
+    'python': ('sink.py', '''def on_input(ctx, input):
+    message = input.message
     message.value += 1.0
-    ctx.publish_output(message)
+    ctx.publish_output(message, id=input.app_id)
 '''),
     'c': ('sink.c', '''#include "component.h"
-static int on_input(OseContext *ctx, const Measurement *message) {
-    Measurement result = *message;
+static int on_input(OseContext *ctx, const Input_input *input) {
+    Measurement result = *input->message;
     result.value += 1.0;
-    return publish_output(ctx, &result);
+    return input->meta.has_app_id ? publish_output_with_id(ctx, &result, input->meta.app_id)
+                                  : publish_output(ctx, &result);
 }
 const ComponentCallbacks component_callbacks = { .on_input = on_input };
 '''),
@@ -27,31 +29,35 @@ const ComponentCallbacks component_callbacks = { .on_input = on_input };
 use crate::types::measurement::Measurement;
 #[derive(Default)] pub struct Handler;
 impl Callbacks for Handler {
-    fn on_input(&mut self, ctx: &mut Context, message: &Measurement) -> Result {
-        let mut result = message.clone();
+    fn on_input(&mut self, ctx: &mut Context, input: &crate::container::InputReference<Measurement>) -> Result {
+        let mut result = input.message.as_ref().ok_or("missing message")?.clone();
         result.value += 1.0;
-        ctx.publish_output(&result)
+        match input.app_id {
+            Some(id) => ctx.publish_output_with_id(&result, id),
+            None => ctx.publish_output(&result),
+        }
     }
 }
 '''),
     'java': ('Sink.java', '''import org.sdlose.generated.sink.API;
 import sdl.globaltypes.measurement.Measurement;
 public final class Sink extends API.Handler {
-    public void on_input(API.Context ctx, Measurement message) throws Exception {
+    public void on_input(API.Context ctx, org.sdlose.InputProtocol.Reference<Measurement> input) throws Exception {
+        Measurement message = input.message;
         message.value += 1.0;
-        ctx.publish_output(message);
+        ctx.publish_output(message, input.appId);
     }
 }
 '''),
     'ada': ('sink_handler.adb', '''with SDL_measurement; with SDL_Runtime;
 package body Sink_Handler is
     overriding procedure On_input (Self : in out Object; Ctx : in out Ose_sink.Context;
-                                  Message : not null Ose_sink.Input_input) is
+                                  Input : Ose_sink.Input_input) is
         use type SDL_Runtime.Float64;
-        Result : SDL_measurement.T_Measurement := Message.all;
+        Result : SDL_measurement.T_Measurement := Input.Message;
     begin
         Result.F_value := Result.F_value + 1.0;
-        Ose_sink.Publish_output (Ctx, Result);
+        Ose_sink.Publish_output (Ctx, Result, Input.Meta.App_Id);
     end;
 end Sink_Handler;
 '''),
@@ -68,12 +74,12 @@ async def check_generated_replay(case, root, sdl_root, language):
 package Sink_Handler is
     type Object is new Ose_sink.Handler with null record;
     overriding procedure On_input (Self : in out Object; Ctx : in out Ose_sink.Context;
-                                  Message : not null Ose_sink.Input_input);
+                                  Input : Ose_sink.Input_input);
 end Sink_Handler;
 ''')
     desc = dict(root='Measurement')
-    model = dict(version=1, schemas='measurement.sdl', external_topics={'external.signal': desc},
-        components={'sink': dict(inputs={'input': desc}, outputs={'output': desc}, trigger={'mode': 'on_change'})},
+    model = dict(version=2, schemas='measurement.sdl', external_topics={'external.signal': desc},
+        components={'sink': dict(inputs={'input': dict(desc, activates={'message': ['output']})}, outputs={'output': desc})},
         subscriptions=[dict(id='signal', from_topic='external.signal', to='sink.input')])
     container = dict(language=language, handler=handler)
     if language == 'java': container['class'] = 'Sink'

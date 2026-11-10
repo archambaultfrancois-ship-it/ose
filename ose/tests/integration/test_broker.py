@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import json
 import os
 from pathlib import Path
 import struct
@@ -31,7 +32,7 @@ class BrokerTests(unittest.IsolatedAsyncioTestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.codec = SDL2(SDL_ROOT)
         port = {"root": "Measurement", "catalogue": CATALOGUE, "catalogue_id": self.codec.identity(CATALOGUE)}
-        self.plan = {"version": 1, "sdl_root": str(Path(SDL_ROOT).resolve()), "max_frame": 1024*1024,
+        self.plan = {"version": 2, "sdl_root": str(Path(SDL_ROOT).resolve()), "max_frame": 1024*1024,
             "max_datagram": 1200, "components": {"source": {"inputs": {}, "outputs": {"output": port}},
                 "sink": {"inputs": {"input": port}, "outputs": {}}},
             "subscriptions": [{"id": "link", "from": "source.output", "to": "sink.input", "policy": Policy().to_dict()}]}
@@ -78,6 +79,23 @@ class BrokerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([self.codec.validate(CATALOGUE, "Measurement", body).fields["sequence"] for _, body in records], [3, 1, 2])
         _, text = await client.request("catalogue", catalogue_id=self.codec.identity(CATALOGUE))
         self.assertEqual(text.decode(), CATALOGUE)
+
+    async def test_obsolete_cenv_is_rejected_on_tcp_and_udp(self):
+        await self.start(Policy())
+        metadata = json.dumps(dict(op="state", request=1)).encode()
+        obsolete = b"CE\x01" + struct.pack(">I", len(metadata)) + metadata
+        reader, writer = await asyncio.open_connection("127.0.0.1", self.broker.port)
+        try:
+            writer.write(struct.pack(">I", len(obsolete)) + obsolete)
+            await writer.drain()
+            self.assertEqual(await asyncio.wait_for(reader.read(1), 2), b"")
+        finally:
+            writer.close()
+            await writer.wait_closed()
+        errors = self.broker.udp.errors
+        self.broker.udp.transport.sendto(obsolete, self.broker.udp.address)
+        await eventually(lambda: self.broker.udp.errors == errors + 1)
+        self.assertFalse(self.broker.ready)
 
     async def test_single_subscriber_publications_leave_delivery_running(self):
         await self.start(Policy(capacity=1))

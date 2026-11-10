@@ -143,9 +143,14 @@ class InstallTests(unittest.TestCase):
     def test_java_selection_retains_shared_native_client_dependencies(self):
         self.assertEqual(self.install('--languages', 'java', '--features', 'none'), 0, self.errors)
         for path in ('client/java/org/sdlose/client/Client.java', 'client/c/ose_client.h',
-                     'client/rust/Cargo.toml', 'java/org/sdlose/Component.java'):
+                     'client/rust/Cargo.toml', 'java/org/sdlose/Component.java',
+                     'java/org/sdlose/InputProtocol.java', 'client/rust/tests/fixtures/cenv2.json',
+                     'input-protocol.md', 'protocol.md', 'client/protocol.md'):
             self.assertTrue((self.prefix / 'framework/ose/sdk' / path).is_file(), path)
         self.assertFalse((self.prefix / 'framework/ose/sdk/ada').exists())
+        for name in ('cenv2.md', 'cenv2-transition.md', 'model-v2-migration.md',
+                     'c-inputs.md', 'rust-inputs.md', 'java-inputs.md', 'ada-inputs.md'):
+            self.assertTrue((self.prefix / 'framework/ose/docs' / name).is_file(), name)
 
     def test_malformed_compiler_environment_is_only_a_warning(self):
         with patch.dict(os.environ, {'CC': "'", 'CARGO': "'", 'JAVAC': "'"}):
@@ -222,7 +227,10 @@ class InstallTests(unittest.TestCase):
     def test_release_has_no_application_tests_caches_or_frontend_build_tools(self):
         names = list(json.loads((self.release / 'manifest.json').read_text())['files'])
         self.assertFalse(any('vibration-watch' in name for name in names))
-        self.assertFalse(any('/tests/' in name or '__pycache__' in name or '/frontend/' in name for name in names))
+        sdk_vectors = {'framework/ose/sdk/client/rust/tests/fixtures/cenv2.json'}
+        self.assertTrue(sdk_vectors.issubset(names))
+        self.assertFalse(any('/tests/' in name or '__pycache__' in name or '/frontend/' in name
+                             for name in names if name not in sdk_vectors))
 
     def test_python_absence_still_installs_resources_and_can_be_repaired(self):
         # A restricted PATH exposes only shell utilities, deliberately no Python.

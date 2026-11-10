@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from ose.cli import create_parser
-from ose.execution.component import ComponentSession
+from ose.execution.input_process import InputSession
 from ose.execution.ipc import frame
 from ose.execution.logs import ComponentLogs, LogStore, log_body, TRUNCATION_SUFFIX
 
@@ -19,7 +19,7 @@ def entry(message='message', level='INFO', logger='runtime'):
 class LogTests(unittest.TestCase):
     def test_python_formatting_reports_errors_before_depositing(self):
         output = io.BytesIO()
-        session = ComponentSession(io.BytesIO(frame('I', b'{}')), output, auto_ready=False)
+        session = InputSession(io.BytesIO(frame('I', b'{}')), output, auto_ready=False)
         session.logf('FATAL', 'motor=%d rms=%.2f %%', 7, 1.25, logger='detection')
         raw = output.getvalue()
         queue = ComponentLogs(); queue.emit(raw[5:])
@@ -44,7 +44,7 @@ class LogTests(unittest.TestCase):
                     self.assertTrue(message.startswith(result['message'][:-len(TRUNCATION_SUFFIX)]))
                     self.assertNotIn('\ufffd', result['message'])
                 output = io.BytesIO()
-                session = ComponentSession(io.BytesIO(frame('I', b'{}')), output, auto_ready=False)
+                session = InputSession(io.BytesIO(frame('I', b'{}')), output, auto_ready=False)
                 session.logf('FATAL', '%s', message)
                 queue.emit(output.getvalue()[5:])
                 formatted, = queue.drain()
@@ -52,7 +52,7 @@ class LogTests(unittest.TestCase):
 
     def test_levels_utf8_and_python_sdk_frames(self):
         output = io.BytesIO()
-        session = ComponentSession(io.BytesIO(frame('I', b'{}')), output, auto_ready=False)
+        session = InputSession(io.BytesIO(frame('I', b'{}')), output, auto_ready=False)
         session.log('Fatal', 'Échec moteur', 'detection')
         raw = output.getvalue()
         self.assertEqual(struct.unpack('>I', raw[:4])[0], len(raw) - 4)
@@ -131,7 +131,7 @@ class LogTests(unittest.TestCase):
             self.assertTrue(args.follow)
 
 
-class CLogFormatTests(unittest.TestCase):
+class CComponentSdkTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -145,6 +145,33 @@ class CLogFormatTests(unittest.TestCase):
         command = [self.compiler, '-std=c99', '-Wall', '-Wextra', '-Werror=format', '-I', str(self.sdk), str(path)]
         command += ['-fsyntax-only'] if syntax else [str(self.sdk / 'ose_component.c'), '-lm', '-o', str(self.root / 'format')]
         return subprocess.run(command, capture_output=True, text=True, timeout=30)
+
+    def test_shared_parameter_update_parser_rejects_old_message_frames(self):
+        result = self.compile('''#include "ose_component.h"
+#include <assert.h>
+#include <string.h>
+int main(void) {
+    uint8_t data[] = {0, 5, 'v', 'a', 'l', 'u', 'e', 0, 0, 0, 3, 'c', 'a', 't', 1, 2};
+    OseEvent event = {'U', data, sizeof(data)};
+    const uint8_t *name, *catalogue, *payload;
+    size_t name_size, catalogue_size, payload_size, size;
+    assert(ose_input(&event, &name, &name_size, &catalogue, &catalogue_size, &payload, &payload_size));
+    assert(name_size == 5 && !memcmp(name, "value", 5));
+    assert(catalogue_size == 3 && !memcmp(catalogue, "cat", 3));
+    assert(payload_size == 2 && payload[0] == 1 && payload[1] == 2);
+    event.op = 'D';
+    assert(!ose_input(&event, &name, &name_size, &catalogue, &catalogue_size, &payload, &payload_size));
+    event.op = 'U';
+    for (size = 0; size < 14; ++size) {
+        event.size = size;
+        assert(!ose_input(&event, &name, &name_size, &catalogue, &catalogue_size, &payload, &payload_size));
+    }
+    return 0;
+}
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = subprocess.run([str(self.root / 'format')], capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_public_printf_signature_checks_argument_types(self):
         correct = self.compile('''#include "ose_callbacks.h"

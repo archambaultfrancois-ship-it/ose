@@ -93,6 +93,62 @@ class ExternalTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(CallbackFailed,'user failed'):
             await asyncio.wait_for(asyncio.to_thread(other.run),3)
 
+    async def test_application_ids_preserve_absence_zero_and_all_bits_over_tcp_and_udp(self):
+        producer = await self.client('id-producer')
+        consumer = await self.client('id-consumer')
+        identities = [None, 0, (1 << 64) - 1, 0, (1 << 53) + 1, (1 << 64) - 1, None]
+        for transport in ('tcp', 'udp'):
+            with self.subTest(transport=transport):
+                topic = 'ids.' + transport
+                publisher = await asyncio.to_thread(producer.publisher, topic, self.Message)
+                received, condition = [], threading.Condition()
+
+                def callback(value, info):
+                    with condition:
+                        received.append((value.sequence, info))
+                        condition.notify_all()
+
+                sub = await asyncio.to_thread(consumer.subscribe, topic, self.Message, callback,
+                    qos=Fifo(ack='received', retry=Retry(ack_timeout_ms=30)), transport=transport)
+                publications = []
+                for index, identity in enumerate(identities, 1):
+                    result = await asyncio.to_thread(publisher.publish, self.Message(sequence=index, value=3.5), id=identity)
+                    self.assertTrue(result.accepted)
+                    publications.append(result.publication_id)
+                    def delivered():
+                        with condition:
+                            return condition.wait_for(lambda: len(received) >= index, 3)
+                    self.assertTrue(await asyncio.to_thread(delivered))
+                self.assertEqual([value for value, _ in received], list(range(1, 8)))
+                self.assertEqual([info.app_id for _, info in received], identities)
+                self.assertEqual([info.publication_id for _, info in received], publications)
+                self.assertEqual(len(set(publications)), len(identities))
+                await asyncio.to_thread(sub.close)
+                # Retained latest state preserves the same optional metadata.
+                for identity in (0, (1 << 64) - 1, None):
+                    await asyncio.to_thread(publisher.publish, self.Message(sequence=9, value=3.5), id=identity)
+                    event, latest = threading.Event(), []
+                    def retain(value, info):
+                        latest.append(info.app_id)
+                        event.set()
+                    retained = await asyncio.to_thread(consumer.subscribe, topic, self.Message, retain,
+                        qos=Latest(ack='received', retry=Retry(ack_timeout_ms=30)), transport=transport)
+                    self.assertTrue(await asyncio.to_thread(event.wait, 3))
+                    self.assertEqual(latest, [identity])
+                    await asyncio.to_thread(retained.close)
+
+    async def test_invalid_application_ids_fail_before_publication_and_leave_the_client_usable(self):
+        client = await self.client('invalid-id')
+        publisher = await asyncio.to_thread(client.publisher, 'ids.invalid', self.Message)
+        initial = self.broker.sequence
+        for identity in (True, False, 1., -1, 1 << 64, '42'):
+            with self.subTest(identity=identity), self.assertRaises(ValueError):
+                await asyncio.to_thread(publisher.publish, self.Message(sequence=1, value=1.), id=identity)
+        self.assertEqual(self.broker.sequence, initial)
+        result = await asyncio.to_thread(publisher.publish, self.Message(sequence=1, value=1.), id=0)
+        self.assertTrue(result.accepted)
+        self.assertEqual(result.sequence, initial + 1)
+
     async def test_topic_routes_track_subscriptions_unsubscribe_and_disconnect(self):
         producer = await self.client('route-producer')
         first = await asyncio.to_thread(producer.publisher, 'first', self.Message)
@@ -227,9 +283,9 @@ class ExternalTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             (root/'schema.sdl').write_text('message Measurement {1: required uint64 sequence;2: required fl64 value;}')
-            (root/'handler.py').write_text('from schema import Measurement\ndef on_input(ctx, msg):\n    ctx.publish_result(Measurement(sequence=msg.sequence,value=msg.value*3))\n')
-            model=dict(version=1,schemas='schema.sdl',external_topics={'external.input':{'root':'Measurement'}},
-                components={'transform':dict(inputs={'input':{'root':'Measurement'}},outputs={'result':{'root':'Measurement'}},trigger={'mode':'on_change'})},
+            (root/'handler.py').write_text('from schema import Measurement\ndef on_input(ctx, input):\n    msg=input.message\n    ctx.publish_result(Measurement(sequence=msg.sequence,value=msg.value*3), id=input.app_id)\n')
+            model=dict(version=2,schemas='schema.sdl',external_topics={'external.input':{'root':'Measurement'}},
+                components={'transform':dict(inputs={'input':{'root':'Measurement','activates':{'message':['result']}}},outputs={'result':{'root':'Measurement'}})},
                 subscriptions=[{'id':'in','from_topic':'external.input','to':'transform.input'}])
             deployment=dict(version=1,components={'transform':{'container':{'language':'python','handler':'handler.py'}}})
             (root/'model.json').write_text(json.dumps(model));(root/'deployment.json').write_text(json.dumps(deployment))
@@ -279,11 +335,61 @@ class ExternalTests(unittest.IsolatedAsyncioTestCase):
         result=await asyncio.to_thread(replacement.publish,Extended(sequence=1,value=2.,extra=7))
         self.assertTrue(result.accepted)
 
+    async def test_contract_changes_are_discovered_on_an_existing_subscription(self):
+        producer = await self.client('dynamic-producer')
+        consumer = await self.client('dynamic-consumer')
+        publisher = await asyncio.to_thread(producer.publisher, 'dynamic', self.Message)
+        received, available = [], threading.Condition()
+
+        def callback(value, info):
+            with available:
+                received.append((value.sequence, value.value, info.publication_id))
+                available.notify_all()
+
+        subscription = await asyncio.to_thread(consumer.subscribe, 'dynamic', self.Message, callback)
+        self.assertEqual(consumer.catalogues, {})
+        api = self.codec.api
+
+        class Extended(api.SdlMessage):
+            _SDL_NAME = 'Measurement'
+            _SDL_DESCRIPTOR = 'SDL2|Measurement{1:uint64:sequence;2:fl64:value;3:uint32:extra;}'
+            _SDL_FIXED_SIZE = 20
+            _SDL_FIELDS = ((1, 'sequence', 'required', 'uint64', ()),
+                           (2, 'value', 'required', 'fl64', ()),
+                           (3, 'extra', 'required', 'uint32', ()))
+
+        publications = []
+        for number, message_type in enumerate((self.Message, Extended, self.Message), 1):
+            if number > 1:
+                await asyncio.to_thread(publisher.close)
+                publisher = await asyncio.to_thread(producer.publisher, 'dynamic', message_type)
+            fields = dict(sequence=number, value=float(number))
+            if message_type is Extended:
+                fields['extra'] = 7
+            result = await asyncio.to_thread(publisher.publish, message_type(**fields))
+            self.assertTrue(result.accepted)
+            publications.append(result.publication_id)
+
+            def wait_for_callback():
+                with available:
+                    return available.wait_for(lambda: len(received) >= number, 2)
+
+            self.assertTrue(await asyncio.to_thread(wait_for_callback))
+            # The same subscription changes its decoder per message catalogue,
+            # including when a previously seen catalogue returns on the route.
+            self.assertEqual(subscription.codec.decoder[0], message_type._SDL_DESCRIPTOR)
+
+        self.assertEqual(received, [(n, float(n), identity)
+                                    for n, identity in enumerate(publications, 1)])
+        self.assertEqual(set(consumer.catalogues),
+                         {self.codec.identity(CAT), self.codec.identity(Extended._SDL_DESCRIPTOR)})
+        self.assertEqual(len(consumer.subscriptions), 1)
+
     async def test_fifo_has_no_replay_and_udp_retries_deduplicate(self):
         p=await self.client('producer');publisher=await asyncio.to_thread(p.publisher,'topic',self.Message)
         await asyncio.to_thread(publisher.publish,self.Message(sequence=0,value=0.))
-        c=await self.client('receiver');values=[];event=threading.Event()
-        def callback(value,info):values.append(value.sequence);event.set()
+        c=await self.client('receiver');values=[];identities=[];event=threading.Event()
+        def callback(value,info):values.append(value.sequence);identities.append(info.app_id);event.set()
         sub=await asyncio.to_thread(c.subscribe,'topic',self.Message,callback,transport='udp',qos=Fifo(ack='received',retry=Retry(ack_timeout_ms=20)))
         self.assertFalse(await asyncio.to_thread(event.wait,.05))
         engine=self.broker.engines[sub.identity]
@@ -304,7 +410,7 @@ class ExternalTests(unittest.IsolatedAsyncioTestCase):
             acks[0]+=1
             if acks[0]>1:await original_ack(header,payload,address)
         c.udp.send=lose_first_ack
-        await asyncio.to_thread(publisher.publish,self.Message(sequence=1,value=1.))
+        await asyncio.to_thread(publisher.publish,self.Message(sequence=1,value=1.),id=(1 << 64) - 1)
         await wait_for_metric('sent',1)
         # Advance retry time explicitly; socket and codec scheduling must not
         # determine how many attempts occur before an ACK is processed.
@@ -315,6 +421,7 @@ class ExternalTests(unittest.IsolatedAsyncioTestCase):
         await wait_for_metric('acknowledged',1)
         stats=await asyncio.to_thread(sub.stats)
         self.assertEqual(values,[1]);self.assertEqual(attempts[0],3)
+        self.assertEqual(identities,[(1 << 64) - 1])
         self.assertEqual(acks[0],2)
         self.assertEqual(stats['client']['duplicates'],1)
 

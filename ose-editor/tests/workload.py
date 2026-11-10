@@ -14,9 +14,10 @@ def create(root):
     components, subscriptions = {}, []
     for index in range(30):
         name = f'component_{index:02d}'
-        components[name] = {'inputs': {f'in{i}': {'root': 'Packet', 'required': False} for i in range(5)} if index else {},
-                            'outputs': {f'out{i}': {'root': 'Packet'} for i in range(4)},
-                            'trigger': {'mode': 'periodic', 'period_ms': 100} if not index else {'mode': 'on_change'}}
+        outputs = [f'out{i}' for i in range(4)]
+        components[name] = {'inputs': {f'in{i}': {'root': 'Packet', 'activates': {'message': outputs}} for i in range(5)} if index else {
+                                'clock': {'kind': 'timer', 'timer': {'mode': 'periodic', 'delay': .1}, 'activates': {'timeout': outputs}}},
+                            'outputs': {port: {'root': 'Packet'} for port in outputs}}
         if index:
             for port in range(4):
                 subscriptions.append({'id': f'link_{index}_{port}', 'from': f'component_{index - 1:02d}.out{port}', 'to': name + f'.in{port}'})
@@ -25,7 +26,7 @@ def create(root):
     for index in (5, 10, 15, 20):
         subscriptions.append({'id': f'fanout_{index}', 'from': 'component_00.out0', 'to': f'component_{index:02d}.in4'})
     parameters = {f'settings/{i}': {'root': 'Settings', 'initial': {'values': list(range(2048)) if i == 0 else [], 'matrix': [[0] * 4 for _ in range(3)]}} for i in range(50)}
-    model = {'version': 1, 'schemas': 'schemas', 'components': components, 'subscriptions': subscriptions, 'shared_parameters': parameters}
+    model = {'version': 2, 'schemas': 'schemas', 'components': components, 'subscriptions': subscriptions, 'shared_parameters': parameters}
     (root / 'model.json').write_text(json.dumps(model, indent=2))
     for name in ('local', 'test', 'cluster'):
         deployment = {'version': 1, 'components': {name: {'container': {'language': 'python', 'handler': 'components/handler.py'}} for name in components}}

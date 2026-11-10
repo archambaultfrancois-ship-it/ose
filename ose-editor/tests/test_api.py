@@ -63,8 +63,17 @@ class ApiTests(unittest.TestCase):
         self.assertIn('<html lang="en">', response.text)
         self.assertNotIn('https://', response.text)
         capabilities = self.get('capabilities').json()
+        self.assertEqual(capabilities['model_version'], 2)
+        self.assertEqual(capabilities['model_versions'], [2])
         self.assertFalse(capabilities['business_code_execution'])
         self.assertIn('sdl', capabilities['formats'])
+
+    def test_validation_rejects_legacy_application_versions(self):
+        state = self.command({'action': 'set', 'file': 'model.json', 'path': ['version'], 'literal': '1'})
+        job = self.post('validation', {'revision': state['revision']}).json()
+        result = self.wait(job)
+        self.assertEqual(result['status'], 'failed')
+        self.assertIn('Application model v2 is required', result['diagnostics'][0]['message'])
 
     def test_full_authoring_journey_validates_unsaved_then_saved_sources(self):
         state = self.command({'action': 'rename', 'kind': 'component', 'old': 'sensor_1', 'name': 'new_sensor'})
@@ -84,12 +93,28 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertIn('latest', result['diagnostics'][0]['message'])
 
+    def test_input_execution_preview_validates_unsaved_model_and_preserves_disk(self):
+        disk = (self.root / 'model.json').read_bytes()
+        state = self.command({'action': 'configure_input', 'component': 'sensor_1', 'port': 'clock',
+                              'description': {'kind': 'timer', 'timer': {'mode': 'one_shot', 'delay': .25, 'start': 'manual'},
+                                              'activates': {'timeout': ['signal']}}})
+        self.assertEqual((self.root / 'model.json').read_bytes(), disk)
+        result = self.wait(self.post('validation', {'revision': state['revision'], 'deployment': 'deployment.local.json'}).json())
+        self.assertEqual(result['status'], 'passed', result)
+        before = self.project.snapshot()
+        response = self.post('commands/prepare', {'revision': state['revision'], 'command': {
+            'action': 'configure_input', 'component': 'analyzer_1', 'port': 'input',
+            'description': {'kind': 'timer', 'timer': {'mode': 'periodic', 'delay': .1}}}})
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertIn('Disconnect', response.json()['message'])
+        self.assertEqual(self.project.snapshot(), before)
+
     def test_connection_guidance_checks_unconnected_scoped_contracts(self):
         self.command({'action': 'create_document', 'name': 'overrides/strict.sdl',
                       'text': 'message Alarm { 9: uint32 required_extra; }\n'})
         self.command({'action': 'set', 'file': 'model.json',
                       'path': ['components', 'observer', 'inputs', 'strict'],
-                      'literal': '{"root":"Alarm","schema":"overrides/strict.sdl","required":false}'})
+                      'literal': '{"root":"Alarm","schema":"overrides/strict.sdl","mode":"pull"}'})
         # A command-based component may use distinct versions of one root;
         # generated wrappers additionally constrain their combined type set.
         self.command({'action': 'set', 'file': 'deployment.local.json', 'path': ['components', 'observer'],

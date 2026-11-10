@@ -19,10 +19,15 @@ from sdl_recording import RecordingWriter
 
 CAT = "SDL2|Value{1:uint64:sequence;2:fl64:value;}"
 OTHER = "SDL2|Value{1:uint64:sequence;2:fl64:value;3:fl64:extra;}"
-SINK = '''from ose.execution.component import ComponentSession
-s = ComponentSession(timed_ticks=True)
-for inputs in s.ticks():
-    s.publish("out", inputs["input"][1])
+SINK = '''import os
+from ose.execution.input_process import InputSession
+from ose.execution.input_ipc import publication_data
+from ose.codec.sdl2 import SDL2
+s = InputSession()
+codec = SDL2(os.environ["SDL_ROOT"])
+for input in s.activations():
+    _, payload = codec.api.unpack_envelope(input.record["body"])
+    s.send("P", publication_data("out", payload, input.record.get("app_id")))
 '''
 
 
@@ -37,10 +42,10 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
         script = self.root / "sink.py"
         script.write_text(SINK)
         desc = dict(root="Value", catalogue=CAT)
-        self.plan = dict(version=1, sdl_root=str(self.codec.root), build_dir=str(self.root),
+        self.plan = dict(version=2, sdl_root=str(self.codec.root), build_dir=str(self.root),
             external_topics=self.topics,
-            components={"sink": dict(inputs={"input": desc}, outputs={"out": desc},
-                trigger={"mode": "on_change"}, parameters={}, cwd=str(self.root), env={},
+            components={"sink": dict(execution_model=2, inputs={"input": dict(desc, activates={"message": ["out"]})}, outputs={"out": desc},
+                parameters={}, cwd=str(self.root), env={},
                 command=[sys.executable, str(script)])},
             subscriptions=[dict(id="signal", from_topic="external.signal", **{"from": "external.signal", "to": "sink.input"},
                                 policy=SubscriptionPolicy.resolve({}).to_dict())])

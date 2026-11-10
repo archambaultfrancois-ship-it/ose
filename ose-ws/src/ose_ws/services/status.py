@@ -76,7 +76,7 @@ class StatusCollector:
         topology = None
         if observation.get("version") == 1:
             topology = {"version": 1, "components": {
-                name: {key: desc[key] for key in ("trigger", "inputs", "outputs") if key in desc}
+                name: {key: desc[key] for key in ("inputs", "outputs") if key in desc}
                 for name, desc in observation.get("components", {}).items()},
                 "subscriptions": observation.get("subscriptions", {}),
                 "external_topics": observation.get("external_topics", {})}

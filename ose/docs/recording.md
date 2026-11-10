@@ -23,6 +23,16 @@ and native filter service are built systematically by `make`, `make setup` and
 the OSE/backend test targets. Source builds need Rust/Cargo, a C compiler and
 development headers for the selected Python interpreter.
 
+New captures also preserve optional CENV2 application message IDs for output,
+external and observed input messages. They use the per-message SDL recording
+metadata key `ose.app_id` with a canonical decimal uint64 value; `0` is distinct
+from an absent key, and duplicate IDs are retained. This is independent of the
+container's uint32 sequence and of channel generation metadata. Diagnostic
+internal points have no application message ID. Contracts and encoded SDL message
+bytes are unchanged. Use the SDL Python recording service from this checkout;
+an older service does not provide per-message metadata. Updated SDL `inspect`,
+`convert` and `transform` expose or preserve these values in both formats.
+
 Framework releases include both services. For a source checkout, rebuild them
 with the Python interpreter used by the console and recording sources (local
 broker or distributed workers):
@@ -184,9 +194,9 @@ def on_start(ctx):
     ctx.declare_recording_point("dsp.fft.intermediaire", Spectre,
                                 description="Spectrum before filtering")
 
-def on_tick(ctx, inputs):
+def on_input(ctx, input):
     if ctx.recording_enabled("dsp.fft.intermediaire"):
-        value = build_diagnostic(inputs)
+        value = build_diagnostic(input.message)
         result = ctx.record("dsp.fft.intermediaire", value)
 ```
 
@@ -195,7 +205,7 @@ Equivalent typed APIs are available in all generated component containers:
 ```c
 /* on_start: 1 = success, 0 = initialization failure */
 ose_declare_recording_Spectre(ctx, "dsp.fft.intermediaire", "Spectrum before filtering");
-/* on_tick */
+/* on_<input>: message or timeout reference */
 if (ose_recording_enabled(ctx, "dsp.fft.intermediaire"))
     result = ose_record_Spectre(ctx, "dsp.fft.intermediaire", &value);
 ```
@@ -203,7 +213,7 @@ if (ose_recording_enabled(ctx, "dsp.fft.intermediaire"))
 ```rust
 // on_start
 ctx.declare_recording_point::<Spectre>("dsp.fft.intermediaire", "Spectrum before filtering")?;
-// on_tick
+// on_<input>: message or timeout reference
 if ctx.recording_enabled("dsp.fft.intermediaire")? {
     let result = ctx.record("dsp.fft.intermediaire", &value)?;
 }
@@ -212,7 +222,7 @@ if ctx.recording_enabled("dsp.fft.intermediaire")? {
 ```java
 // onStart
 ctx.declareRecordingPoint("dsp.fft.intermediaire", Spectre.class, "Spectrum before filtering");
-// onTick
+// on_<input>: Reference<T>
 if (ctx.recordingEnabled("dsp.fft.intermediaire"))
     result = ctx.record("dsp.fft.intermediaire", value);
 ```
@@ -220,7 +230,7 @@ if (ctx.recordingEnabled("dsp.fft.intermediaire"))
 ```ada
 -- On_Start, through the generated Ose_analyseur package
 Declare_Recording_Spectre (Ctx, "dsp.fft.intermediaire", "Spectrum before filtering");
--- On_Tick
+-- On_<input>: owned input reference
 if Recording_Enabled (Ctx, "dsp.fft.intermediaire") then
    Result := Record_Spectre (Ctx, "dsp.fft.intermediaire", Value);
 end if;

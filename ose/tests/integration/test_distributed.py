@@ -41,14 +41,15 @@ class DistributedTests(unittest.IsolatedAsyncioTestCase):
         cls.addClassCleanup(cls.temporary.cleanup)
         cls.root = Path(cls.temporary.name)
         (cls.root / "measurement.sdl").write_text("message Measurement {uint64 sequence; fl64 value;}")
-        (cls.root / "source.py").write_text("from measurement import Measurement\ndef on_tick(ctx):\n ctx.publish_value(Measurement(sequence=ctx.tick_index, value=float(ctx.tick_index)))\n")
-        (cls.root / "middle.py").write_text("from measurement import Measurement\ndef on_input(ctx, message):\n ctx.publish_value(Measurement(sequence=message.sequence, value=message.value*2))\n")
-        (cls.root / "sink.py").write_text("import json\ndef on_input(ctx, message):\n with open(ctx.parameters['path'], 'a') as stream: stream.write(json.dumps([message.sequence, message.value])+'\\n')\n")
+        (cls.root / "source.py").write_text("from measurement import Measurement\ndef on_clock(ctx, input):\n ctx.publish_value(Measurement(sequence=ctx.tick_index, value=float(ctx.tick_index)))\n")
+        (cls.root / "middle.py").write_text("from measurement import Measurement\ndef on_input(ctx, input):\n message=input.message\n ctx.publish_value(Measurement(sequence=message.sequence, value=message.value*2), id=input.app_id)\n")
+        (cls.root / "sink.py").write_text("import json\ndef on_input(ctx, input):\n message=input.message\n with open(ctx.parameters['path'], 'a') as stream: stream.write(json.dumps([message.sequence, message.value])+'\\n')\n")
         desc = {"root": "Measurement"}
-        model = dict(version=1, schemas="measurement.sdl", components={
-            "source": dict(inputs={}, outputs={"value": desc}, trigger=dict(mode="periodic", period_ms=20)),
-            "middle": dict(inputs={"input": desc}, outputs={"value": desc}, trigger=dict(mode="on_change")),
-            "sink": dict(inputs={"input": desc}, outputs={}, trigger=dict(mode="on_change"), parameters={"path": str(cls.root / "observations")}),
+        model = dict(version=2, schemas="measurement.sdl", components={
+            "source": dict(inputs={"clock": dict(kind="timer", timer=dict(mode="periodic", delay=.02),
+                                               activates={"timeout": ["value"]})}, outputs={"value": desc}),
+            "middle": dict(inputs={"input": dict(desc, activates={"message": ["value"]})}, outputs={"value": desc}),
+            "sink": dict(inputs={"input": desc}, outputs={}, parameters={"path": str(cls.root / "observations")}),
         }, subscriptions=[dict(id="signal", **{"from": "source.value", "to": "middle.input"}, qos={"capacity": 4, "ack": "received", "retry": {}}),
                           dict(id="events", **{"from": "middle.value", "to": "sink.input"}, qos={"capacity": 16, "ack": "received", "retry": {}})])
         deployment = dict(version=1, execution="distributed", components={

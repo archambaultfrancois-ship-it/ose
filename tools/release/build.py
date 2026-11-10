@@ -60,7 +60,7 @@ def copy_resources(root, destination):
     for name in ('__init__.py', 'api.py', 'cli.py', 'coverage.json'):
         if not (editor_static.parent / name).is_file():
             raise ValueError('Missing editor resource: ' + name)
-    directories = ['ose/src/ose', 'ose/sdk', 'ose-ws/src/ose_ws', 'ose-editor/src/ose_editor', 'sdl/sdlc',
+    directories = ['ose/src/ose', 'ose/sdk', 'ose/docs', 'ose-ws/src/ose_ws', 'ose-editor/src/ose_editor', 'sdl/sdlc',
                    *['sdl/runtime/' + lang for lang in ('python', 'c', 'rust', 'java', 'ada', 'filter', 'recording')],
                    'sdl/tools/filter', 'sdl/tools/recording']
     excluded = {'__pycache__', 'tests', 'target', 'build', '.git', 'matlab'}
@@ -68,7 +68,11 @@ def copy_resources(root, destination):
         source = root / name
         for path in sorted(source.rglob('*')):
             relative = path.relative_to(source)
-            if any(part in excluded for part in relative.parts) or path.suffix in ('.pyc', '.pyo'):
+            # These vectors are included by the Rust SDK's own unit tests.
+            # Retain them so the installed crate can run cargo test offline.
+            sdk_fixture = (name == 'ose/sdk' and relative.parts[:4] ==
+                           ('client', 'rust', 'tests', 'fixtures') and path.suffix == '.json')
+            if (any(part in excluded for part in relative.parts) and not sdk_fixture) or path.suffix in ('.pyc', '.pyo'):
                 continue
             if path.is_symlink():
                 raise ValueError('Source resource cannot be a symlink: ' + str(path))

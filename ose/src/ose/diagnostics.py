@@ -83,12 +83,7 @@ class Observer:
                 if delta[key]:
                     alert("warning" if key in ("refused", "delivery_refused") else "error", f"{key}: +{delta[key]}")
             p95 = metrics.get("tick_p95_ms") if fresh and not error else None
-            period = desc["trigger"].get("period_ms")
-            if period and p95 is not None and p95 > period:
-                alert("warning", f"tick p95 {p95:.1f} ms exceeds period {period} ms")
             busy = metrics.get("busy_ms") if available else None
-            if period and busy is not None and busy > period:
-                alert("warning", f"tick in progress {busy:.1f} ms exceeds period {period} ms (including delivery waits)")
             waiting = metrics.get("waiting_inputs", []) if available else []
             if error:
                 state, severity = "UNAVAILABLE", "error"
@@ -115,7 +110,7 @@ class Observer:
                          "rate_span_seconds": elapsed,
                          "tick_p95_ms": p95, "busy_ms": busy,
                          "report_age_ms": desc.get("report_age_ms"), "waiting_inputs": waiting,
-                         "generation": desc.get("generation"), "trigger": desc["trigger"],
+                         "generation": desc.get("generation"), "inputs": desc.get("inputs", {}),
                          "queues": queues, "alerts": alerts,
                          "counters": {key: value for key, value in counters.items() if ":" not in key}})
         return {"timestamp": datetime.now(timezone.utc).isoformat(), "epoch": self.epoch,
