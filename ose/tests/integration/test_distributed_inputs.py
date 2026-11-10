@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from ose.execution.distributed import Coordinator, Worker, fingerprint, check_plan
 from ose.modeling.compiler import build
@@ -116,7 +117,9 @@ class DistributedInputTests(unittest.IsolatedAsyncioTestCase):
         if tls:
             legacy.certificates(self.case, ['coordinator', 'a', 'b', 'observer'])
         context = legacy.tls(self.case, 'coordinator')[0] if tls else None
-        self.coordinator = Coordinator(self.plan, context, lease_seconds=.8)
+        # These cases exercise callbacks and routing, not failure detection.
+        # Keep the production lease budget so host pauses do not fence healthy workers.
+        self.coordinator = Coordinator(self.plan, context)
         await self.coordinator.start()
         for name in self.plan['components']:
             server, client = legacy.tls(self.case, name) if tls else (None, None)
@@ -154,6 +157,28 @@ class DistributedInputTests(unittest.IsolatedAsyncioTestCase):
     async def test_broker_feedback_preserves_max_id_and_passive_pull(self):
         await self.start_graph()
         await self.check_feedback((1 << 64) - 1)
+
+    async def test_initialization_tolerates_a_short_event_loop_pause(self):
+        original_request = Coordinator.request
+        paused = False
+
+        def pause():
+            # Reproduce a preemption longer than the former 800 ms fixture
+            # lease, before component initialization can complete.
+            time.sleep(.95)
+
+        async def request(coordinator, peer, header, body):
+            nonlocal paused
+            result = await original_request(coordinator, peer, header, body)
+            if header['op'] == 'heartbeat' and not paused:
+                paused = True
+                asyncio.get_running_loop().call_soon(pause)
+            return result
+
+        with patch.object(Coordinator, 'request', request):
+            await self.start_graph()
+            await self.check_feedback((1 << 64) - 1)
+        self.assertTrue(paused)
 
     async def test_direct_feedback_preserves_zero_id(self):
         for node in self.plan['components'].values(): node['parameters']['id'] = 0
@@ -231,8 +256,12 @@ class DistributedInputTests(unittest.IsolatedAsyncioTestCase):
         await self.finished()
         worker = self.workers['b']
         first_due = worker.scheduler.deadlines['input']
-        await self.until(lambda: len(self.values('b.timeout')) >= 2)
-        first, second = self.values('b.timeout')[:2]
+        # The receiver may time out before the sender learns activation via
+        # its heartbeat. Check inactivity after the completed feedback exchange.
+        def expirations():
+            return [row for row in self.values('b.timeout') if row[1] >= first_due]
+        await self.until(lambda: len(expirations()) >= 2)
+        first, second = expirations()[:2]
         self.assertEqual(first[1], first_due)
         self.assertGreaterEqual(first[0], first[1])
         self.assertGreaterEqual(second[1] - first[1], 400_000_000)

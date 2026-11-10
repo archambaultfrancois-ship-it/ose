@@ -943,3 +943,11 @@ The broader 74-case engine/replay batch has six distributed real-time failures
 reproduces with the committed pre-change distributed/model-validation code;
 these checks are not claimed as passing. This does not affect the dedicated
 simulated microstep qualification.
+
+The [authorization-expiry investigation](distributed-lease-investigation.md)
+subsequently reproduced the failure with a 950 ms event-loop pause and the
+fixture's 800 ms lease. Functional distributed-input and recording/message-ID
+fixtures now use the production lease default. Their 19 cases pass together,
+including the six earlier failures; a retained pause regression and the dedicated
+lost-heartbeat expiration check pass. Production lease/fencing behavior is
+unchanged. The exact cause of the earlier host pauses was not captured.

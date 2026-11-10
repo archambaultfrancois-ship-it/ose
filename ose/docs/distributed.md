@@ -129,6 +129,22 @@ addressed to obsolete target generations. Each recipient checks admission with
 the coordinator, including current source and target generations. A disconnected
 old sender cannot keep publishing just because its process cannot be terminated.
 
+`coordinator authorization expired` is the worker watchdog's lease timeout;
+`component lease expired` is the coordinator rejecting an expired worker
+session. Renewal requires a successful heartbeat, including during component
+initialization. Both sides measure time with a clock that includes host suspend
+on Linux. A blocked or suspended runtime event loop cannot send/process
+heartbeats even when the TCP connection remains open. Component calculations
+run in child processes; a long callback alone does not block that event loop.
+
+Set the worker lease with `ose serve --lease-seconds SECONDS` (default `6`).
+Choose it to exceed expected runtime scheduling pauses and control round trips;
+shorter leases trade tolerance for faster failure detection. Expired generations
+are fenced, rather than silently revived. This setting is separate from the
+Kubernetes leadership lease described below. The
+[lease investigation](distributed-lease-investigation.md) records the short-lease
+test reproduction and its correction.
+
 Directory changes propagate on heartbeats. During replacement a surviving direct
 sender can still address the old recipient generation, and those messages may be
 discarded. Workloads requiring a resumed request/response exchange must account

@@ -87,7 +87,8 @@ class MessageIDTests(unittest.IsolatedAsyncioTestCase):
         if distributed:
             for sub in self.plan['subscriptions']:
                 sub['routing'] = 'direct' if direct and sub['id'] == 'internal' else 'broker'
-            self.server = Coordinator(self.plan, lease_seconds=2)
+            # Recording/replay checks use the production authorization budget.
+            self.server = Coordinator(self.plan)
         else:
             self.server = Broker(self.plan)
         await self.server.start()
