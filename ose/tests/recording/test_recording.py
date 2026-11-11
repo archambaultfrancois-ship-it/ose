@@ -55,6 +55,20 @@ class RecordingTests(unittest.IsolatedAsyncioTestCase):
                 self.fail("recording condition timed out")
             await asyncio.sleep(.01)
 
+    async def test_recorder_preserves_source_timestamp_separately_from_arrival(self):
+        for format in ('pcapng', 'mcap'):
+            path = self.root / ('dated.' + format)
+            await self.recorder.start(path, format=format)
+            observe = self.broker.recording.observe
+            def dated(*args, **kwargs):
+                return observe(*args, publish_time_ns=1_700_000_000_000_000_123, **kwargs)
+            with patch.object(self.broker.recording, 'observe', side_effect=dated):
+                await self.publish(1)
+            await self.recorder.stop()
+            record, = list(RecordingReader(path).iter_records())
+            self.assertEqual(record.publish_time_ns, 1_700_000_000_000_000_123)
+            self.assertGreater(record.log_time_ns, record.publish_time_ns)
+
     async def test_original_bytes_catalogues_timestamps_and_both_formats(self):
         await self.publish(99)  # A tap has no historical replay.
         for format in ("pcapng", "mcap"):
@@ -69,7 +83,7 @@ class RecordingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(records), 5)
             self.assertEqual([bytes(r.payload) for r in records], [self.body(n)[self.codec.api.ENVELOPE_HEADER_SIZE:] for n in range(5)])
             self.assertTrue(all(r.channel.topic == "source.value" and r.channel.catalogue == CAT for r in records))
-            self.assertTrue(all(r.log_time_ns > 10**18 and r.publish_time_ns == r.log_time_ns for r in records))
+            self.assertTrue(all(r.log_time_ns >= r.publish_time_ns > 10**18 for r in records))
             self.assertEqual([r.decode().fields["value"] for r in records], list(range(5)))
             self.assertEqual(self.recorder.status()["state"], "stopped")
             self.assertEqual(self.recorder.status()["label"], "recorder")

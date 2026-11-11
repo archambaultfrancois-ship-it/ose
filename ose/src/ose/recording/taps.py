@@ -6,6 +6,7 @@ awaits a recorder: queue overflow drops the oldest capture and increments counte
 import asyncio
 from collections import Counter, deque
 import uuid
+import time
 
 from ose.transport.protocol import encode
 from ose.codec.runtime import Runtime
@@ -161,17 +162,22 @@ class TapHub:
         if was_active:
             self._activation_changed()
 
-    def observe(self, topic, body, *, generation, sequence, catalogue, root, app_id=None):
+    def observe(self, topic, body, *, generation, sequence, catalogue, root, app_id=None, publish_time_ns=None):
         # Keep the hot path constant when nobody is recording.
         if not self.sessions:
             return
         if app_id is not None:
             validate_app_id(app_id)
+        if publish_time_ns is None:
+            publish_time_ns = time.time_ns()
+        if type(publish_time_ns) is not int or not 0 <= publish_time_ns < 2**64:
+            raise ValueError("publish_time_ns must be an unsigned 64-bit timestamp")
         for session in self.sessions.values():
             expected = session["points"].get(topic)
             if not session["active"] or expected is None:
                 continue
-            metadata = {"topic": expected.get("topic", topic), "generation": generation, "sequence": sequence}
+            metadata = {"topic": expected.get("topic", topic), "generation": generation, "sequence": sequence,
+                        "publish_time_ns": publish_time_ns}
             if app_id is not None:
                 metadata["app_id"] = app_id
             if metadata["topic"] != topic:

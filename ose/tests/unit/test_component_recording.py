@@ -1,7 +1,7 @@
 import io
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from ose.execution.component_io import RecordResult
 from ose.execution.context import ComponentContext
@@ -87,6 +87,15 @@ class ComponentEndpointTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "root"):
             await endpoint.declare(port_data("dsp.bad", b"Other\0\0catalogue"))
         self.assertNotIn("dsp.bad", endpoint.points)
+
+    async def test_remote_points_are_dated_before_waiting_in_the_adapter_queue(self):
+        remote = RemoteRecording(None, Mock())
+        with patch('ose.recording.component.time.time_ns', return_value=123):
+            remote.emit('dsp.fft', {}, b'value')
+            remote.emit_input('input', {}, b'envelope', 1)
+        for _ in range(2):
+            header, _ = remote.queue.get_nowait()
+            self.assertEqual(header['publish_time_ns'], 123)
 
     async def test_adapter_queue_is_bounded_without_awaiting_network(self):
         remote = RemoteRecording(None, Mock())

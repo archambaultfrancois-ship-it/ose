@@ -7,6 +7,14 @@ component change with captured inputs. Real-time replay is the default mode and
 publishes into an already running application.
 Use `--mode simulated` to start the application with a virtual clock.
 
+Replay timing and range selection use `publish_time_ns`, the Unix time of the
+source deposit, rather than `log_time_ns`, the recorder arrival time. The first
+selected source timestamp is position zero (`origin_publish_time_ns` in the
+summary). Source system clocks must be synchronized across the cluster; residual
+uncertainty is accepted. Timestamp ties retain file order for deterministic
+replay. Payload timestamps are unchanged. There is no fallback to recorder
+arrival timestamps.
+
 Build a model with [external inputs](clients.md#feeding-a-model-input), then run:
 
 ```sh
@@ -343,7 +351,7 @@ limit. For example, add `--loops 3` to replay the selection three times, or
 
 Each pass uses the same selection and original payload bytes, including sequence
 numbers and application timestamps. Only scheduling timestamps advance. A pass
-spans the earliest to latest selected log timestamp; the next pass starts one
+spans the earliest to latest selected source publication timestamp; the next pass starts one
 nanosecond after the previous pass's final timestamp. A zero-span capture also
 advances by one nanosecond per pass. Recorded intervals within a pass remain
 unchanged and playback speed applies across loop boundaries.
@@ -356,13 +364,13 @@ final JSON report the requested `loops` and `completed_loops`; live status also
 shows `current_loop`. Counts describe publications, rather than completed
 downstream processing.
 
-Messages are ordered by recorded **log time**, with file order breaking ties.
+Messages are ordered by recorded **source publication time**, with file order breaking ties.
 The earliest selected message becomes playback time zero; intervals retain their
 exact integer nanoseconds. Payload bytes, including application timestamps and
-sequence numbers, remain unchanged. OSE recorder log times are recorder arrival
-times, rather than synchronized production times.
+sequence numbers, remain unchanged. Recorder arrival times are retained for
+diagnostics and do not determine replay timing.
 
-`--start-ns N` and `--end-ns N` restrict absolute recorded log timestamps to
+`--start-ns N` and `--end-ns N` restrict absolute source publication timestamps to
 `[start, end)`. The origin is recalculated from the earliest remaining message.
 `--duration` is the global recorded-time horizon in seconds, starting at that origin
 and applying across all passes.
@@ -455,7 +463,7 @@ An LRU cache retains at most 64 prepared adapters and keys them by full catalogu
 texts and root, rather than the short wire catalogue ID. All selected messages
 are prepared before starting simulation components or opening a live publisher.
 An incompatibility reports source/target topics, root, selected-message position,
-log timestamp and the SDL diagnostic with its field path. Temporary adapted data
+source publication timestamp and the SDL diagnostic with its field path. Temporary adapted data
 is removed on success or failure.
 
 Scheduling timestamps, timestamp tie ordering, selection and loop behavior stay

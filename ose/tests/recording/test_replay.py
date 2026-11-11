@@ -66,6 +66,26 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
             writer.write_encoded(ignored, b"\x01" + struct.pack(">Qd", 99, 99.), log_time_ns=base - 10)
         return path, base
 
+    async def test_source_dates_control_order_origin_and_range_in_both_formats(self):
+        for format in ('pcapng', 'mcap'):
+            path = self.root / ('source-dates.' + format)
+            with RecordingWriter(path, format=format) as writer:
+                channel = writer.register_channel(topic='external.signal', catalogue=CAT, root_type='Value')
+                for index, source_time in enumerate((300, 100, 200)):
+                    writer.write_encoded(channel, b'\x01' + struct.pack('>Qd', index, float(index)),
+                                         log_time_ns=1000 + index, publish_time_ns=source_time)
+            with recording_events(path, self.topics, None, self.codec) as (events, selection):
+                self.assertEqual(selection['origin_publish_time_ns'], 100)
+                self.assertEqual([event.at for event in events], [0, 100, 200])
+                self.assertEqual([event.index for event in events], [1, 2, 0])
+            with recording_events(path, self.topics, None, self.codec, start_ns=150, end_ns=300) as (events, selection):
+                self.assertEqual(selection['origin_publish_time_ns'], 200)
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0].at, 0)
+            summary = await run(path, self.plan_path, .001)
+            self.assertEqual(summary['replay']['origin_publish_time_ns'], 100)
+            self.assertEqual(summary['external_events'], 3)
+
     async def test_automatic_mapping_preserves_names_and_ignores_absent_inputs(self):
         self.topics['external.absent'] = dict(root='Value', catalogue=CAT)
         self.plan_path.write_text(json.dumps(self.plan))
@@ -169,7 +189,7 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
                                   start_ns=101, end_ns=102, schema_policy='compatible') as (events, summary):
                 self.assertEqual(len(events), 1)
                 self.assertEqual(events[0].at, 0)
-                self.assertEqual(summary['origin_log_time_ns'], 101)
+                self.assertEqual(summary['origin_publish_time_ns'], 101)
                 self.assertEqual(summary['schema_adaptation']['adapted_messages'], 1)
             path.write_bytes(path.read_bytes()[:-1])
             with patch('ose.execution.simulation.run') as simulate:
@@ -205,7 +225,7 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
                 expected = [self.codec.wrap(CAT, b"\x01" + struct.pack(">Qd", n, float(n))) for n in (2, 1, 3)]
                 self.assertEqual([event["sha256"] for event in outputs],
                                  [hashlib.sha256(body).hexdigest() for body in expected])
-                self.assertEqual(summary["replay"]["origin_log_time_ns"], base)
+                self.assertEqual(summary["replay"]["origin_publish_time_ns"], base)
                 self.assertEqual(summary["replay"]["message_count_by_topic"], {"source.value": 3})
                 if reference is None:
                     reference = trace.read_bytes()

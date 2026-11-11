@@ -1,6 +1,7 @@
 """Component-owned diagnostic points, separate from application publications."""
 import asyncio
 import re
+import time
 from collections import Counter
 from ose.transport.protocol import encode
 
@@ -73,12 +74,13 @@ class RemoteRecording:
             name=name, root=desc["root"], description=desc["description"])
 
     def emit(self, name, desc, payload):
-        self.enqueue(dict(op="recording_emit", name=name), payload)
+        self.enqueue(dict(op="recording_emit", name=name, publish_time_ns=time.time_ns()), payload)
 
     def emit_input(self, port, desc, envelope, tick_index, *, app_id=None):
         from ose.delivery.messages import validate_app_id
         extra = {"app_id": validate_app_id(app_id)} if app_id is not None else {}
-        self.enqueue(dict(op="recording_input", port=port, sequence=tick_index, **extra), envelope)
+        self.enqueue(dict(op="recording_input", port=port, sequence=tick_index,
+                          publish_time_ns=time.time_ns(), **extra), envelope)
 
     def enqueue(self, header, payload):
         if self.queue.full() or self.bytes + len(payload) > 1024 * 1024:

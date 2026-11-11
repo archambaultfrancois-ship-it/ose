@@ -536,7 +536,7 @@ and their subscriptions are connected to external topics. The workflow invokes
 `ose replay` with `sensor_1.signal=replay.signal_1` and
 `sensor_2.signal=replay.signal_2`. It accepts PCAPNG or MCAP captures; both sensor
 topics must contain messages. `tools/vibration.py replay --recording FILE`
-also accepts `--start-ns` and `--end-ns` for a recorded log-time range.
+also accepts `--start-ns` and `--end-ns` for a source publication-time range.
 `LOOPS` (CLI: `--loops`) is the total number of passes, defaulting to 1; 0 repeats
 until the global `DURATION` limit. Components retain state between passes, and
 payload timestamps and sequence numbers are preserved.

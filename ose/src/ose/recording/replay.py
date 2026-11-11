@@ -125,7 +125,11 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
         unchanged, adapted = 0, 0
         # Exhaust the reader before starting components: this checks the entire
         # container, including CRCs and EOF, even for a narrow selection.
-        for record in reader.iter_records(topics=mapping, start_time_ns=start_ns, end_time_ns=end_ns):
+        for record in reader.iter_records(topics=mapping):
+            if start_ns is not None and record.publish_time_ns < start_ns:
+                continue
+            if end_ns is not None and record.publish_time_ns >= end_ns:
+                continue
             source = record.channel.topic
             target = mapping[source]
             desc = topics[target]
@@ -141,7 +145,7 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
                     raise ValueError('adapted replay envelope exceeds the component frame limit')
             except ValueError as error:
                 raise ValueError(f"{source} -> {target}, root {desc['root']}, selected message {len(events) + 1}, "
-                                 f"log_time_ns {record.log_time_ns}: {error}") from error
+                                 f"publish_time_ns {record.publish_time_ns}: {error}") from error
             source_hash, target_hash = adapter.source_sha256, adapter.target_sha256
             key = source, target, source_hash, target_hash
             if key not in schemas:
@@ -154,7 +158,7 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
             index = len(events)
             envelope = Path(temporary) / f"{index}.s2ps"
             envelope.write_bytes(body)
-            events.append(Event(record.log_time_ns, index, target, envelope, hashlib.sha256(body).hexdigest(), app_id))
+            events.append(Event(record.publish_time_ns, index, target, envelope, hashlib.sha256(body).hexdigest(), app_id))
             counts[source] += 1
         if automatic:
             mapping = {source: target for source, target in mapping.items() if source in counts}
@@ -168,7 +172,7 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
         events = sorted((Event(event.at - origin, event.index, event.topic, event.path, event.digest, event.app_id)
                          for event in events), key=lambda event: (event.at, event.index))
         yield events, {"source": str(Path(path).resolve()), "mapping": mapping,
-                       "origin_log_time_ns": origin, "message_count": len(events),
+                       "origin_publish_time_ns": origin, "message_count": len(events),
                        "message_count_by_topic": dict(sorted(counts.items())),
                        "schema_policy": schema_policy,
                        "schema_adaptation": dict(unchanged_messages=unchanged, adapted_messages=adapted,

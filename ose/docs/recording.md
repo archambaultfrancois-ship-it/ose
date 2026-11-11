@@ -452,8 +452,15 @@ or coordinator restarted, use `reconnect` to reopen its control connection first
 (at the same host/port). The console
 does not silently reconnect across an unknown gap.
 
-Log and publish timestamps both use the recorder's Unix arrival time, since OSE's
-publication protocol does not provide a Unix production timestamp. Model clock
+Publication timestamps are taken at the source recording point, before capture
+filtering, queueing and transport. Local outputs are dated at broker deposit;
+distributed outputs at the source worker. External injections are dated at the
+accepting broker or coordinator. Observed inputs
+are dated at the receiving container's observation, and diagnostic points at
+emission. Each message carries this Unix timestamp to the recorder as
+`publish_time_ns`. `log_time_ns` separately records arrival at the recorder.
+Cluster machines must have synchronized system clocks. Replay accepts residual
+clock uncertainty and does not reconstruct a globally causal order. Model clock
 fields such as `time_ns` stay untouched inside payloads. A channel's metadata
 records its source generation. Output channels use the OSE publication counter
 modulo 2^32; input points use the receiving component's tick index. Internal points

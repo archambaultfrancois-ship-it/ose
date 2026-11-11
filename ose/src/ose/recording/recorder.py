@@ -159,7 +159,7 @@ class Capture:
         self.writer = RecordingWriter(stream, format=self.format, metadata={
             "producer": "ose-recorder", "label": self.label, "started_at_ns": str(time.time_ns()),
             "filters": json.dumps(self.filters, sort_keys=True), "filtering": "source",
-            "timestamps": "recorder Unix arrival time; production time unavailable",
+            "timestamps": "log: recorder Unix arrival time; publish: source deposit Unix time; cluster clocks must be synchronized",
             "sequence": "publication sequence or input tick index modulo 2^32; generation in channel metadata",
             "base_file": str(self.files.base), "file_index": str(self.files.index),
             "max_size": str(self.max_size or "off"), "cycle": str(self.cycle or "off")})
@@ -224,9 +224,8 @@ class Capture:
             self.files.check_next()
             self.finish_file(final=False)
             self.prepare()
-        now = time.time_ns()
-        self.writer.write_encoded(self.channels[topic], payload, log_time_ns=now,
-                                  publish_time_ns=now, sequence=record["sequence"] % (2**32),
+        self.writer.write_encoded(self.channels[topic], payload, log_time_ns=record["log_time_ns"],
+                                  publish_time_ns=record["publish_time_ns"], sequence=record["sequence"] % (2**32),
                                   metadata=({"ose.app_id": str(validate_app_id(record["app_id"]))}
                                             if "app_id" in record else None))
         self.counts["written"] += 1
@@ -258,7 +257,8 @@ class Capture:
                 if result["stopped"]:
                     return
             else:
-                await self.disk(self.write, result["record"], body)
+                record = dict(result["record"], log_time_ns=time.time_ns())
+                await self.disk(self.write, record, body)
 
     async def run(self):
         self.pumps = [asyncio.create_task(self.pump(feed)) for feed in self.feeds]

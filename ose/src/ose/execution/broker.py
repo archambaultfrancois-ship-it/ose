@@ -108,7 +108,7 @@ class Broker(Sessions):
             if key in self.recording.active_points():
                 self.codec.validate_only(desc["catalogue"], desc["root"], body)
                 self.recording.observe(key, body, generation=self.generations[node], sequence=sequence,
-                                       catalogue=desc["catalogue"], root=desc["root"], **extra)
+                                       catalogue=desc["catalogue"], root=desc["root"], publish_time_ns=header["publish_time_ns"], **extra)
             return {}
         name = validate_name(header["name"])
         topic = prefix + name
@@ -133,7 +133,7 @@ class Broker(Sessions):
             self.codec.validate_only(desc["catalogue"], desc["root"], envelope)
             self.recording_sequence += 1
             self.recording.observe(topic, envelope, generation=self.generations[node], sequence=self.recording_sequence,
-                                   catalogue=desc["catalogue"], root=desc["root"])
+                                   catalogue=desc["catalogue"], root=desc["root"], publish_time_ns=header["publish_time_ns"])
         return {}
 
     def _notify_node(self, node):

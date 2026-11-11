@@ -19,6 +19,19 @@ class TapTests(unittest.IsolatedAsyncioTestCase):
         self.hub.observe("source.value", body, generation=self.point["generation"], sequence=sequence,
                          catalogue=self.point["catalogue"], root=self.point["root"])
 
+    async def test_source_timestamp_is_fixed_before_queueing_and_shared_by_sessions(self):
+        tokens = [await self.open(), await self.open()]
+        with patch('ose.recording.taps.time.time_ns', return_value=123456789):
+            self.offer()
+        for token in tokens:
+            result, _ = await self.hub.request(self.peer, dict(op='recording_next', session=token))
+            self.assertEqual(result['record']['publish_time_ns'], 123456789)
+        self.hub.observe('source.value', b'payload', generation='first', sequence=2,
+                         catalogue=self.point['catalogue'], root=self.point['root'], publish_time_ns=42)
+        for token in tokens:
+            result, _ = await self.hub.request(self.peer, dict(op='recording_next', session=token))
+            self.assertEqual(result['record']['publish_time_ns'], 42)
+
     async def test_state_tracks_idle_source_changes_without_sending_catalogue(self):
         described, catalogue = await self.hub.request(self.peer,
             dict(op="recording_describe", topic="source.value"))
