@@ -298,6 +298,39 @@ describe('assembled workspace', () => {
     } finally { wrapper.unmount() }
   })
 
+  it('preserves inspector drafts and graph state while panels are collapsed and resized', async () => {
+    const pinia = createPinia(); setActivePinia(pinia)
+    vi.stubGlobal('Worker', class { onmessage: any; postMessage() {} terminate() {} })
+    const store = useProject()
+    store.project = { name: 'Example', revision: 'revision', model: 'model.json', deployments: [],
+      documents: { 'model.json': { id: 'model.json', role: 'model', format: 'json', value: model, tree: { path: [], kind: 'object', children: [] } } },
+      diagnostics: [], workspace: { positions: {}, groups: {}, pinned: [] }, validation: null }
+    store.selection = { file: 'model.json', path: ['components', 'compute'] }
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia, [PrimeVue, { unstyled: true }]] } })
+    try {
+      const toggle = (label: string) => wrapper.findAll('.panel-toggle').find(button => button.text() === label)!
+      expect(wrapper.get('.diagnostics-panel').classes()).toContain('collapsed')
+      await toggle('Project').trigger('click')
+      expect(wrapper.get('#project-explorer').isVisible()).toBe(false)
+      await toggle('Project').trigger('click')
+      await wrapper.get('[aria-label="Resize explorer"]').trigger('keydown', { key: 'ArrowRight' })
+      expect(wrapper.get('[aria-label="Resize explorer"]').attributes('aria-valuenow')).toBe('255')
+      store.editComponent('compute'); await flushPromises()
+      const name = wrapper.get('input[aria-label="Component name"]')
+      await name.setValue('local_unsaved_name')
+      await toggle('Inspector').trigger('click')
+      expect(wrapper.get('#property-inspector').isVisible()).toBe(false)
+      await toggle('Inspector').trigger('click')
+      expect((wrapper.get('input[aria-label="Component name"]').element as HTMLInputElement).value).toBe('local_unsaved_name')
+      store.closeComponent(); await flushPromises()
+      expect(wrapper.get('#project-explorer').isVisible()).toBe(true)
+      expect(wrapper.get('[aria-label="Resize explorer"]').attributes('aria-valuenow')).toBe('255')
+      await wrapper.get('.diagnostics-toggle').trigger('click')
+      expect(wrapper.get('.diagnostics-panel').classes()).not.toContain('collapsed')
+      expect(store.project.documents['model.json'].value.components.compute).toBeDefined()
+    } finally { wrapper.unmount() }
+  })
+
   it('keeps numeric labels when subscription IDs are missing and for unrelated arrays', () => {
     const node = { name: '0', path: ['subscriptions', '0'], children: [] as any[] }
     expect(nodeLabel(node)).toBe('0')

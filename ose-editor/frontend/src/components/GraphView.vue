@@ -161,7 +161,21 @@ onBeforeUnmount(() => worker.terminate())
   <div class="graph-workspace">
     <ComponentEditor v-if="store.editingComponent" />
     <div v-show="!store.editingComponent" class="graph-overview">
-    <div class="graph-toolbar"><InputText v-model="search" placeholder="Find a component…" aria-label="Find a component" /><Select v-model="scope" :options="['all', 'upstream', 'downstream', 'both']" aria-label="Dependency highlighting" /><Button ref="connectButton" label="Connect ports" severity="secondary" :disabled="!!store.pending" @click="openAssistant()" /><Button label="Auto layout" severity="secondary" :loading="layoutBusy" @click="layout" /><Button label="Group selection" severity="secondary" :disabled="!selectedComponents.length && !selectedGroups.length" @click="group" /><Button :label="hasExpandedGroups ? 'Collapse all groups' : 'Expand all groups'" severity="secondary" :disabled="!hasGroups" @click="toggleGroups" /><div class="link-display-controls"><label class="inline"><input type="checkbox" v-model="labels"> Link labels</label><label v-if="model?.version === 2" class="inline"><input type="checkbox" v-model="showActivations" aria-label="Show activation links"> Activation links</label><Select v-model="linkStyle" :options="linkStyles" option-label="label" option-value="value" size="small" class="link-style-select" aria-label="Link style" /></div></div>
+    <div class="graph-toolbar">
+      <InputText v-model="search" placeholder="Find a component…" aria-label="Find a component" />
+      <Button ref="connectButton" label="Connect ports" severity="secondary" :disabled="!!store.pending" @click="openAssistant()" />
+      <Button label="Auto layout" severity="secondary" :loading="layoutBusy" @click="layout" />
+      <details name="graph-toolbar" class="toolbar-menu" @keydown.esc="($event.currentTarget as HTMLDetailsElement).open = false"><summary>Groups</summary><div class="toolbar-menu-content">
+        <Button label="Group selection" severity="secondary" :disabled="!selectedComponents.length && !selectedGroups.length" @click="group" />
+        <Button :label="hasExpandedGroups ? 'Collapse all groups' : 'Expand all groups'" severity="secondary" :disabled="!hasGroups" @click="toggleGroups" />
+      </div></details>
+      <details name="graph-toolbar" class="toolbar-menu" @keydown.esc="($event.currentTarget as HTMLDetailsElement).open = false"><summary>Display</summary><div class="toolbar-menu-content">
+        <label>Dependency highlighting<Select v-model="scope" :options="['all', 'upstream', 'downstream', 'both']" aria-label="Dependency highlighting" /></label>
+        <label class="inline"><input type="checkbox" v-model="labels"> Link labels</label>
+        <label v-if="model?.version === 2" class="inline"><input type="checkbox" v-model="showActivations" aria-label="Show activation links"> Activation links</label>
+        <label>Link style<Select v-model="linkStyle" :options="linkStyles" option-label="label" option-value="value" aria-label="Link style" /></label>
+      </div></details>
+    </div>
     <form v-if="assistant" class="connection-assistant" aria-label="Connect ports" @submit.prevent="previewConnection" @keydown.esc.stop="closeAssistant">
       <label>Publisher<select ref="sourceSelect" v-model="sourceKey" aria-label="Connection publisher"><option value="" disabled>Choose an output</option><option v-for="source in sourceOptions" :key="source.key" :value="source.key">{{ source.endpoint }}{{ source.external ? ' (external topic)' : '' }}</option></select></label>
       <label>Destination input<select v-model="target" aria-label="Connection destination" aria-describedby="connection-assessment"><option value="" disabled>Choose an input</option><option v-for="option in targetOptions" :key="option.endpoint" :value="option.endpoint">{{ option.endpoint }}{{ option.assessment ? ' — ' + statusLabel[option.assessment.status] : '' }}</option></select></label>
@@ -189,11 +203,4 @@ onBeforeUnmount(() => worker.terminate())
 .connection-assistant [data-status=incompatible] { color: #a63838; }
 .connection-assistant [data-status=compatible] { color: #187452; }
 .connection-feedback { margin: 0; padding: 10px 16px; font-size: 12px; background: #f3f6fc; border-bottom: 1px solid #dce4ef; }
-.link-display-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; max-width: 100%; }
-.link-display-controls .inline { height: 20px; line-height: 14px; }
-.link-display-controls input { margin: 0; }
-.link-style-select { width: 94px; height: 20px; align-items: center; font-size: 10px !important; }
-.link-style-select :deep(.p-select-label) { padding: 2px 6px; font-size: 10px; line-height: 14px; }
-.link-style-select :deep(.p-select-dropdown) { width: 18px; }
-.link-style-select :deep(.p-select-dropdown-icon) { width: 10px; height: 10px; }
 </style>

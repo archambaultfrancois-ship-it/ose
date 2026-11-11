@@ -71,6 +71,17 @@ or 24 and `make frontend-editor`.
 
 ## Editing workflow
 
+Use **Project** and **Inspector** above the workspace to hide or restore the
+side panels without losing the selection or unfinished property edits. Drag the
+separators to resize panels, or focus a separator and use the arrow keys
+(**Home**/**End** select its minimum/maximum size). Diagnostics starts as a
+collapsed bar and opens when new diagnostics arrive; its tabs and **Expand** /
+**Collapse** control the panel. **Display** in the graph toolbar contains link
+labels, activation links, link style and dependency highlighting; **Groups**
+contains grouping commands. The inspector uses collapsible sections for
+General, Execution, Reception and Contract where applicable, with removal
+commands under the initially collapsed **Advanced** section.
+
 Select a component/link in Graph, an object in Tables or a declaration in the
 explorer. Use the inspector to edit its properties, including explicit defaults,
 SDL IDs/cardinalities, expressions, aliases, dimensions and wire clauses.
