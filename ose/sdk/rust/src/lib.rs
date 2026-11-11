@@ -1,6 +1,9 @@
-//! Binary stdio component SDK. No transport or codec dependencies.
+//! Binary socketpair component SDK. No transport or codec dependencies.
 use std::io::{self, Read, Write};
 pub mod inputs;
+mod transport;
+/// Initialize the inherited private transport before constructing user state.
+pub fn initialize_transport() -> io::Result<()> { transport::channel().map(|_| ()) }
 
 pub const MAX_SIZE: usize = 1024 * 1024;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,7 +72,7 @@ pub struct Event { pub op: u8, pub data: Vec<u8> }
 pub struct Input<'a> { pub port: &'a str, pub catalogue: &'a str, pub payload: &'a [u8] }
 
 pub fn receive() -> io::Result<Event> {
-    let mut reader = io::stdin().lock();
+    let mut reader = transport::channel()?;
     let mut prefix = [0; 4];
     reader.read_exact(&mut prefix)?;
     let size = u32::from_be_bytes(prefix) as usize;
@@ -89,7 +92,7 @@ pub fn receive() -> io::Result<Event> {
 }
 pub fn send(op: u8, data: &[u8]) -> io::Result<()> {
     if data.len() >= MAX_SIZE { return Err(invalid("IPC too large")); }
-    let mut writer = io::stdout().lock();
+    let mut writer = transport::channel()?;
     writer.write_all(&((data.len()+1) as u32).to_be_bytes())?;
     writer.write_all(&[op])?;
     writer.write_all(data)?;

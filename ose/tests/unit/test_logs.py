@@ -1,3 +1,4 @@
+from tests.component_driver import run_component
 import io
 import json
 import struct
@@ -218,7 +219,7 @@ int main(void) {
 }
 '''.replace('UTF8_SPLIT', str(8192 - len(TRUNCATION_SUFFIX.encode()) - 1)))
         self.assertEqual(result.returncode, 0, result.stderr)
-        process = subprocess.run([str(self.root / 'format')], capture_output=True, timeout=10)
+        process = run_component([str(self.root / 'format')], timeout=10)
         self.assertEqual(process.returncode, 0, process.stderr)
         stream, queue = io.BytesIO(process.stdout), ComponentLogs()
         while stream.tell() < len(process.stdout):

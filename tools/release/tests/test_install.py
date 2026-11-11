@@ -144,7 +144,9 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(self.install('--languages', 'java', '--features', 'none'), 0, self.errors)
         for path in ('client/java/org/sdlose/client/Client.java', 'client/c/ose_client.h',
                      'client/rust/Cargo.toml', 'java/org/sdlose/Component.java',
-                     'java/org/sdlose/InputProtocol.java', 'client/rust/tests/fixtures/cenv2.json',
+                     'java/org/sdlose/InputProtocol.java', 'java/org/sdlose/NativeTransport.java',
+                     'java/ose_transport_jni.c', 'c/ose_transport.h', 'rust/src/transport.rs',
+                     'client/rust/tests/fixtures/cenv2.json',
                      'input-protocol.md', 'protocol.md', 'client/protocol.md'):
             self.assertTrue((self.prefix / 'framework/ose/sdk' / path).is_file(), path)
         self.assertFalse((self.prefix / 'framework/ose/sdk/ada').exists())

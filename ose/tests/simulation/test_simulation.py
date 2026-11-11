@@ -1,4 +1,5 @@
 """Functional simulation across native containers, queue policies and worker counts."""
+from tests.component_driver import run_component
 import asyncio
 import copy
 import hashlib
@@ -167,7 +168,7 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
         engine = Simulation(plan, duration, trace=trace, **options)
         summary = await engine.execute()
         self.assertTrue(all(p.returncode is not None for p in engine.processes.values()))
-        self.assertTrue(all(p.stdout.at_eof() and p.stdin.is_closing() for p in engine.processes.values()))
+        self.assertTrue(all(p.ipc_reader.at_eof() and p.ipc_writer.is_closing() for p in engine.processes.values()))
         events = [json.loads(line) for line in trace.read_text().splitlines()]
         self.assertEqual(summary["trace_sha256"], hashlib.sha256(trace.read_bytes()).hexdigest())
         return summary, events
@@ -416,7 +417,7 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
             node = self.diamond["components"][name]
             for body in (b"", b"x", struct.pack(">QQ", 1, 0)):
                 with self.subTest(component=name, body=body):
-                    result = await asyncio.to_thread(subprocess.run, node["command"],
+                    result = await asyncio.to_thread(run_component, node["command"],
                         input=frame("I", json.dumps(node).encode()) + frame("T", body) + frame("X"),
                         capture_output=True, timeout=5)
                     self.assertNotEqual(result.returncode, 0)

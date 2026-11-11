@@ -21,7 +21,7 @@ the [model migration guide](../ose/docs/model-v2-migration.md).
 | Boundary | Supported form |
 | --- | --- |
 | Application models and compiled plans | Version 2; each compiled component uses execution model 2. |
-| Component stdio protocol | CH/2; one activating input reference per callback, explicit timers and passive Pull access. |
+| Component socketpair protocol | CH/2; one activating input reference per callback, explicit timers and passive Pull access. |
 | Engine/client network envelope | CENV/2 exclusively; CENV/1 is rejected. |
 | SDL message bodies and contracts | S2PS/2 bodies unchanged; per-message catalogue exchange, discovery and compatibility checks stay dynamic. |
 | Deployment and scenario documents | Their independent version 1 is retained. |

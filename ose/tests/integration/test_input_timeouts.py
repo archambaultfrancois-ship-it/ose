@@ -1,4 +1,5 @@
 """Timed inputs across generated containers and real broker/adapter execution."""
+from tests.component_driver import run_component
 import asyncio
 import io
 import json
@@ -143,7 +144,7 @@ class TimeoutContainerTests(unittest.TestCase):
 
     def run_node(self, language, name, events):
         node = self.fixtures[language]["components"][name]
-        result = subprocess.run(node["command"], input=frame("I", json.dumps(node).encode()) + events + frame("X"),
+        result = run_component(node["command"], input=frame("I", json.dumps(node).encode()) + events + frame("X"),
                                 capture_output=True, timeout=10)
         messages, stream = [], io.BytesIO(result.stdout)
         while stream.tell() < len(result.stdout):

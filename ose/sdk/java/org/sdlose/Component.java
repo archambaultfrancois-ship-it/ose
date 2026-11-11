@@ -7,7 +7,7 @@ import java.nio.charset.*;
 import java.util.*;
 import sdl.runtime.SdlCodec;
 
-/** CH/2 component runtime. Standard output belongs exclusively to this protocol. */
+/** CH/2 component runtime on a private socketpair; standard streams are free. */
 public final class Component {
     private static void nameProcess() {
         // The JVM's main Java thread need not be the Linux thread-group leader.
@@ -197,7 +197,7 @@ public final class Component {
             parameters[slot].decode(parameters[slot].catalogue, payload);
             parameterValues[slot] = payload;
         }
-        public Context(String name, Port[] outputs) { this(name, outputs, System.out); }
+        public Context(String name, Port[] outputs) { this(name, outputs, NativeTransport.instance().output()); }
         public Context(String name, Port[] outputs, OutputStream stream) {
             this.name = name; this.outputs = outputs; this.stream = stream;
         }
@@ -352,7 +352,8 @@ public final class Component {
         void stop() throws Exception;
     }
     public static void runInputs(Context ctx, InputCallbacks callbacks) throws Exception {
-        runInputs(ctx, callbacks, System.in);
+        try { runInputs(ctx, callbacks, NativeTransport.instance().input()); }
+        finally { NativeTransport.instance().close(); }
     }
     public static void runInputs(Context ctx, InputCallbacks callbacks, InputStream stream) throws Exception {
         if (ctx.inputSpecs == null) throw new IllegalStateException("CH/2 input declarations are required");

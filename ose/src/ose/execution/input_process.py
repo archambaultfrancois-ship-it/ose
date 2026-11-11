@@ -142,40 +142,40 @@ class InputCallbackContext(ComponentContext):
 
 def run_input_callbacks(*, name, handler, sdl_root, input_types, output_types,
                         context_type=InputCallbackContext, reader=None, writer=None, parameter_types=None):
-    session = InputSession(reader, writer, auto_ready=False)
-    if session.config.get("execution_model") != 2:
-        raise ValueError("CH/2 callbacks require execution model 2")
-    context = context_type(session, name, input_types, output_types, SDL2(sdl_root), parameter_types)
-    module = _load_handler(handler)
-    if hasattr(module, "on_tick"):
-        raise ValueError("on_tick is removed from the v2 API; declare timer inputs")
-    callbacks = {}
-    for port, desc in context._declarations.items():
-        if desc.mode == "push":
-            callbacks[port] = _callback(module, "on_" + port, 2, required=True)
-        elif hasattr(module, "on_" + port):
-            raise ValueError("Pull inputs cannot declare an activating callback")
-    start, stop = _callback(module, "on_start", 1), _callback(module, "on_stop", 1)
-    try:
-        if start:
-            _call(start, context)
-        context._parameter_writes = False
-        session.ready()
-        for reference in session.activations():
-            desc = context._declarations.get(reference.port)
-            if (desc is None or desc.mode != "push" or reference.event not in desc.outputs
-                    or reference.event == "timeout" and not desc.timeout_ns):
-                raise ValueError("activation does not match input declaration")
-            value = (context._decode_record(reference.port, reference.record) if reference.record is not None else
-                     ReceivedInput(reference.port, reference.event, None, elapsed=reference.elapsed, due_ns=reference.due_ns))
-            context._active = context._parameter_writes = True
-            context._origin = reference
-            try:
-                _call(callbacks[reference.port], context, value)
-            finally:
-                context._active = context._parameter_writes = False
-                context._origin = None
-    finally:
-        context._parameter_writes = False
-        if stop:
-            _call(stop, context)
+    with InputSession(reader, writer, auto_ready=False) as session:
+        if session.config.get("execution_model") != 2:
+            raise ValueError("CH/2 callbacks require execution model 2")
+        context = context_type(session, name, input_types, output_types, SDL2(sdl_root), parameter_types)
+        module = _load_handler(handler)
+        if hasattr(module, "on_tick"):
+            raise ValueError("on_tick is removed from the v2 API; declare timer inputs")
+        callbacks = {}
+        for port, desc in context._declarations.items():
+            if desc.mode == "push":
+                callbacks[port] = _callback(module, "on_" + port, 2, required=True)
+            elif hasattr(module, "on_" + port):
+                raise ValueError("Pull inputs cannot declare an activating callback")
+        start, stop = _callback(module, "on_start", 1), _callback(module, "on_stop", 1)
+        try:
+            if start:
+                _call(start, context)
+            context._parameter_writes = False
+            session.ready()
+            for reference in session.activations():
+                desc = context._declarations.get(reference.port)
+                if (desc is None or desc.mode != "push" or reference.event not in desc.outputs
+                        or reference.event == "timeout" and not desc.timeout_ns):
+                    raise ValueError("activation does not match input declaration")
+                value = (context._decode_record(reference.port, reference.record) if reference.record is not None else
+                         ReceivedInput(reference.port, reference.event, None, elapsed=reference.elapsed, due_ns=reference.due_ns))
+                context._active = context._parameter_writes = True
+                context._origin = reference
+                try:
+                    _call(callbacks[reference.port], context, value)
+                finally:
+                    context._active = context._parameter_writes = False
+                    context._origin = None
+        finally:
+            context._parameter_writes = False
+            if stop:
+                _call(stop, context)

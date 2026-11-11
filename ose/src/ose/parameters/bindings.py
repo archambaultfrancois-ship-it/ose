@@ -65,7 +65,7 @@ class RemoteBindings:
 async def updates(process, node, values):
     for alias, payload in values.items():
         binding = node['parameter_bindings'][alias]
-        await ipc.send(process.stdin, 'U', ipc.port_data(alias, payload, binding['catalogue']))
+        await ipc.send(process.ipc_writer, 'U', ipc.port_data(alias, payload, binding['catalogue']))
 
 
 async def write_reply(process, data, bindings):
@@ -77,7 +77,7 @@ async def write_reply(process, data, bindings):
         result = b'\x01'
     except (ValueError, KeyError, TypeError) as error:
         result = b'\x00' + str(error).encode()[:4096]
-    await ipc.send(process.stdin, 'A', result)
+    await ipc.send(process.ipc_writer, 'A', result)
 
 
 class LocalBindings:

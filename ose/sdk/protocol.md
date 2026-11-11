@@ -7,7 +7,11 @@ Rebuild generated containers when upgrading the component protocol.
 
 ## Framing and lifecycle
 
-stdin/stdout are binary protocol streams; diagnostics go to stderr. Each frame
+CH/2 uses a private Unix stream socketpair; stdin/stdout/stderr belong to the
+application. The launcher transfers its endpoint through `OSE_IPC_FD`; SDKs
+claim it automatically and prevent inheritance across subsequent execs. See
+[component transport](../docs/component-transport.md) for ownership and migration.
+Each frame
 is `u32 big-endian length | u8 ASCII opcode | body`. Length includes the opcode
 and is between 1 and 1,048,576 bytes. Readers handle partial reads.
 
@@ -46,7 +50,7 @@ interrupt an active callback. See [shared parameters](../docs/parameters.md).
 
 STOP requests clean exit, including while waiting for an activation. The
 adapter's 0.5-second grace period includes both writing STOP and waiting for exit;
-a full stdin pipe cannot postpone it. It then sends SIGTERM, waits up to one
+a full IPC socket cannot postpone it. It then sends SIGTERM, waits up to one
 second and kills/reaps the component if necessary.
 
 ## Logs

@@ -34,7 +34,8 @@ assert pathlib.Path(ose.__file__).resolve().is_relative_to(pathlib.Path(distribu
 root = pathlib.Path.cwd()
 sdk = sdk_root()
 assert 'share/ose/sdk' in str(sdk), sdk
-for asset in ('c/ose_inputs.h', 'rust/src/inputs.rs',
+for asset in ('c/ose_inputs.h', 'c/ose_transport.h', 'rust/src/inputs.rs', 'rust/src/transport.rs',
+              'java/ose_transport_jni.c', 'java/org/sdlose/NativeTransport.java',
               'java/org/sdlose/InputProtocol.java', 'ada/ose_inputs.ads', 'ada/ose_inputs.adb',
               'java/org/sdlose/Component.java', 'ada/ose_component.ads',
               'ada/ose_measurements.ads', 'ada/ose_measurements.adb',

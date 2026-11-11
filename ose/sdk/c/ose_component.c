@@ -1,5 +1,6 @@
 #include "ose_component_internal.h"
 #include "ose_inputs.h"
+#include "ose_transport.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,12 +21,34 @@ static uint32_t number(const uint8_t *b) {
 static void header(uint8_t *b, uint32_t n) {
     b[0]=(uint8_t)(n>>24); b[1]=(uint8_t)(n>>16); b[2]=(uint8_t)(n>>8); b[3]=(uint8_t)n;
 }
+static int transport(void) {
+    static int fd = -1, initialized = 0;
+    if (!initialized) {
+        initialized = 1;
+        fd = ose_transport_open();
+        if (fd < 0) fprintf(stderr, "OSE_IPC_FD: expected an inherited Unix stream socket; rebuild/run with OSE\n");
+    }
+    return fd;
+}
 static int read_all(void *data, size_t size) {
     size_t offset=0;
+    int fd = transport();
+    if (fd < 0) return 0;
     while (offset<size) {
-        size_t n=fread((uint8_t *)data+offset,1,size-offset,stdin);
-        if (!n) return 0;
-        offset+=n;
+        ssize_t n=ose_transport_read(fd,(uint8_t *)data+offset,size-offset);
+        if (n <= 0) return 0;
+        offset+=(size_t)n;
+    }
+    return 1;
+}
+static int write_all(const void *data, size_t size) {
+    size_t offset = 0;
+    int fd = transport();
+    if (fd < 0) return 0;
+    while (offset < size) {
+        ssize_t n = ose_transport_write(fd, (const uint8_t *)data + offset, size - offset);
+        if (n <= 0) return 0;
+        offset += (size_t)n;
     }
     return 1;
 }
@@ -57,8 +80,7 @@ int ose_send(char op, const void *data, size_t size) {
     uint8_t b[4];
     if (size>=MAX_SIZE || (size && !data)) return 0;
     header(b,(uint32_t)size+1);
-    return fwrite(b,1,4,stdout)==4 && fwrite(&op,1,1,stdout)==1 &&
-           (!size || fwrite(data,1,size,stdout)==size) && fflush(stdout)==0;
+    return write_all(b,4) && write_all(&op,1) && (!size || write_all(data,size));
 }
 int ose_internal_log(OseLogLevel level, const char *logger, const char *message) {
     size_t n, m, prefix;

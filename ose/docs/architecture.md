@@ -78,7 +78,7 @@ Generated containers bridge the same component protocol to typed user
 callbacks. The generated code is under `build/components/<name>`; user handlers
 remain outside build artefacts and are never overwritten. See
 [callback containers](callbacks.md) for callback selection and lifecycle rules.
-Native containers compile with the chosen SDL checkout and bundled stdio SDKs.
+Native containers compile with the chosen SDL checkout and bundled socketpair SDKs.
 
 Deployment `subscriptions` maps IDs to `{transport: "tcp" | "udp"}`. Model QoS
 specifies the delivery requirements. Compilation resolves both into the plan,

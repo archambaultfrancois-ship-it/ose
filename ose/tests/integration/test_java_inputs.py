@@ -1,4 +1,5 @@
 """Java CH/2 typed callbacks through native and mixed-language local engines."""
+from tests.component_driver import run_component
 import asyncio
 import copy
 import io
@@ -35,7 +36,7 @@ public final class HANDLER_NAME extends API.Handler {
         if (ctx.configJson.contains("\"delay\": 0.01")) Thread.sleep(10);
         else if (ctx.configJson.contains("\"delay\": 0.005")) Thread.sleep(5);
         if (ctx.configJson.contains("\"bypass\": true")) {
-            org.sdlose.Component.send(System.out, 'P', new byte[]{0, 3, 'o', 'u', 't', 0, 1});
+            org.sdlose.Component.send(org.sdlose.NativeTransport.instance().output(), 'P', new byte[]{0, 3, 'o', 'u', 't', 0, 1});
             return;
         }
         Reference<Value> previous = ctx.get_feedback(new Selector().id(ID));
@@ -292,7 +293,7 @@ public final class Push extends API.Handler {
 
     @staticmethod
     def exchange(node, data):
-        result = subprocess.run(node["command"], input=ipc.frame("I", json.dumps(node).encode()) + data + ipc.frame("X"),
+        result = run_component(node["command"], input=ipc.frame("I", json.dumps(node).encode()) + data + ipc.frame("X"),
             capture_output=True, timeout=10)
         stream, events = io.BytesIO(result.stdout), []
         while stream.tell() < len(result.stdout):

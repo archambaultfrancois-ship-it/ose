@@ -1,4 +1,5 @@
 """Ada CH/2 executable boundaries; missing GNAT is an explicit failure."""
+from tests.component_driver import run_component
 import io
 import json
 import os
@@ -76,7 +77,7 @@ end Sink_Handler;
         self.plan = json.loads(path.read_text())
 
     def run_node(self, name, events):
-        result = subprocess.run(self.plan['components'][name]['command'],
+        result = run_component(self.plan['components'][name]['command'],
                                 input=frame('I', b'{}') + events + frame('X'),
                                 capture_output=True, timeout=15)
         stream, frames = io.BytesIO(result.stdout), []

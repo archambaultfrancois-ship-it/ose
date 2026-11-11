@@ -202,8 +202,8 @@ Raw Python components use
 `from ose.execution.input_process import InputSession`; the
 `sdk/python/sdl_ose_component.py` entry point also exports the CH/2 session,
 typed callback context and input references.
-The C stdio SDK is compiled from `sdk/c`; its optional callback runner uses SDL.
-The dependency-free Rust stdio crate lives in
+The C socketpair SDK is compiled from `sdk/c`; its optional callback runner uses SDL.
+The dependency-free Rust socketpair crate lives in
 `sdk/rust`. They expose the same binary lifecycle while generated SDL bindings
 perform the actual message encoding and decoding.
 

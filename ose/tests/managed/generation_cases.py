@@ -1,4 +1,5 @@
 """Exercise managed build workflows through their public model/compiler boundary."""
+from tests.component_driver import run_component
 import json
 import os
 from pathlib import Path
@@ -46,12 +47,12 @@ def check_generation(case, root, sdl, language):
     build(model_path, deployment_path, sdl, destination)
     case.assertEqual({p: p.read_bytes() for p in files}, original)
     command = json.loads(path.read_text())['components']['source']['command']
-    result = subprocess.run(command, input=frame('I', b'{}') + frame('X'),
+    result = run_component(command, input=frame('I', b'{}') + frame('X'),
                             capture_output=True, timeout=15)
     case.assertEqual(result.returncode, 0, result.stderr.decode())
     case.assertEqual(result.stdout, frame('R', b'\2'))
     # Scaffolds must fail explicitly until their activating callbacks are implemented.
-    result = subprocess.run(command, input=frame('I', b'{}') + timer_frame(1) + frame('X'),
+    result = run_component(command, input=frame('I', b'{}') + timer_frame(1) + frame('X'),
                             capture_output=True, timeout=15)
     case.assertNotEqual(result.returncode, 0)
     case.assertEqual(result.stdout, frame('R', b'\2'))

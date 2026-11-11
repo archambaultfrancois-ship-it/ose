@@ -146,26 +146,26 @@ class BackpressureTests(unittest.IsolatedAsyncioTestCase):
         finally:
             release_catalogue.set()
 
-    async def test_shutdown_kills_component_that_never_reads_stdin(self):
+    async def test_shutdown_kills_component_that_never_reads_ipc(self):
         plan = self.plan({})
         plan["components"]["sink"]["command"] = [sys.executable, "-c",
-            "import signal,sys,time\n"
+            "import signal,sys,time\nfrom ose.execution.channel import component_socket\ns=component_socket()\n"
             "signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
-            "sys.stdout.buffer.write(b'\\x00\\x00\\x00\\x02R\\x02');sys.stdout.buffer.flush()\n"
+            "s.sendall(b'\\x00\\x00\\x00\\x02R\\x02')\n"
             "while True: time.sleep(10)\n"]
         adapter, broker = self.adapter(plan), await self.broker(plan)
         blocked = asyncio.Event()
         async def fill_pipe():
             from ose.execution import ipc
             blocked.set()
-            await ipc.send(adapter.process.stdin, "D", b"x" * 900000)
+            await ipc.send(adapter.process.ipc_writer, "D", b"x" * 900000)
         adapter._work = fill_pipe
         running = self.spawn(adapter.run("127.0.0.1", broker.port))
         try:
             await eventually(lambda: "sink" in broker.ready)
             broker.enabled = True
             await asyncio.wait_for(blocked.wait(), 2)
-            await eventually(lambda: adapter.process.stdin.transport.get_write_buffer_size() > 65536)
+            await eventually(lambda: adapter.process.ipc_writer.transport.get_write_buffer_size() > 65536)
             running.cancel()
             done, _ = await asyncio.wait({running}, timeout=2.5)
             self.assertIn(running, done, "STOP write exceeded the cleanup deadline")
@@ -176,16 +176,16 @@ class BackpressureTests(unittest.IsolatedAsyncioTestCase):
             # Also clean up when running this regression against the broken version.
             if hasattr(adapter, "process") and adapter.process.returncode is None:
                 adapter.process.kill()
-                adapter.process.stdin.transport.abort()
+                adapter.process.ipc_writer.transport.abort()
                 await adapter.process.wait()
 
-    async def test_only_activating_push_is_reserved_before_first_pipe_write(self):
+    async def test_only_activating_push_is_reserved_before_first_ipc_write(self):
         policy = Policy(capacity=1, overflow="drop_oldest")
         adapter = self.adapter(self.plan({"left": policy, "right": policy}))
         for buffer in adapter.buffers.values():
             buffer.admit(self.record(1))
         entered, release = asyncio.Event(), asyncio.Event()
-        adapter.process = SimpleNamespace(stdin=object())
+        adapter.process = SimpleNamespace(ipc_writer=object())
         async def blocked_send(writer, op, data=b""):
             if op == "T":
                 entered.set()

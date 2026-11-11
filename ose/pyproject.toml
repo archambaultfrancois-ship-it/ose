@@ -32,6 +32,7 @@ where = ["src"]
 "share/ose/sdk/client/rust/tests/fixtures" = ["sdk/client/rust/tests/fixtures/*.json"]
 
 "share/ose/sdk/java/org/sdlose" = ["sdk/java/org/sdlose/*.java"]
+"share/ose/sdk/java" = ["sdk/java/*.c"]
 "share/ose/sdk/ada" = ["sdk/ada/*.ads", "sdk/ada/*.adb"]
 "share/ose/sdk/client/java" = ["sdk/client/java/*.c"]
 "share/ose/sdk/client/java/org/sdlose/client" = ["sdk/client/java/org/sdlose/client/*.java"]

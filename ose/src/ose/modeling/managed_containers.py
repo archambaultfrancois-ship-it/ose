@@ -106,7 +106,8 @@ def generate_java(name, node, handler, sdl_root, schemas, destination, identity)
     if classes.exists():
         shutil.rmtree(classes)
     classes.mkdir(parents=True, exist_ok=True)
-    reserved = {'org.sdlose.Component', 'org.sdlose.Json', 'org.sdlose.InputProtocol', package + '.API', package + '.Main', identity}
+    reserved = {'org.sdlose.Component', 'org.sdlose.Json', 'org.sdlose.InputProtocol', 'org.sdlose.NativeTransport',
+                package + '.API', package + '.Main', identity}
     if any(wrapper in reserved for wrapper, _ in types.values()):
         raise ValueError('Java schema wrapper conflicts with the generated component API or handler')
     if handler.stem != identity.rsplit('.', 1)[-1]:
@@ -162,7 +163,12 @@ def generate_java(name, node, handler, sdl_root, schemas, destination, identity)
     (source / 'Main.java').write_text(main)
     sources = sorted((destination / 'types').rglob('*.java')) + sorted((sdk_root() / 'java').rglob('*.java')) + [source / 'API.java', source / 'Main.java', handler]
     command = [sys.executable, '-m', 'ose.modeling.java_build', str(classes), *map(str, sources)]
-    return {'types': types, 'command': tool('JAVA', 'java') + ['-cp', str(classes), package + '.Main'], 'build': [command]}
+    from ose.modeling.java_transport_build import library_name
+    native = destination / 'native'
+    bridge = [sys.executable, '-m', 'ose.modeling.java_transport_build', str(native)]
+    return {'types': types, 'command': tool('JAVA', 'java') +
+            ['-Dose.component.transport.library=' + str(native / library_name()), '-cp', str(classes), package + '.Main'],
+            'build': [bridge, command]}
 
 
 def generate_ada(*args, **kwargs):

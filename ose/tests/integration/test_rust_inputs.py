@@ -1,4 +1,5 @@
 """Typed Rust CH/2 callbacks in native and mixed feedback graphs."""
+from tests.component_driver import run_component
 import asyncio
 import copy
 import io
@@ -226,7 +227,7 @@ impl Callbacks for Handler {
         for malformed in (b"", data[:32], bytes(32) + data[32:],
                           input_ipc.activation_data(skipped, 2), input_ipc.activation_data(passive, 1)):
             with self.subTest(data=malformed[:32]):
-                result = subprocess.run(node["command"], input=ipc.frame("I", json.dumps(node).encode())
+                result = run_component(node["command"], input=ipc.frame("I", json.dumps(node).encode())
                     + ipc.frame("T", malformed) + ipc.frame("X"), capture_output=True, timeout=5)
                 self.assertNotEqual(result.returncode, 0)
                 stream, events = io.BytesIO(result.stdout), []

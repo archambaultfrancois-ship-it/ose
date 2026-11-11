@@ -1,8 +1,73 @@
 """Drive generated timer callbacks through the real CH/2 scheduler and services."""
+from concurrent.futures import ThreadPoolExecutor
+import os
+import socket
+import subprocess
 from ose.execution.activation import InputReference, InputScheduler
 from ose.execution.input_ipc import InputServices, activation_data
 from ose.execution.ipc import frame
 from ose.execution.process import input_events, start_component
+
+
+def run_component(command, *, input=b'', capture_output=True, timeout=15, env=None, **options):
+    """Raw protocol probe over socketpair; stdout is independently captured.
+
+    Keep ``stdout`` as the protocol bytes for existing frame assertions, and
+    expose application output as ``application_stdout``. This helper is only for
+    tests which deliberately send raw/malformed CH frames, not CLI launches.
+    """
+    environment = dict(os.environ if env is None else env)
+    parent, child = socket.socketpair()
+    environment['OSE_IPC_FD'] = str(child.fileno())
+    parent.settimeout(timeout)
+    check = options.pop('check', False)
+    try:
+        process = subprocess.Popen(command, env=environment, pass_fds=(child.fileno(),),
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, **options)
+    except BaseException:
+        parent.close()
+        raise
+    finally:
+        child.close()
+
+    def send():
+        try:
+            parent.sendall(input)
+            parent.shutdown(socket.SHUT_WR)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # Invalid frame tests may exit without reading all the input.
+
+    def receive():
+        chunks = []
+        try:
+            while True:
+                data = parent.recv(65536)
+                if not data:
+                    break
+                chunks.append(data)
+        except ConnectionResetError:
+            pass
+        return b''.join(chunks)
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            sending, receiving = executor.submit(send), executor.submit(receive)
+            try:
+                stdout, stderr = process.communicate(timeout=timeout)
+                sending.result(timeout=timeout)
+                protocol = receiving.result(timeout=timeout)
+            except BaseException:
+                process.kill()
+                process.communicate()
+                parent.shutdown(socket.SHUT_RDWR)
+                raise
+        result = subprocess.CompletedProcess(command, process.returncode, protocol, stderr)
+        result.application_stdout = stdout
+        if check:
+            result.check_returncode()
+        return result
+    finally:
+        parent.close()
 
 
 class ComponentDriver:

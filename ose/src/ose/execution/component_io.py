@@ -1,7 +1,6 @@
-"""Shared stdio framing and context services for Python component sessions."""
+"""Shared socket framing and context services for Python component sessions."""
 import json
 import struct
-import sys
 from enum import Enum
 from ose.recording.component import validate_name, MAX_POINTS, MAX_TICK_BYTES
 from ose.execution.measurements import validate_name as validate_measurement_name, validate_value
@@ -26,8 +25,36 @@ class RecordResult(str, Enum):
 
 class SessionIO:
     def __init__(self, reader=None, writer=None):
-        self.reader = reader or sys.stdin.buffer
-        self.writer = writer or sys.stdout.buffer
+        self.channel = None
+        if reader is None or writer is None:
+            if reader is not None or writer is not None:
+                raise ValueError('provide both IPC streams or neither')
+            from ose.execution.channel import component_socket
+            self.channel = component_socket()
+            reader = self.channel.makefile('rb', buffering=0)
+            writer = self.channel.makefile('wb', buffering=0)
+        self.reader, self.writer = reader, writer
+        try:
+            self._initialize()
+        except BaseException:
+            self.close()
+            raise
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    def close(self):
+        # Explicit streams are owned by the caller (including in-memory tests).
+        if self.channel is not None:
+            self.reader.close()
+            self.writer.close()
+            self.channel.close()
+            self.channel = None
+
+    def _initialize(self):
         op, payload = self.receive()
         if op != "I":
             raise ValueError("expected INIT")
@@ -60,7 +87,12 @@ class SessionIO:
         return chr(body[0]), body[1:]
 
     def send(self, op, data=b""):
-        self.writer.write(frame(op, data))
+        data = memoryview(frame(op, data))
+        while data:
+            written = self.writer.write(data)
+            if not written:
+                raise EOFError('component IPC disconnected')
+            data = data[written:]
         self.writer.flush()
 
     def log(self, level, message, logger=''):

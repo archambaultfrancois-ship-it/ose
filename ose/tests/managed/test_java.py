@@ -1,4 +1,5 @@
 """Executable Java CH/2 container boundaries; toolchain failures are failures."""
+from tests.component_driver import run_component
 import io
 import json
 import os
@@ -64,7 +65,7 @@ public class Sink extends API.Handler {
         self.plan = json.loads(path.read_text())
 
     def run_node(self, name, data, init=b'{}'):
-        result = subprocess.run(self.plan['components'][name]['command'],
+        result = run_component(self.plan['components'][name]['command'],
                                 input=frame('I', init) + data + frame('X'),
                                 capture_output=True, timeout=15)
         stream, events = io.BytesIO(result.stdout), []

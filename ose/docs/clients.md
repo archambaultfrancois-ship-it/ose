@@ -3,7 +3,7 @@
 A Python, C, Rust, Java or Ada program can publish and subscribe directly to an application's
 CENV/2 broker without a client-side model or a second broker. Generated message
 types and the SDL runtime remain application dependencies. The existing component
-SDKs that use stdin/stdout remain independent of these network SDKs.
+SDKs that use a private Unix socketpair remain independent of these network SDKs.
 
 For recording without application bindings or a client-side model, use the
 [interactive recorder](recording.md). It discovers live points, accepts SDL filters

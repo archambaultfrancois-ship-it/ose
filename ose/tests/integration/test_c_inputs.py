@@ -1,4 +1,5 @@
 """Typed C CH/2 callbacks, mixed-language feedback and strict frame handling."""
+from tests.component_driver import run_component
 import asyncio
 import copy
 import io
@@ -206,7 +207,7 @@ class CInputProcessTests(python_inputs.InputProcessTests):
                       input_ipc.activation_data(passive, 1), data[:33] + b"\0\x01\xff\0"]
         for body in malformed:
             with self.subTest(data=body):
-                result = subprocess.run(node["command"], input=ipc.frame("I", json.dumps(node).encode()) +
+                result = run_component(node["command"], input=ipc.frame("I", json.dumps(node).encode()) +
                     ipc.frame("T", body) + ipc.frame("X"), capture_output=True, timeout=5)
                 self.assertNotEqual(result.returncode, 0)
                 stream, events = io.BytesIO(result.stdout), []
@@ -221,7 +222,7 @@ class CInputProcessTests(python_inputs.InputProcessTests):
         timer = InputReference("clock", "timeout", 10_000_000, 10_000_000, 1, None, frozenset())
         for reply in (b"", b"\2", b"\1", b"\1\2", b"\1\0\0", b"\1\1", b"\0rejected"):
             with self.subTest(reply=reply):
-                result = subprocess.run(node["command"], input=ipc.frame("I", json.dumps(node).encode()) +
+                result = run_component(node["command"], input=ipc.frame("I", json.dumps(node).encode()) +
                     ipc.frame("T", input_ipc.activation_data(timer, 1)) + ipc.frame("A", reply) + ipc.frame("X"),
                     capture_output=True, timeout=5)
                 self.assertNotEqual(result.returncode, 0)

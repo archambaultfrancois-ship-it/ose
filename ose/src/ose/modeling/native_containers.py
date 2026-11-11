@@ -1,4 +1,4 @@
-"""Typed C and Rust containers built on the public SDL runtimes and stdio SDKs."""
+"""Typed C and Rust containers built on the public SDL runtimes and socketpair SDKs."""
 import json
 import os
 from pathlib import Path
@@ -290,7 +290,7 @@ def _finish_rust(name, handler, sdl_root, destination, source, types, lines):
     (source / "container.rs").write_text("\n".join(lines))
     (source / "main.rs").write_text("// Generated component entry point.\npub mod types;\npub mod container;\n" +
         f"#[path = {rust_string(str(handler))}]\nmod handler;\n" +
-        "fn main() -> container::Result { container::run(handler::Handler::default()) }\n")
+        "fn main() -> container::Result { sdl_ose_component::initialize_transport()?; container::run(handler::Handler::default()) }\n")
     sdk = sdk_root()
     manifest = destination / "Cargo.toml"
     binary = "ose-component-" + name

@@ -1,3 +1,4 @@
+from tests.component_driver import run_component
 import io
 import json
 import os
@@ -20,7 +21,7 @@ def check_component(test, plan, codec):
     events = timer_frame(1) + frame("E", b"dsp.fft.intermediaire\0dsp.etat") + timer_frame(2) + \
              frame("E", b"dsp.etat") + timer_frame(3) + frame("E") + timer_frame(4) + frame("X")
     node = plan["components"]["source"]
-    result = subprocess.run(node["command"], input=frame("I", json.dumps(node).encode()) + events,
+    result = run_component(node["command"], input=frame("I", json.dumps(node).encode()) + events,
                             capture_output=True, timeout=15, cwd=node["cwd"])
     test.assertEqual(result.returncode, 0, result.stderr.decode())
     stream, frames = io.BytesIO(result.stdout), []

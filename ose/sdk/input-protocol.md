@@ -1,5 +1,9 @@
 # Component protocol CH/2
 
+CH/2 runs on a [private Unix socketpair](../docs/component-transport.md).
+Standard input, output and error are available to the component and its libraries.
+Rebuild generated containers and native SDK binaries when migrating from stdio.
+
 CH/2 runs one callback per activating input. It is selected by application model
 version 2 and READY body `0x02`. Engines reject other READY bodies for v2 components.
 There is no combined input snapshot and no `on_tick` callback. The initial

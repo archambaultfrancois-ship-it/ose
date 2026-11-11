@@ -1,4 +1,5 @@
 """Compile and exercise C/Rust callbacks, ownership and catalogue evolution."""
+from tests.component_driver import run_component
 import copy
 import io
 import json
@@ -168,7 +169,7 @@ class NativeContainerTests(unittest.TestCase):
         node = copy.deepcopy(self.fixtures[language]["plan"]["components"][name])
         if probe:
             node["parameters"] = {"probe": probe}
-        result = subprocess.run(node["command"], input=frame("I", json.dumps(node).encode()) + events + frame("X"),
+        result = run_component(node["command"], input=frame("I", json.dumps(node).encode()) + events + frame("X"),
                                 capture_output=True, timeout=10)
         stream, messages = io.BytesIO(result.stdout), []
         while stream.tell() < len(result.stdout):
@@ -308,7 +309,7 @@ class NativeContainerTests(unittest.TestCase):
                 plan = json.loads(build(m, d, SDL_ROOT, root / "build").read_text())
                 def run(name, events):
                     node = plan["components"][name]
-                    result = subprocess.run(node["command"], input=frame("I", json.dumps(node).encode()) + events + frame("X"), capture_output=True, timeout=10)
+                    result = run_component(node["command"], input=frame("I", json.dumps(node).encode()) + events + frame("X"), capture_output=True, timeout=10)
                     self.assertEqual(result.returncode, 0, result.stderr.decode())
                     stream, messages = io.BytesIO(result.stdout), []
                     while stream.tell() < len(result.stdout):
@@ -341,6 +342,6 @@ class NativeContainerTests(unittest.TestCase):
                 path = build(m, d, SDL_ROOT, root / "new-build")
                 self.assertIn("on_clock", handler.read_text())
                 node = json.loads(path.read_text())["components"]["source"]
-                result = subprocess.run(node["command"], input=frame("I", json.dumps(node).encode()) + timer_frame(1) + frame("X"), capture_output=True, timeout=10)
+                result = run_component(node["command"], input=frame("I", json.dumps(node).encode()) + timer_frame(1) + frame("X"), capture_output=True, timeout=10)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(b"implement the input callback", result.stderr)

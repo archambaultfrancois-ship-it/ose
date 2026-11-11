@@ -25,7 +25,7 @@ The component process can use Python, C, Rust, Java or Ada.
 
 ```mermaid
 flowchart LR
-    C1["Component A<br/>application code"] -->|"SDL2 publication<br/>stdin/stdout"| A1["Adapter A"]
+    C1["Component A<br/>application code"] -->|"SDL2 publication<br/>Unix socketpair"| A1["Adapter A"]
     A1 -->|"PUBLISH over TCP"| B["Broker"]
     B -->|"DATA over TCP or UDP"| A2["Adapter B<br/>input queues"]
     A2 -->|"Input reference<br/>ACTIVATE"| C2["Component B<br/>callbacks"]
@@ -33,7 +33,7 @@ flowchart LR
 ```
 
 The local adapter/component exchange uses the binary [CH/2 protocol](../sdk/input-protocol.md) over
-stdin/stdout. Broker exchanges use [CENV/2](cenv2.md), with an S2PS/2 envelope containing
+a private Unix socketpair. Standard input, output and error belong to the component. Broker exchanges use [CENV/2](cenv2.md), with an S2PS/2 envelope containing
 the catalogue identity and SDL2 message bytes. The adapter adds or removes that
 envelope at the network boundary.
 

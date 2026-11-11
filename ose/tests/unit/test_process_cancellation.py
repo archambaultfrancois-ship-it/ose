@@ -2,7 +2,7 @@
 import asyncio
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from ose.execution.process import start_component
 
@@ -15,7 +15,9 @@ class ComponentStartupTests(unittest.IsolatedAsyncioTestCase):
         self.stopped = AsyncMock()
         for target, replacement in (
             ('asyncio.create_subprocess_exec', AsyncMock(return_value=self.process)),
+            ('ose.execution.process.socket.socketpair', MagicMock(return_value=(MagicMock(), MagicMock()))),
             ('ose.execution.process.ipc.send', AsyncMock()),
+            ('ose.execution.process.asyncio.open_connection', AsyncMock(return_value=(object(), object()))),
             ('ose.execution.process.stop_component', self.stopped),
         ):
             patcher = patch(target, replacement)

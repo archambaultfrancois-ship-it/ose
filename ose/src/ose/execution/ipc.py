@@ -1,4 +1,4 @@
-"""Shared component framing and named service fields on stdio."""
+"""Shared component framing and named service fields on a private socketpair."""
 import struct
 
 MAX_SIZE = 1024 * 1024

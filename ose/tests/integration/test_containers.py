@@ -1,4 +1,5 @@
 """Exercise generated executables through their real SDL and binary IPC boundary."""
+from tests.component_driver import run_component
 import io
 import json
 import os
@@ -59,7 +60,7 @@ class ContainerTests(unittest.TestCase):
 
     def run_node(self, plan, name, events=b""):
         node = plan["components"][name]
-        result = subprocess.run(node["command"], input=frame("I", json.dumps(node).encode()) + events + frame("X"),
+        result = run_component(node["command"], input=frame("I", json.dumps(node).encode()) + events + frame("X"),
                                 cwd=node["cwd"], env=self.env, capture_output=True, timeout=10)
         stream, messages = io.BytesIO(result.stdout), []
         while stream.tell() < len(result.stdout):
