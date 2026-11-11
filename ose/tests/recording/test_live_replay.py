@@ -16,8 +16,7 @@ from ose.codec.sdl2 import SDL2
 from ose.delivery.policies import SubscriptionPolicy
 from ose.execution.distributed import Coordinator, Worker, fingerprint
 from ose.modeling.compiler import build
-from ose.recording.live_replay import controls, play, run
-from ose.recording.pacing import PlaybackClock
+from ose.recording.live_replay import play, run
 from ose.execution.simulation.scenario import Event
 from ose.transport.secure import connect
 from sdl_recording import RecordingWriter
@@ -66,12 +65,12 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
             task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
 
-    def capture(self, format="pcapng", offsets=(0, 40_000_000, 80_000_000), *, catalogue=CAT):
+    def capture(self, format="pcapng", offsets=(0, 40_000_000, 80_000_000), *, catalogue=CAT, topic="source.value"):
         path = self.root / ("capture." + format)
         from ose.codec.catalogue import CatalogueTypes
         types = CatalogueTypes(self.codec.api, catalogue)
         with RecordingWriter(path, format=format, overwrite=True) as writer:
-            channel = writer.register_channel(topic="source.value", catalogue=catalogue, root_type="Value")
+            channel = writer.register_channel(topic=topic, catalogue=catalogue, root_type="Value")
             for sequence, offset in enumerate(offsets, 1):
                 message = types.types['Value'](sequence=sequence, value=float(sequence))
                 writer.write_encoded(channel, self.codec.api.encode(types.context, message),
@@ -99,6 +98,13 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(json.loads(stdout)['replay']['schema_adaptation']['adapted_messages'], 3)
         await self.until(lambda: len(self.values()) == 6)
         self.assertEqual(self.values(), [[i, float(i)] for i in (1, 2, 3)] * 2)
+
+    async def test_automatic_mapping_no_matches_never_opens_a_live_publisher(self):
+        self.plan_path.write_text(json.dumps(self.plan))
+        with patch('ose.recording.live_replay.publisher') as publisher:
+            with self.assertRaisesRegex(ValueError, 'no recorded messages match.*--map'):
+                await run(self.capture(), self.plan_path)
+            publisher.assert_not_called()
 
     async def test_compatible_distributed_replay_and_preflight_rejection(self):
         coordinator, _ = await self.cluster()
@@ -158,14 +164,18 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
         running = json.loads(await asyncio.wait_for(process.stdout.readline(), 20))
         self.assertTrue(running["running"])
         for format, speed in (("pcapng", .5), ("mcap", 2)):
-            path = self.capture(format)
+            automatic = format == 'mcap'
+            path = self.capture(format, topic='external.signal' if automatic else 'source.value')
+            mapping_options = [] if automatic else ['--map', 'source.value=external.signal']
             client = await asyncio.create_subprocess_exec(sys.executable, "-m", "ose.cli", "replay", str(path),
                 "--mode", "realtime", "--plan", str(self.plan_path), "--speed", str(speed),
                 "--loops", "2",
-                "--map", "source.value=external.signal", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                *mapping_options, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             stdout, stderr = await asyncio.wait_for(client.communicate(), 20)
             self.assertEqual(client.returncode, 0, stderr.decode())
             result = json.loads(stdout)
+            self.assertEqual(result['replay']['mapping'],
+                             {'external.signal' if automatic else 'source.value': 'external.signal'})
             self.assertEqual(result["published"], 6)
             self.assertEqual(result["completed_loops"], 2)
             self.assertEqual(result["delivery_results"], {"accepted": 6})
@@ -200,7 +210,7 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
                     "--plan", str(self.plan_path), "--host", "127.0.0.1", "--port", str(coordinator.port),
                     "--insecure", "--map", "source.value=external.signal", "--loops", "0"]
                 if ending == "script":
-                    arguments += ["--command", "wait .22", "--command", "status", "--command", "stop"]
+                    arguments += ["--command", "resume", "--command", "wait .22", "--command", "status", "--command", "stop"]
                 process = await asyncio.create_subprocess_exec(*arguments, stdin=asyncio.subprocess.DEVNULL,
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
                 try:
@@ -230,7 +240,7 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(envelope, body)
             return {"signal": "accepted"}
         result = await asyncio.wait_for(play([event], publish, speed=0, loops=0,
-            commands=["wait .02", "stop"], output=io.StringIO()), 1)
+            commands=["resume", "wait .02", "stop"], output=io.StringIO()), 1)
         self.assertGreater(result["completed_loops"], 1)
         self.assertEqual(result["published"], result["completed_loops"])
         self.assertEqual(result["stop_reason"], "stopped")
@@ -266,9 +276,30 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "disabled"):
             await first.request("external_publish", b"", token=result["token"], topic="external.signal")
 
+    async def test_cli_message_and_temporal_steps_from_command_file(self):
+        coordinator, _ = await self.cluster()
+        path = self.capture(offsets=(0, 1_000_000_000, 2_000_000_000))
+        script = self.root / 'commands.txt'
+        script.write_text('step-messages\nstep-time 1s\nstep-messages\nstatus\nstop\n')
+        process = await asyncio.create_subprocess_exec(sys.executable, '-m', 'ose.cli', 'replay', str(path),
+            '--plan', str(self.plan_path), '--host', '127.0.0.1', '--port', str(coordinator.port),
+            '--insecure', '--map', 'source.value=external.signal', '--speed', '0',
+            '--command-file', str(script), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), 8)
+        self.assertEqual(process.returncode, 0, stderr.decode())
+        self.assertEqual(json.loads(stdout)['published'], 2)
+        statuses = [json.loads(line) for line in stderr.splitlines() if line.startswith(b'{')]
+        self.assertEqual([s['position_ns'] for s in statuses[:3]], [0, 1_000_000_000, 1_000_000_000])
+        self.assertEqual([s['last_command']['messages'] for s in statuses[:3]], [1, 0, 1])
+        await self.until(lambda: len(self.values()) == 2)
+        self.assertEqual(self.values(), [[1, 1.], [2, 2.]])
+        await self.until(lambda: not coordinator.external_owners)
+
     async def test_interactive_speed_pause_resume_status_and_stop(self):
-        clock = PlaybackClock()
+        from ose.recording.control import ReplayControl
         output = io.StringIO()
+        session = ReplayControl("realtime", interactive=True, output=output)
+        clock = session.clock
         class Commands:
             def __init__(self, **kwargs):
                 self.lines = iter(["pause", "speed 2", "status", "speed -1", "resume", "stop"])
@@ -276,19 +307,40 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
                 return next(self.lines) + "\n"
             def close(self):
                 pass
-        with patch("ose.recording.live_replay.CommandInput", Commands):
-            await controls(clock, {"published": 0}, output)
+        with patch("ose.recording.control.CommandInput", Commands):
+            await session.controls()
         self.assertTrue(clock.stopped)
         self.assertFalse(clock.paused)
         self.assertEqual(clock.speed, 2)
         self.assertIn('"paused": true', output.getvalue())
         self.assertIn("speed must be", output.getvalue())
 
+    async def test_live_cli_breakpoint_preempts_a_unified_temporal_step(self):
+        coordinator, _ = await self.cluster()
+        path = self.capture(offsets=(0, 10_000_000, 20_000_000))
+        process = await asyncio.create_subprocess_exec(sys.executable, '-m', 'ose.cli', 'replay', str(path),
+            '--plan', str(self.plan_path), '--host', '127.0.0.1', '--port', str(coordinator.port),
+            '--insecure', '--map', 'source.value=external.signal', '--speed', '0',
+            '--command', 'break-time 5ms', '--command', 'step 1s',
+            '--command', 'step-messages', '--command', 'stop',
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), 8)
+        self.assertEqual(process.returncode, 0, stderr.decode())
+        statuses = [json.loads(line) for line in stderr.splitlines() if line.startswith(b'{')]
+        self.assertEqual(statuses[1]['position_ns'], 5_000_000)
+        self.assertEqual(statuses[1]['published'], 1)
+        self.assertEqual(statuses[1]['last_command']['stop_reason'], 'breakpoint')
+        result = json.loads(stdout)
+        self.assertEqual(result['published'], 2)
+        self.assertEqual(result['last_breakpoint_ns'], 5_000_000)
+        await self.until(lambda: len(self.values()) == 2)
+        self.assertEqual(self.values(), [[1, 1.], [2, 2.]])
+
     async def test_cli_command_scripts_run_in_order_and_stop_without_reading_stdin(self):
         coordinator, _ = await self.cluster()
         path = self.capture(offsets=(0, 1_000_000_000, 2_000_000_000))
         cases = [(["pause", "wait .03", "speed .5", "resume", "wait .06", "status"], 1, "stopped"),
-                 (["speed 2", "wait 60"], 3, "complete"),
+                 (["speed 2", "resume", "wait 60"], 3, "complete"),
                  (["speed 2"], 0, "stopped"),
                  (["stop", "invalid"], 0, "stopped")]
         for commands, count, reason in cases:
@@ -324,17 +376,17 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
         for command in ("wait -1", "wait nan", "wait inf", "speed -1", "invalid"):
             with self.subTest(command=command):
                 publish = AsyncMock()
-                with patch("ose.recording.live_replay.CommandInput", side_effect=AssertionError("stdin must not be read")):
+                with patch("ose.recording.control.CommandInput", side_effect=AssertionError("stdin must not be read")):
                     with self.assertRaises(ValueError):
                         await play(events, publish, commands=[command], output=io.StringIO())
                 publish.assert_not_awaited()
 
-    async def test_cli_rejects_script_errors_and_simulated_commands(self):
+    async def test_cli_rejects_script_errors_and_simulated_speed(self):
         self.plan_path.write_text(json.dumps(self.plan))
         path = self.capture()
         process = await asyncio.create_subprocess_exec(sys.executable, "-m", "ose.cli", "replay", str(path),
             "--mode", "simulated", "--plan", str(self.plan_path), "--duration", "1", "--map", "source.value=external.signal",
-            "--command", "status", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            "--speed", "1", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         _, stderr = await asyncio.wait_for(process.communicate(), 5)
         self.assertEqual(process.returncode, 1)
         self.assertIn("require --mode realtime", stderr.decode())
@@ -403,6 +455,8 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
                     "--map", "source.value=external.signal", stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
                 try:
+                    process.stdin.write(b"resume\n")
+                    await process.stdin.drain()
                     await self.until(lambda: coordinator.metrics["external_publications"] > before)
                     if ending == "sigterm":
                         process.terminate()

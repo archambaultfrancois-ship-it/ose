@@ -20,6 +20,22 @@ def _command(commands, name, summary, description, examples):
         epilog="Examples:\n" + "\n".join("  " + example for example in examples))
 
 
+def _execution_controls(command, *, replay=False):
+    from ose.recording.control import control_help
+    scope = "both realtime and simulated replay" if replay else "simulated run only"
+    command.add_argument("--interactive", action="store_true",
+                         help=f"open the control console ({scope}); starts paused; help or ? lists commands")
+    script = command.add_mutually_exclusive_group()
+    script.add_argument("--command", action="append", help=f"script a control command ({scope}); repeat; starts paused")
+    script.add_argument("--command-file", help=f"UTF-8 control script ({scope}); starts paused; exclusive with --command")
+    command.epilog += "\n\n" + control_help(replay=replay, mode=None if replay else "simulated")
+
+
+def _control_commands(args):
+    return (Path(args.command_file).read_text(encoding="utf-8").splitlines()
+            if args.command_file is not None else args.command)
+
+
 def create_parser():
     parser = argparse.ArgumentParser(
         prog="ose", formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -105,9 +121,11 @@ For distributed execution, start serve and worker instead of run.""")
     command = _command(commands, "run", "run a local application in real time or simulated time",
         "Execute a compiled plan; real-time mode starts the local broker and component processes.\n"
         "Real-time execution runs until interrupted unless --duration is provided.\n"
-        "Simulation requires --duration in virtual seconds. Distributed plans use serve and worker.",
+        "Simulation requires --duration in virtual seconds. Distributed plans use serve and worker.\n"
+        "Simulation controls (--interactive, --command, --command-file) start paused.",
         ["ose run", "ose run --duration 30",
-         "ose run --mode simulated --duration 60 --workers 4 --trace trace.jsonl"])
+         "ose run --mode simulated --duration 60 --workers 4 --trace trace.jsonl",
+         "ose run --mode simulated --duration 60 --microsteps --interactive"])
     command.add_argument("--plan", default="build/plan.json", help="compiled deployment plan (default: build/plan.json)")
     command.add_argument("--duration", type=float, help="positive execution duration in seconds; required in simulated mode")
     command.add_argument("--working-directory", help="component working directory (default: plan settings; app run: launch directory)")
@@ -119,18 +137,21 @@ For distributed execution, start serve and worker instead of run.""")
     command.add_argument("--scenario", help="external-input scenario JSON file (simulated mode only)")
     command.add_argument("--trace", help="output deterministic trace file (simulated mode only)")
     command.add_argument("--max-tick-output-bytes", type=int, help="output byte limit per component tick (default: 16777216; simulated mode only)")
+    _execution_controls(command)
     command = _command(commands, "replay", "replay a recording into simulated or live external inputs",
-        "Map recorded topics to external input topics declared in the plan.\n"
+        "Replay matching external input topic names; use --map to select or rename topics.\n"
         "Real-time replay is the default and publishes into an already running application.\n"
         "Simulation starts an application and requires --mode simulated and --duration.\n"
-        "Connection options, --speed, --interactive and --command require --mode realtime.",
-        ["ose replay capture.mcap --map recorded.topic=external.topic --interactive",
+        "Interactive and scripted controls start paused in both modes.\n"
+        "Connection options and --speed require --mode realtime.",
+        ["ose replay capture.mcap --interactive",
+         "ose replay capture.mcap --map recorded.topic=external.topic --interactive",
          "ose replay capture.mcap --map recorded.topic=external.topic --mode simulated --duration 30",
-         "ose replay capture.mcap --map recorded.topic=external.topic --duration 30 --schema-policy compatible"])
+         "ose replay capture.mcap --map recorded.topic=external.topic --command 'step 100ms' --command status"])
     command.add_argument("recording", help="SDL PCAPNG or MCAP capture")
     command.add_argument("--plan", default="build/plan.json", help="target deployment plan (default: build/plan.json)")
-    command.add_argument("--map", dest="mappings", action="append", required=True,
-                         metavar="RECORDED_TOPIC=EXTERNAL_TOPIC", help="select and map a topic; repeat for each input")
+    command.add_argument("--map", dest="mappings", action="append",
+                         metavar="RECORDED_TOPIC=EXTERNAL_TOPIC", help="select and map a topic; repeat; default: matching external topic names")
     command.add_argument("--mode", choices=("simulated", "realtime"), default="realtime", help="replay destination and clock (default: realtime)")
     command.add_argument("--schema-policy", choices=("exact", "compatible"), default="exact",
                          help="recorded schema policy (default: exact; compatible adapts messages to the target contract)")
@@ -143,9 +164,7 @@ For distributed execution, start serve and worker instead of run.""")
     command.add_argument("--end-ns", type=int, help="exclusive recorded log timestamp in nanoseconds")
     command.add_argument("--trace", help="output deterministic trace file (simulated mode only)")
     command.add_argument("--speed", type=float, help="real-time playback rate (default: 1; 0: maximum speed)")
-    command.add_argument("--interactive", action="store_true", help="live speed, pause, resume and stop controls")
-    command.add_argument("--command", action="append",
-                         help="execute a live replay command in order; repeat to script a session (wait SECONDS supported)")
+    _execution_controls(command, replay=True)
     command.add_argument("--endpoint", help="live endpoint JSON (default: local plan's endpoint.json); exclusive with --host/--port")
     command.add_argument("--host", help="target broker or coordinator host")
     command.add_argument("--port", type=int, help="target broker or coordinator TCP port")
@@ -312,6 +331,9 @@ def execute(args, parser=None):
                         await client.close()
                 asyncio.run(status())
         elif args.action == "run":
+            controlled = args.interactive or args.command is not None or args.command_file is not None
+            if controlled and args.mode != "simulated":
+                raise ValueError("execution controls (--interactive, --command, --command-file) require simulated mode for run")
             execution_options = {}
             from ose.execution.simulation.options import microstep_limit
             microstep_limit(args.microsteps, args.max_microsteps)
@@ -333,6 +355,10 @@ def execute(args, parser=None):
                     raise ValueError("simulated execution requires --duration in virtual seconds")
                 if args.port is not None:
                     raise ValueError("--port is unavailable in simulated mode")
+                if controlled:
+                    from ose.recording.control import ReplayControl
+                    execution_options["controller"] = ReplayControl("simulated", replay=False,
+                        interactive=args.interactive, commands=_control_commands(args), microsteps=args.microsteps)
                 summary = asyncio.run(run(args.plan, args.duration,
                     workers=1 if args.workers is None else args.workers, scenario=args.scenario, trace=args.trace,
                     max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT if args.max_tick_output_bytes is None else args.max_tick_output_bytes,
@@ -346,19 +372,20 @@ def execute(args, parser=None):
                     raise ValueError("--workers, --scenario, --trace, --microsteps and --max-tick-output-bytes require simulated mode")
                 asyncio.run(run(args.plan, args.duration, args.port or 0, **execution_options))
         elif args.action == "replay":
+            commands = _control_commands(args)
             from ose.execution.simulation.options import microstep_limit
             microstep_limit(args.microsteps, args.max_microsteps)
             if args.mode == "simulated":
                 from ose.recording.replay import run
                 if args.duration is None:
                     raise ValueError("simulated replay requires --duration")
-                if (args.interactive or args.command is not None or args.distributed or args.insecure or any(value is not None for value in
+                if (args.distributed or args.insecure or any(value is not None for value in
                         (args.speed, args.endpoint, args.host, args.port, args.tls_ca, args.tls_cert, args.tls_key))):
-                    raise ValueError("speed, replay commands, interactive controls and connection options require --mode realtime")
+                    raise ValueError("speed and connection options require --mode realtime")
                 summary = asyncio.run(run(args.recording, args.plan, args.duration, mappings=args.mappings,
                     start_ns=args.start_ns, end_ns=args.end_ns,
                     workers=1 if args.workers is None else args.workers, trace=args.trace, loops=args.loops,
-                    schema_policy=args.schema_policy,
+                    schema_policy=args.schema_policy, interactive=args.interactive, commands=commands,
                     **({"microsteps": True, "max_microsteps": args.max_microsteps} if args.microsteps else {})))
             else:
                 from ose.recording.live_replay import run
@@ -369,7 +396,7 @@ def execute(args, parser=None):
                         start_ns=args.start_ns, end_ns=args.end_ns, speed=1 if args.speed is None else args.speed,
                         endpoint=args.endpoint, host=args.host, port=args.port, distributed=args.distributed,
                         tls_ca=args.tls_ca, tls_cert=args.tls_cert, tls_key=args.tls_key,
-                        insecure=args.insecure, interactive=args.interactive, commands=args.command, loops=args.loops,
+                        insecure=args.insecure, interactive=args.interactive, commands=commands, loops=args.loops,
                         schema_policy=args.schema_policy))
                     loop = asyncio.get_running_loop()
                     for sig in (signal.SIGINT, signal.SIGTERM):

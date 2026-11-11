@@ -99,6 +99,10 @@ local PCAPNG or MCAP files. It supports the local broker and distributed workers
 Use [`ose replay`](docs/replay.md) to feed captured topics into a model's
 external inputs for paced local/distributed execution by default, with optional
 interactive speed and pause controls. Select `--mode simulated` for simulation.
+Both replay modes and simulated `run` support `step N`, `step 100ms` and temporal
+breakpoints, interactively or through `--command` / `--command-file`. Simulation
+with `--microsteps` also supports `microstep N`. Controlled sessions start paused;
+real-time `run` rejects these controls.
 
 `SDL_ROOT` defaults to the sibling SDL project (`../sdl`). To use another checkout,
 set `SDL_ROOT=/absolute/path/to/ose/sdl` in the environment or on the `make` command

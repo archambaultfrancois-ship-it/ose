@@ -16,6 +16,17 @@ ose replay signals.pcapng --mode simulated --plan build/plan.json \
   --duration 3 --workers 4 --trace build/replay.jsonl
 ```
 
+`--map` is optional. Without it, replay selects recorded messages whose topic
+names exactly match external topics declared in the plan, preserving those names.
+Other recorded topics and external topics absent from the selected recording range
+are ignored. If no messages match, replay fails before starting components or
+publishers and suggests using `--map`. Schema validation still applies.
+
+```sh
+ose replay signals.pcapng --interactive
+ose replay signals.pcapng --mode simulated --duration 3
+```
+
 Each `--map RECORDED_TOPIC=EXTERNAL_TOPIC` selects one recorded topic and assigns
 it to a declared external topic. Other recorded topics are ignored. Internal
 component outputs cannot be targets: use a model without the original producers
@@ -55,29 +66,241 @@ be replaced or refused under load. Admission confirms RAM receipt, rather than
 callback completion. Refusals produce exit status 1; timed-out publications are
 not retried automatically because their outcome may be unknown.
 
-With `--interactive`, enter `speed N`, `pause`, `resume`, `wait SECONDS`, `status`
-or `stop`. Commands can also be supplied through stdin with a pipe or file.
-Changing speed reanchors the clock at the current playback position. Pause
-freezes playback time; an in-flight publication may still complete. `speed 0`
-means maximum speed; use `pause` to suspend. EOF stops playback. Ctrl+C/SIGTERM
-closes the publisher with exit status 130; the application continues running.
+## Execution controls: replay and simulated run
 
-Repeat `--command` to run an ordered script without reading stdin:
+One command language controls `ose replay` in both modes and `ose run --mode
+simulated`. **Execution controls are rejected by `ose run --mode realtime`**:
+there is no global pause or stepping mechanism for a real-time application.
+Live replay controls its own injections into an application which keeps running.
 
-```sh
-ose replay signals.pcapng --mode realtime --plan build/plan.json \
-  --map sensor_1.signal=external.signal_1 \
-  --command pause --command 'wait 1' --command 'speed 2' \
-  --command resume --command 'wait 3' --command status --command stop
+Without controls, execution starts automatically. `--interactive`, repeated
+`--command` or `--command-file` start **paused at position zero**. Simulation
+initializes its component processes before reading commands; no input callback
+runs until execution advances. Live replay connects its publisher first.
+
+| Command | Meaning |
+| --- | --- |
+| `pause` | Suspend progression; acknowledge an in-flight admission or simulated callback wave before reporting status. |
+| `resume` | Continue automatic execution from the current position. |
+| `step [N]` | Settle the current instant, advance to `N` future event instants and pause at the last one. Default: `1`. |
+| `step DURATION` | Execute a relative temporal interval and pause at its exclusive endpoint. A time unit is required. |
+| `step-time DURATION` | Compatibility alias for the temporal form of `step`; bare numbers still mean seconds in this alias. |
+| `step-messages [N]` | Replay only: inject `N` individual recorded messages, including timestamp ties. Default: `1`. |
+| `microstep [N]` | Simulation with `--microsteps` only: execute up to `N` logical callback stages without advancing physical virtual time. Default: `1`. |
+| `break-time TIME` | Arm a one-shot breakpoint at an absolute execution time. |
+| `breakpoints` | List armed breakpoint times and current status. |
+| `clear-break-time TIME` | Remove the breakpoint at that absolute time. |
+| `clear-break-time all` | Remove all armed breakpoints. |
+| `speed N` | Live replay only: set pacing speed; `0` means maximum speed. |
+| `wait DURATION` | Wait in wall-clock time before reading the next command; does not itself advance or resume execution. |
+| `status` | Report position, mode, pause state, counters, breakpoints and last step result. |
+| `stop` / `quit` | End the session and release its resources. |
+| `help` / `?` | Print the command list. |
+
+A bare argument to `step` is always a positive integer count: `step 2` means two
+future instants, not two messages or two seconds. A duration requires `ns`, `us`,
+`ms`, `s` or `min`: `step 100ms`, `step 1.5s`, `step 2min`. `step 1.0` and
+`step 1e2` are rejected to avoid interpreting a unitless decimal as a duration.
+Counts for `microstep` and `step-messages` must also be positive integers.
+
+Other duration-taking commands accept bare numbers as seconds. Conversion uses
+integer nanoseconds, rounds halves upward and clamps positive sub-nanosecond
+values to one nanosecond. Durations must be finite and within uint64 nanoseconds;
+relative steps must also have an in-range absolute target. `wait` and breakpoint
+times accept zero; temporal steps require a positive duration. Blank lines and
+lines starting with `#` are ignored.
+
+**Command migration:** `step N` previously counted replay messages. That behavior
+is now named `step-messages N`; scripts that rely on individual-message budgets
+must use the new name. `step-time 100ms` continues to work as `step 100ms`.
+
+### Stepping by event instants
+
+In **simulation**, `step N` finishes the immediate callback stages at the current
+time, then visits future event instants in chronological order. An event instant
+may contain scenario/recording inputs, timer expirations, inactivity timeouts or
+pending-admission deadlines. It is counted once regardless of how many events
+share that time. All intermediate instants execute normally. At the final instant,
+external inputs and due admissions settle, then execution pauses **before selecting
+callbacks**, with microstep zero. A following `microstep` can inspect the reactions
+there; another `step` settles that instant before advancing farther.
+
+In **live replay**, `step N` injects any remaining messages at the current position,
+then advances through `N` later distinct recorded timestamps, injecting the entire
+final timestamp group before pausing. Gaps are skipped and injections run as fast
+as admission allows, independently of `speed`. A group at or behind the starting
+position does not count as a future instant. Application timers are outside the
+replay controller and cannot define these steps.
+
+For example, from position zero, a capture with messages at 0, 100, 100 and 200 ms
+has its first future message instant at 100 ms. `step` injects the messages at
+0 and 100 ms and pauses at 100 ms. In simulation, the 0 ms callbacks have run,
+while the 100 ms callbacks have not. In real time, callbacks may already be
+processing those inputs. A simulated timer at 50 ms would instead make 50 ms the
+first future event instant for simulated `step`.
+
+### Stepping by a duration
+
+`step DURATION` starts at the acknowledged position `t` and executes the interval
+**`[t, t + DURATION)`**. Inputs, timers and admissions exactly at the endpoint
+remain for the next command. An empty interval still advances the position,
+unless a terminal condition is reached first. This exclusive boundary differs
+from an instant step, which admits external inputs at its destination before
+pausing.
+
+In **live replay**, temporal steps are paced at the selected speed: `step 1s` at
+`speed 2` takes approximately half a real second, plus admission lag. At `speed 0`,
+they run as fast as admission permits. The position freezes at the exact endpoint
+even if an in-flight admission finishes late. Resume reanchors the pacing clock
+there, without catching up for time spent paused.
+
+In **simulation**, timers, callbacks and admissions before the endpoint execute
+as fast as calculations permit. Virtual time and new callbacks remain suspended
+while paused; processes and application state stay alive. Speed control is not
+available. Initial state and deterministic application code still determine
+reproducibility.
+
+### Individual messages and microsteps
+
+`step-messages N` is available only for replay. It counts attempted external
+recorded publications, including refusals, across loop boundaries. Internal
+publications and callbacks do not count. Live replay skips recorded gaps and
+waits for admission results, not for downstream processing.
+
+Simulation runs intervening timers and settles immediate callback stages at the
+last injected timestamp. If the budget splits a same-timestamp input group, the
+selected messages are admitted but callbacks at that timestamp wait for the rest
+of the group. `pending_timestamp_group: true` reports this state. A subsequent
+instant, temporal or microstep command completes that group before callbacks run.
+Deferred virtual admissions may remain at a command boundary; status includes
+`pending_external`.
+
+`microstep N` requires simulated execution launched with `--microsteps`. It first
+admits all external inputs at the current instant, then runs up to `N` stages.
+Each stage selects at most one callback per ready component, runs the selected
+wave, and releases its publications at the next logical boundary before pausing
+or continuing. Physical virtual time stays fixed. If no callback is ready, the
+command reports `blocked` with the number of stages actually executed; it never
+jumps to a future timer or input. Use `step` or `step DURATION` to advance time.
+
+The `--max-microsteps` bound is cumulative at a physical timestamp, including
+across commands. Pausing or issuing another `microstep` does not reset it. A
+new physical timestamp resets the microstep index. Equal successive payloads
+still do not imply convergence; stepping cannot bypass the feedback limit.
+
+### Temporal breakpoints
+
+`break-time TIME` uses an **absolute** position from execution origin, rather
+than a relative duration. For replay, origin is the earliest selected recorded
+message; `--start-ns` changes that origin. For simulated run, origin is virtual
+zero. Breakpoints are global and do not restart at loop boundaries.
+
+```text
+break-time 5s
+break-time 12.5s
+breakpoints
+resume
 ```
 
-`wait` uses wall-clock seconds, independently of playback speed and pause state.
-Leading commands such as `pause` and `speed` are applied before the first
-publication. The end of the script stops replay; it does not switch to stdin,
-including when `--interactive` is also specified. Include a `wait` command to
-allow messages to play between controls. If the capture finishes earlier, the
-remaining script is cancelled. Invalid scripted commands stop replay with exit
-status 1; interactive command errors are reported without closing the console.
+Execution pauses at the earliest armed time **before external admissions, timers
+or callbacks at that instant**, even when no message has that exact timestamp.
+Simulation can also reach an armed breakpoint when no other future work remains;
+without that breakpoint it would stop as quiescent. Live replay remains bounded
+by its selected capture and duration. Pausing live injections does not freeze the
+application's real-time timers or callbacks.
+
+A breakpoint interrupts `step`, `step-messages` or `microstep` at the current
+time as well as automatic execution. If it coincides with a temporal step's
+endpoint, the completion reason is `breakpoint`. The pending step is acknowledged
+with its partial results and is finished: resume does not restore its remaining
+budget. Issue a new step to request another budget. The global exclusive duration
+limit and normal end of live replay take precedence over breakpoints at or beyond
+those terminal boundaries.
+
+A breakpoint is disarmed when hit, allowing `resume` or another step to process
+the paused instant without repeatedly hitting it. Multiple armed times are
+supported; adding the same time twice does not duplicate it. A past time, or the
+current time after its admissions/callbacks have begun, is rejected. Nothing is
+rewound. Use `clear-break-time 12.5s` or `clear-break-time all` to remove armed
+times. Breakpoint hits during automatic playback emit a JSON notification even
+when no step command is awaiting completion.
+
+### Limits, console and scripts
+
+`--duration` remains an exclusive global limit. Live replay also ends after its
+last selected publication; for a temporal step its final boundary is one
+nanosecond after the last publication of the last pass. Simulation can continue
+processing timers after the recording ends and terminates at its horizon or when
+no immediate or future event (including an armed breakpoint) remains. A command
+reaching a terminal condition reports its actual position and completed budget.
+
+Controls do not change logical input ordering. With the same initial state,
+inputs and horizon, stepping to the same normal termination produces the same
+logical trace as continuous execution; explicit `stop` truncates it. Breakpoints
+and acknowledgements remain outside the JSONL trace. An armed breakpoint in an
+otherwise quiescent tail can extend the final reported stop time, but does not
+create application work.
+
+Commands execute serially: a step is acknowledged before the next command is
+read. Interactive errors leave the console available; EOF stops the session.
+Ctrl+C/SIGTERM can interrupt a long step. Live replay releases its publisher with
+exit status 130 while the target application continues running; simulation uses
+its normal bounded process cleanup.
+
+Repeat `--command` without reading stdin:
+
+```sh
+ose replay signals.pcapng --map sensor_1.signal=external.signal_1 \
+  --command 'break-time 5s' --command 'step 10s' \
+  --command 'step-messages 2' --command status --command stop
+```
+
+The same controls apply to simulated run:
+
+```sh
+ose run --mode simulated --duration 60 --microsteps \
+  --command 'break-time 5s' --command 'step 10s' \
+  --command 'microstep 2' --command step --command stop
+```
+
+A UTF-8 `--command-file` supplies one command per line and is mutually exclusive
+with `--command`. Either script source takes precedence over `--interactive`;
+stdin is not read. For example:
+
+```text
+# stop at a selected instant and inspect its first two logical stages
+break-time 5s
+step 10s
+microstep 2
+status
+stop
+```
+
+```sh
+ose replay signals.mcap --mode simulated --microsteps \
+  --map sensor_1.signal=external.signal_1 --duration 60 \
+  --command-file commands.txt --trace build/replay.jsonl
+```
+
+Scripts start paused. Add `resume` before `wait` when automatic execution is
+intended: `--command 'wait 3'` alone waits three real seconds while paused, then
+stops. A step waits for completion; `resume` returns immediately so a subsequent
+`wait` lets execution proceed. Script completion stops the session. Invalid script
+commands abort with exit status 1. Normal termination cancels remaining script
+commands. Scripts run once across all replay loops.
+
+Every completed nonblank command prints JSON status to stderr; stdout contains
+the final summary. Status includes exact `position_ns`, `paused`, `pause_reason`,
+`breakpoints_ns`, `last_breakpoint_ns` and `last_command`. The last step result
+contains its original command, `kind`, positions before/after, actual message and
+callback counts, `completed_units`, per-destination `delivery_results` and a
+completion reason (`step`, `time`, `microstep`, `blocked`, `breakpoint` or a terminal
+reason). A breakpoint result also includes `breakpoint_ns`. Live status reports
+pacing and lag; simulated status reports virtual time, ticks, waves, microstep
+when enabled, pending work and timestamp groups. Fan-out can yield several
+admission results per message; deferred admissions may finish in a later command.
+
+## Distributed live replay
 
 For distributed execution, use the same compiled application plan and connect
 to its coordinator with a CA-signed client certificate whose common name is
@@ -158,7 +381,7 @@ Before starting simulation components or opening a live publisher, replay scans 
 validates selected payloads, and checks their root types and catalogues
 against the external topics. The default `--schema-policy exact` requires the
 declared catalogue. Use `--schema-policy compatible` for compatible schema
-evolution, as described below. Missing topics, empty
+evolution, as described below. Missing explicitly mapped topics, empty
 selections, oversized envelopes and invalid recordings fail explicitly.
 
 Prepared envelopes are written to temporary files, fingerprinted and checked
@@ -178,8 +401,12 @@ a bounded input can still drop messages or refuse admission.
 
 `make test-recording` includes replay tests for both formats, nanosecond timing,
 topic mapping, validation failures and identical traces across worker counts.
-It also covers live pacing, interactive and scripted controls, local and distributed
-publications, TLS identities, cancellation, refusals and generation fencing.
+It also covers live pacing, interactive and scripted controls in both modes,
+message budgets, exclusive temporal boundaries, command files and console EOF.
+Stepped simulations are compared byte-for-byte with continuous traces across
+worker counts, same-time input groups, timers and microsteps. Local and distributed
+publications, TLS identities, cancellation, refusals and generation fencing are
+covered as well.
 
 ## Compatible recorded schemas
 

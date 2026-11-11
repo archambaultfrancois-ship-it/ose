@@ -23,6 +23,11 @@ class ReplayMappingTests(unittest.TestCase):
             with self.subTest(mappings=mappings), self.assertRaises(ValueError):
                 topic_mapping(mappings, {"external.signal": {}, "external.other": {}})
 
+    def test_automatic_selection_is_deferred_until_reading_the_recording(self):
+        self.assertIsNone(topic_mapping(None, {"external.signal": {}}))
+        with self.assertRaisesRegex(ValueError, "declared external topics"):
+            topic_mapping(None, {})
+
     def test_scenario_ids_are_optional_uint64_and_independent_of_event_indices(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -57,6 +62,9 @@ class PlaybackClockTests(unittest.IsolatedAsyncioTestCase):
         timestamp = 11
         self.assertEqual(clock.position(), 2_000_000_000)
         self.assertEqual(await clock.wait(2_000_000_000), 0)
+        clock.stop()
+        timestamp = 100
+        self.assertEqual(clock.position(), 2_000_000_000)
 
     async def test_changing_speed_wakes_pending_deadline_and_stop_wakes_pause(self):
         clock = PlaybackClock(.001)

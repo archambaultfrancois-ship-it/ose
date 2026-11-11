@@ -558,11 +558,15 @@ ose replay signals.pcapng --mode realtime --plan build/replay/plan.json \
   --speed 1 --interactive
 ```
 
+The replay console starts paused. Enter `help` or `?` for available commands,
+then `resume` to start automatic playback. Use `step`, `step 100ms` or
+`step-messages 1` to advance manually.
+
 Use `speed 0.5`, `speed 2`, `pause`, `resume`, `status` and `stop` in the replay
 console. Speed 0 runs as quickly as admission permits. Application timestamps
 stay unchanged; changing playback speed changes the spacing between publications.
 For a scripted session, replace `--interactive` with repeated options such as
-`--command 'speed 2' --command 'wait 3' --command status --command stop`.
+`--command 'speed 2' --command resume --command 'wait 3' --command status --command stop`.
 Commands run in order; `wait` uses wall time, and the end of the script stops
 replay. A capture that finishes earlier cancels the remaining commands.
 Add `--loops N` for N passes or `--loops 0` for continuous live replay. In the

@@ -1,4 +1,5 @@
 """Deterministic direct admission, with independent bounded virtual waits."""
+from collections import Counter
 from dataclasses import dataclass
 import hashlib
 from ose.delivery.buffers import Buffer, input_buffers
@@ -22,6 +23,7 @@ class Router:
         self.by_topic, self.by_id = {}, {}
         self.topics = dict(plan.get("external_topics", {}))
         self.sequence = 0
+        self.external_deliveries = Counter()
         self.schedulers = {}
         inboxes = input_buffers(self.subscriptions.values(), clock=clock.seconds)
         for name, node in plan["components"].items():
@@ -75,6 +77,8 @@ class Router:
             else:
                 result = self.schedulers[name].admit(port, record, self.clock.time_ns)
             self.trace.emit("admission", id=record["id"], subscription=identity, result=result)
+            if record["id"].startswith("scenario:"):
+                self.external_deliveries[result] += 1
             del publication.pending[identity]
             changed = True
         return changed

@@ -18,7 +18,7 @@ class PlaybackClock:
         self.changed = asyncio.Event()
 
     def position(self):
-        if self.paused:
+        if self.paused or self.stopped:
             return self.anchor_ns
         if self.speed == 0:
             return self.last_ns
@@ -42,6 +42,7 @@ class PlaybackClock:
             self.changed.set()
 
     def stop(self):
+        self.anchor_ns, self.anchor_wall = self.position(), self.now()
         self.stopped = True
         self.changed.set()
 

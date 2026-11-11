@@ -4,7 +4,6 @@ import asyncio
 from collections import Counter
 from contextlib import asynccontextmanager
 import json
-import math
 from pathlib import Path
 import sys
 import time
@@ -12,8 +11,8 @@ import uuid
 
 from ose.codec.sdl2 import SDL2
 from ose.execution.simulation.clock import seconds_ns
-from ose.recording.command_input import CommandInput
-from ose.recording.pacing import PlaybackClock, playback_speed
+from ose.recording.control import ReplayControl
+from ose.recording.pacing import playback_speed
 from ose.recording.replay import RepeatedEvents, loop_count, recording_events, topic_mapping
 from ose.transport.secure import connect, contexts, finish_cleanup
 from ose.transport.udp import UDP
@@ -75,83 +74,27 @@ async def publisher(plan, topics, *, host, port, distributed=False, context=None
         await finish_cleanup(close())
 
 
-CONTROL_HELP = "Replay commands: speed N, pause, resume, wait SECONDS, status, stop (EOF stops)."
-
-
-async def execute_control(line, clock, status, output):
-    parts = line.split()
-    if not parts or parts[0].startswith("#"):
-        return True
-    if parts[0] == "speed" and len(parts) == 2:
-        clock.set_speed(float(parts[1]))
-    elif parts == ["pause"]:
-        clock.pause()
-    elif parts == ["resume"]:
-        clock.resume()
-    elif parts[0] == "wait" and len(parts) == 2:
-        seconds = float(parts[1])
-        if not math.isfinite(seconds) or seconds < 0:
-            raise ValueError("wait requires finite nonnegative seconds")
-        await asyncio.sleep(seconds)
-    elif parts in (["stop"], ["quit"]):
-        clock.stop()
-    elif parts == ["help"]:
-        print(CONTROL_HELP, file=output, flush=True)
-    elif parts != ["status"]:
-        raise ValueError("expected speed N, pause, resume, wait SECONDS, status or stop")
-    print(json.dumps({**status, "speed": clock.speed, "paused": clock.paused}), file=output, flush=True)
-    return not clock.stopped
-
-
-async def controls(clock, status, output, commands=None):
-    source = CommandInput(output=output) if commands is None else None
-    try:
-        if commands is not None:
-            for line in commands:
-                if not await execute_control(line, clock, status, output):
-                    break
-            clock.stop()
-            return
-        print(CONTROL_HELP, file=output, flush=True)
-        while not clock.stopped:
-            line = await source.readline("replay> ")
-            if not line:
-                clock.stop()
-                break
-            try:
-                if not await execute_control(line, clock, status, output):
-                    break
-            except ValueError as error:
-                print(f"replay: {error}", file=output, flush=True)
-    except BaseException:
-        clock.stop()
-        raise
-    finally:
-        if source is not None:
-            source.close()
-
-
 async def play(events, publish, *, speed=1, duration=None, loops=1, interactive=False, commands=None, output=None):
     output = sys.stderr if output is None else output
-    clock = PlaybackClock(speed)
+    session = ReplayControl("realtime", interactive=interactive, commands=commands, speed=speed, output=output)
     horizon = seconds_ns(duration, positive=True) if duration is not None else None
     repeated = RepeatedEvents(events, loops)
     status = dict(published=0, refused=0, loops=loops, current_loop=1, completed_loops=0,
                   last_lag_seconds=0.0, max_lag_seconds=0.0)
     deliveries, started, last_report = Counter(), time.monotonic(), time.monotonic()
-    control = (asyncio.create_task(controls(clock, status, output, commands))
-               if interactive or commands is not None else None)
+    session.snapshot = lambda: {**status, "delivery_results": dict(deliveries)}
+    session.start()
     reason = "complete"
     try:
-        if commands is not None:
-            # Apply leading speed/pause commands before the first publication.
-            await asyncio.sleep(0)
+        await asyncio.sleep(0)  # Apply leading controls before the first publication.
         for index, event in enumerate(repeated):
             status["current_loop"] = index // len(events) + 1
             if horizon is not None and event.at >= horizon:
-                reason = "duration"
+                boundary = (await session.live_wait(horizon, terminal=True)
+                            if session.boundary() is not None else 0)
+                reason = "stopped" if boundary is None else "duration"
                 break
-            lag = await clock.wait(event.at)
+            lag = await session.live_wait(event.at)
             if lag is None:
                 reason = "stopped"
                 break
@@ -159,12 +102,29 @@ async def play(events, publish, *, speed=1, duration=None, loops=1, interactive=
             status["max_lag_seconds"] = max(lag, status["max_lag_seconds"])
             app_id = getattr(event, "app_id", None)
             extra = {"app_id": app_id} if app_id is not None else {}
-            deliveries.update((await publish(event.topic, event.read(), **extra)).values())
+            async with session.busy:
+                deliveries.update((await publish(event.topic, event.read(), **extra)).values())
             status["published"] += 1
+            session.time_entered = True
             if (index + 1) % len(events) == 0:
                 status["completed_loops"] += 1
             status["refused"] = sum(count for result, count in deliveries.items()
                                     if result not in ("accepted", "duplicate", "stale"))
+            if session.quota is not None:
+                session.quota -= 1
+                session.units += 1
+                if session.quota == 0:
+                    session.complete()
+            if session.instant_quota is not None:
+                try:
+                    next_at = repeated[index + 1].at
+                except IndexError:
+                    next_at = None
+                if next_at != event.at and event.at > session.operation[1]:
+                    session.instant_quota -= 1
+                    session.units += 1
+                    if session.instant_quota == 0:
+                        session.complete()
             if lag > .05 and time.monotonic() - last_report >= 1:
                 print(f"replay: lag {lag:.3f}s; published {status['published']}; refused {status['refused']}",
                       file=output, flush=True)
@@ -173,17 +133,23 @@ async def play(events, publish, *, speed=1, duration=None, loops=1, interactive=
                 # Even a one-message, unlimited-speed replay must yield to
                 # scripts, interactive commands and cancellation at each loop.
                 await asyncio.sleep(0)
-        if control is not None and control.done():
-            control.result()
-        return {"mode": "realtime", "stop_reason": reason, **status, "speed": clock.speed,
+        if session.boundary() is not None and reason == "complete":
+            # A finite selection ends one nanosecond after its last message.
+            end = events[-1].at + (loops - 1) * repeated.period_ns + 1
+            if await session.live_wait(min(end, horizon) if horizon is not None else end, terminal=True) is None:
+                reason = "stopped"
+        if session.error is not None:
+            raise session.error
+        await session.finish(reason)
+        return {"mode": "realtime", "stop_reason": reason, **status, "speed": session.clock.speed,
+                "position_ns": session.position(), "paused": session.paused, "last_command": session.last_command,
+                "breakpoints_ns": sorted(session.breakpoints), "last_breakpoint_ns": session.last_breakpoint,
                 "delivery_results": dict(deliveries), "elapsed_seconds": time.monotonic() - started}
     finally:
-        if control is not None:
-            control.cancel()
-            await asyncio.gather(control, return_exceptions=True)
+        await session.close()
 
 
-async def run(path, plan_path, duration=None, *, mappings, speed=1, start_ns=None, end_ns=None,
+async def run(path, plan_path, duration=None, *, mappings=None, speed=1, start_ns=None, end_ns=None,
               endpoint=None, host=None, port=None, distributed=False, tls_ca=None, tls_cert=None,
               tls_key=None, insecure=False, interactive=False, commands=None, loops=1, schema_policy='exact'):
     playback_speed(speed)
@@ -212,7 +178,7 @@ async def run(path, plan_path, duration=None, *, mappings, speed=1, start_ns=Non
     context = contexts(tls_ca, tls_cert, tls_key, insecure=insecure, hosts=[host])[1] if distributed else None
     with recording_events(path, topics, mapping, codec, start_ns=start_ns, end_ns=end_ns,
                           schema_policy=schema_policy) as (events, selection):
-        async with publisher(plan, mapping.values(), host=host, port=port,
+        async with publisher(plan, selection["mapping"].values(), host=host, port=port,
                              distributed=distributed, context=context) as publish:
             result = await play(events, publish, speed=speed, duration=duration, loops=loops,
                                 interactive=interactive, commands=commands)

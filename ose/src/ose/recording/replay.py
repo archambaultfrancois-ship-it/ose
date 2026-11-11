@@ -73,6 +73,11 @@ class RepeatedEvents:
 
 
 def topic_mapping(values, topics):
+    """Validate explicit mappings; None selects matching names during preflight."""
+    if values is None:
+        if not topics:
+            raise ValueError("automatic replay requires declared external topics in the plan")
+        return None
     result = {}
     for value in values:
         source, separator, target = value.partition("=")
@@ -103,6 +108,11 @@ def recording_reader(codec):
 
 @contextmanager
 def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None, schema_policy='exact'):
+    automatic = mapping is None
+    if automatic:
+        mapping = {topic: topic for topic in topics}
+        if not mapping:
+            raise ValueError("automatic replay requires declared external topics in the plan")
     adapters = SchemaAdapters(codec, schema_policy)
     for name, value in (("start-ns", start_ns), ("end-ns", end_ns)):
         if value is not None and (type(value) is not int or not 0 <= value <= MAX_NS):
@@ -146,6 +156,11 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
             envelope.write_bytes(body)
             events.append(Event(record.log_time_ns, index, target, envelope, hashlib.sha256(body).hexdigest(), app_id))
             counts[source] += 1
+        if automatic:
+            mapping = {source: target for source, target in mapping.items() if source in counts}
+            if not mapping:
+                raise ValueError("no recorded messages match declared external topic names in the selected range; "
+                                 "use --map RECORDED_TOPIC=EXTERNAL_TOPIC to select or rename topics")
         missing = sorted(set(mapping) - counts.keys())
         if missing:
             raise ValueError("no selected messages for mapped topics: " + ", ".join(missing))
@@ -160,8 +175,9 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
                                                  catalogues=list(schemas.values()))}
 
 
-async def run(path, plan_path, duration, *, mappings, start_ns=None, end_ns=None,
-              workers=1, trace=None, loops=1, schema_policy='exact', microsteps=False, max_microsteps=None):
+async def run(path, plan_path, duration, *, mappings=None, start_ns=None, end_ns=None,
+              workers=1, trace=None, loops=1, schema_policy='exact', microsteps=False, max_microsteps=None,
+              interactive=False, commands=None, output=None):
     from ose.execution.simulation import run as simulate
     from ose.execution.simulation.options import microstep_limit
     microstep_limit(microsteps, max_microsteps)
@@ -183,7 +199,12 @@ async def run(path, plan_path, duration, *, mappings, start_ns=None, end_ns=None
     with recording_events(path, topics, mapping, codec, start_ns=start_ns, end_ns=end_ns,
                           schema_policy=schema_policy) as (events, selection):
         repeated = RepeatedEvents(events, loops, horizon=horizon)
+        from ose.recording.control import ReplayControl
+        control = (ReplayControl("simulated", interactive=interactive, commands=commands, output=output,
+                                 microsteps=microsteps)
+                   if interactive or commands is not None else None)
         summary = await simulate(plan_path, duration, workers=workers, events=repeated, trace=trace,
+            **({"controller": control} if control is not None else {}),
             **({"microsteps": microsteps, "max_microsteps": max_microsteps}
                if microsteps or max_microsteps is not None else {}))
         summary.update(loops=loops, completed_loops=summary["external_events"] // len(events))

@@ -91,6 +91,20 @@ class MicrostepTests(unittest.IsolatedAsyncioTestCase):
         path = self.root / (self._testMethodName + '-' + str(workers) + '.jsonl')
         return Simulation(plan, duration, workers=workers, trace=path, microsteps=True, max_microsteps=max_microsteps), path
 
+    async def test_manual_microsteps_keep_the_limit_across_command_boundaries(self):
+        import io
+        from ose.recording.control import ReplayControl
+        control = ReplayControl('simulated', replay=False, microsteps=True,
+            commands=['step', 'microstep', 'microstep', 'microstep'], output=io.StringIO())
+        engine = Simulation(self.plan(pair=True, stop_at=None), .1, microsteps=True,
+                            max_microsteps=2, controller=control)
+        with self.assertRaises(MicrostepLimitError):
+            await asyncio.wait_for(engine.execute(), 5)
+        self.assertEqual(engine.summary['stop_reason'], 'microstep_limit')
+        self.assertEqual(engine.summary['time_ns'], 10_000_000)
+        self.assertEqual(engine.summary['microstep'], 2)
+        self.assertEqual(engine.summary['waves'], 2)
+
     @staticmethod
     def trace(path, event=None):
         rows = [json.loads(line) for line in path.read_text().splitlines()]

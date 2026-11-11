@@ -57,6 +57,20 @@ adapter subprocesses or live external clients participate in this engine.
 Only `inspect --last` is available after a simulation; live network inspection
 continues to belong to the real-time engine.
 
+## Interactive execution controls
+
+`ose run --mode simulated` and `ose replay --mode simulated` accept
+`--interactive`, repeated `--command` and `--command-file`. Controlled sessions
+start paused. Use `step N` to advance by event instants, `step 100ms` for a relative
+time interval, or `break-time 5s` to pause at an absolute virtual time before that
+instant's inputs and callbacks. `microstep N` runs logical stages at the current
+time and requires `--microsteps`; its stage limit remains cumulative across
+commands. These controls are unavailable for real-time `run`.
+
+See the [full execution control contract](replay.md#execution-controls-replay-and-simulated-run)
+for aliases, breakpoints, script behavior, timestamp groups and the distinction
+between real-time replay injection and simulated application execution.
+
 ## Virtual time and waves
 
 The clock starts at zero after every component reports READY. Internal timestamps

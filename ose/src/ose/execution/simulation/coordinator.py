@@ -49,9 +49,14 @@ class PendingTick:
 class Simulation:
     def __init__(self, plan, duration, *, workers=1, scenario=None, events=None, trace=None,
                  max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT, working_directory=None,
-                 microsteps=False, max_microsteps=None):
+                 microsteps=False, max_microsteps=None, controller=None):
+        self.controller = controller
         require_v2(plan)
         self.microstep_limit = microstep_limit(microsteps, max_microsteps)
+        if controller is not None:
+            if controller.mode != "simulated":
+                raise ValueError("simulation controls require simulated mode")
+            controller.microsteps = self.microstep_limit is not None
         self.microstep_diagnostic = None
         self.recent_activations = deque(maxlen=64)
         if type(workers) is not int or workers <= 0:
@@ -222,6 +227,8 @@ class Simulation:
 
     async def _inject(self):
         while self.cursor < self.event_count and self.events[self.cursor].at == self.clock.time_ns:
+            if self.controller is not None and self.controller.quota == 0:
+                break
             event = self.events[self.cursor]
             if isinstance(event, ParameterEvent):
                 self.parameter_scenario_events += 1
@@ -240,6 +247,9 @@ class Simulation:
                     raise ValueError("pending scenario publications exceed max_tick_output_bytes")
                 self.external.append(publication)
             self.cursor += 1
+            if self.controller is not None and self.controller.quota is not None:
+                self.controller.quota -= 1
+                self.controller.units += 1
             if self.cursor % 64 == 0:
                 await asyncio.sleep(0)
 
@@ -269,6 +279,13 @@ class Simulation:
                     pending_external=len(self.external), external_events=self.cursor - self.parameter_scenario_events, parameter_changes=self.parameter_changes,
                     inputs={name: {port: buffer.snapshot() for port, buffer in buffers.items()}
                             for name, buffers in self.router.buffers.items()}, trace_sha256=self.trace.digest.hexdigest())
+
+    def _control_snapshot(self):
+        snapshot = self._snapshot()
+        return {**snapshot, "published": snapshot["external_events"],
+                "delivery_results": dict(self.router.external_deliveries),
+                "pending_timestamp_group": (self.cursor < self.event_count
+                    and self.events[self.cursor].at == self.clock.time_ns)}
 
     def _check_microstep_limit(self):
         if self.microstep_limit is None or self.clock.microstep < self.microstep_limit:
@@ -314,29 +331,99 @@ class Simulation:
                 self._input_operations(name)
             for path, payload in sorted(self.parameter_service.values.items()):
                 self.trace.emit('parameter_initial', path=path, sha256=hashlib.sha256(payload).hexdigest())
+            control = self.controller
+            if control is not None:
+                control.position = lambda: self.clock.time_ns
+                control.snapshot = self._control_snapshot
+                control.start()
+                await asyncio.sleep(0)
             while self.clock.time_ns < self.horizon:
-                await self._inject()
+                if control is not None:
+                    if not await control.ready():
+                        self.reason = "stopped"
+                        break
+                    if control.breakpoints and min(control.breakpoints) <= self.clock.time_ns:
+                        control.hit_breakpoint()
+                        continue
+                    if control.target is not None and self.clock.time_ns >= control.target:
+                        control.complete("time")
+                        continue
+                if control is None:
+                    await self._inject()
+                else:
+                    async with control.busy:
+                        before_injection = self.cursor
+                        await self._inject()
+                        if self.cursor != before_injection:
+                            control.time_entered = True
+                # An exact message budget may divide one timestamp's external
+                # group. Do not select callbacks until the group is complete.
+                if (control is not None and control.quota == 0 and self.cursor < self.event_count
+                        and self.events[self.cursor].at == self.clock.time_ns):
+                    control.complete(pending_timestamp_group=True)
+                    continue
                 while await self._pump():
+                    if control is not None:
+                        control.time_entered = True
                     await asyncio.sleep(0)
+                if control is not None and control.instant_quota == 0:
+                    control.complete()
+                    continue
                 for name, process in self.processes.items():
                     if process.returncode is not None:
                         raise RuntimeError(f"component {name} stopped unexpectedly")
+                if control is not None and not await control.ready():
+                    self.reason = "stopped"
+                    break
                 self._check_microstep_limit()
                 selected = {name: snapshot for name, schedule in self.schedules.items()
                             if name not in self.busy and (snapshot := schedule.select()) is not None}
                 if selected:
-                    await self._wave(selected)
-                    if self.microstep_limit is not None:
-                        self.clock.microstep += 1
+                    if control is None:
+                        await self._wave(selected)
+                        if self.microstep_limit is not None:
+                            self.clock.microstep += 1
+                    else:
+                        async with control.busy:
+                            control.time_entered = True
+                            await self._wave(selected)
+                            if self.microstep_limit is not None:
+                                self.clock.microstep += 1
+                            if control.micro_quota is not None:
+                                while await self._pump():
+                                    await asyncio.sleep(0)
+                    if control is not None and control.micro_quota is not None:
+                        control.micro_quota -= 1
+                        control.units += 1
+                        if control.micro_quota == 0:
+                            control.complete("microstep")
                     continue
-                timestamp = self._next_event()
+                if control is not None and control.quota == 0:
+                    control.complete(pending_timestamp_group=False)
+                    continue
+                if control is not None and control.micro_quota is not None:
+                    control.complete("blocked")
+                    continue
+                logical_timestamp = timestamp = self._next_event()
+                if control is not None:
+                    boundary = control.boundary()
+                    if timestamp is not None and boundary is not None:
+                        timestamp = min(timestamp, boundary)
+                    elif timestamp is None and control.breakpoints:
+                        timestamp = boundary
                 if timestamp is None:
                     self.reason = "quiescent"
                     break
                 if timestamp <= self.clock.time_ns:
                     raise RuntimeError("simulation made no logical progress")
                 self.clock.time_ns = min(timestamp, self.horizon)
+                if (control is not None and control.instant_quota is not None
+                        and self.clock.time_ns == logical_timestamp and self.clock.time_ns < self.horizon):
+                    control.instant_quota -= 1
+                    control.units += 1
                 self.clock.microstep = 0
+                if control is not None:
+                    control.time_entered = False
                 self.recent_activations.clear()
                 await asyncio.sleep(0)  # Allow cancellation even in long, callback-free scenarios.
             else:
@@ -349,12 +436,20 @@ class Simulation:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(*starting, return_exceptions=True)
+            if self.controller is not None:
+                await self.controller.finish(self.reason)
+                await self.controller.close()
             cleanup = await asyncio.gather(*(stop_component(p) for p in self.processes.values()), return_exceptions=True)
             cleanup_failed = any(isinstance(result, BaseException) for result in cleanup)
             if cleanup_failed:
                 self.reason = "failed"
             self.trace.emit("stop", reason=self.reason)
             self.summary = self._snapshot()
+            if self.controller is not None:
+                self.summary.update(position_ns=self.clock.time_ns, paused=self.controller.paused,
+                                    last_command=self.controller.last_command,
+                                    breakpoints_ns=sorted(self.controller.breakpoints),
+                                    last_breakpoint_ns=self.controller.last_breakpoint)
             try:
                 (Path(self.plan["build_dir"]) / "last-status.json").write_text(json.dumps(self.summary, indent=2) + "\n")
             finally:
