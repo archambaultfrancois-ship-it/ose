@@ -143,7 +143,7 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
     async def test_cli_selects_schema_policy_and_default_remains_exact(self):
         path, _ = self.capture(catalogue=OTHER)
         command = [sys.executable, '-m', 'ose.cli', 'replay', str(path), '--plan', str(self.plan_path),
-                   '--map', 'source.value=external.signal', '--duration', '.001']
+                   '--map', 'source.value=external.signal', '--mode', 'simulated', '--duration', '.001']
         for options, code in (([], 1), (['--schema-policy', 'exact'], 1), (['--schema-policy', 'compatible'], 0)):
             result = await asyncio.to_thread(subprocess.run, command + options, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, code, result.stderr)
@@ -272,7 +272,7 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
         path, _ = self.capture("mcap")
         result = await asyncio.to_thread(subprocess.run,
             [sys.executable, "-m", "ose.cli", "replay", str(path), "--plan", str(self.plan_path),
-             "--map", "source.value=external.signal", "--duration", ".001"],
+             "--map", "source.value=external.signal", "--mode", "simulated", "--duration", ".001"],
             capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["replay"]["message_count"], 3)

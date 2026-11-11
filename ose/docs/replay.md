@@ -3,12 +3,14 @@
 `ose replay` feeds selected PCAPNG or MCAP messages into a compiled model's
 external topics, either in deterministic simulation or through a running local
 broker or distributed coordinator. Use it to reproduce an incident or test a
-component change with captured inputs. Simulation is the default mode.
+component change with captured inputs. Real-time replay is the default mode and
+publishes into an already running application.
+Use `--mode simulated` to start the application with a virtual clock.
 
 Build a model with [external inputs](clients.md#feeding-a-model-input), then run:
 
 ```sh
-ose replay signals.pcapng --plan build/plan.json \
+ose replay signals.pcapng --mode simulated --plan build/plan.json \
   --map sensor_1.signal=external.signal_1 \
   --map sensor_2.signal=external.signal_2 \
   --duration 3 --workers 4 --trace build/replay.jsonl
@@ -184,7 +186,7 @@ publications, TLS identities, cancellation, refusals and generation fencing.
 Use an older capture with a compatible current contract by selecting:
 
 ```sh
-ose replay old-signals.pcapng --plan build/plan.json \
+ose replay old-signals.pcapng --mode simulated --plan build/plan.json \
   --map sensor_1.signal=external.signal_1 --duration 3 \
   --schema-policy compatible
 ```

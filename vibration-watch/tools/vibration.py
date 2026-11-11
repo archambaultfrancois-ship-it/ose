@@ -496,7 +496,7 @@ def main():
                 raise ValueError("replay requires --recording FILE")
             args.profile = "local"
             compile_app(args)
-            options = ["replay", args.recording, "--plan", ROOT / "build/replay/plan.json",
+            options = ["replay", args.recording, "--mode", "simulated", "--plan", ROOT / "build/replay/plan.json",
                        "--duration", args.duration, "--workers", args.workers, "--loops", args.loops,
                        "--trace", ROOT / "build/replay/trace.jsonl"]
             for number in (1, 2):

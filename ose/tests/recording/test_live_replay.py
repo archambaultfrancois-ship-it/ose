@@ -78,7 +78,7 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
                                      log_time_ns=1_800_000_000_000_000_000 + offset)
         return path
 
-    async def test_compatible_local_cli_replay_delivers_target_envelopes(self):
+    async def test_default_realtime_cli_replay_delivers_compatible_target_envelopes(self):
         self.plan_path.write_text(json.dumps(self.plan))
         from ose.execution.broker import Broker
         from ose.execution.adapter import Adapter
@@ -91,7 +91,7 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
         source = 'SDL2|Earlier{1:bool:unused;}|Value{1:uint64:sequence;2:fl64:value;3?:string:extra;}'
         for format in ('pcapng', 'mcap'):
             process = await asyncio.create_subprocess_exec(sys.executable, '-m', 'ose.cli', 'replay',
-                str(self.capture(format, catalogue=source)), '--mode', 'realtime', '--plan', str(self.plan_path),
+                str(self.capture(format, catalogue=source)), '--plan', str(self.plan_path),
                 '--host', '127.0.0.1', '--port', str(broker.port), '--speed', '0', '--schema-policy', 'compatible',
                 '--map', 'source.value=external.signal', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             stdout, stderr = await asyncio.wait_for(process.communicate(), 20)
@@ -333,7 +333,7 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
         self.plan_path.write_text(json.dumps(self.plan))
         path = self.capture()
         process = await asyncio.create_subprocess_exec(sys.executable, "-m", "ose.cli", "replay", str(path),
-            "--plan", str(self.plan_path), "--duration", "1", "--map", "source.value=external.signal",
+            "--mode", "simulated", "--plan", str(self.plan_path), "--duration", "1", "--map", "source.value=external.signal",
             "--command", "status", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         _, stderr = await asyncio.wait_for(process.communicate(), 5)
         self.assertEqual(process.returncode, 1)

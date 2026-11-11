@@ -121,17 +121,17 @@ For distributed execution, start serve and worker instead of run.""")
     command.add_argument("--max-tick-output-bytes", type=int, help="output byte limit per component tick (default: 16777216; simulated mode only)")
     command = _command(commands, "replay", "replay a recording into simulated or live external inputs",
         "Map recorded topics to external input topics declared in the plan.\n"
-        "Simulation starts an application and requires --duration. Real-time replay publishes\n"
-        "into an already running application and supports playback controls.\n"
+        "Real-time replay is the default and publishes into an already running application.\n"
+        "Simulation starts an application and requires --mode simulated and --duration.\n"
         "Connection options, --speed, --interactive and --command require --mode realtime.",
-        ["ose replay capture.mcap --map recorded.topic=external.topic --duration 30",
-         "ose replay capture.mcap --map recorded.topic=external.topic --mode realtime --interactive",
+        ["ose replay capture.mcap --map recorded.topic=external.topic --interactive",
+         "ose replay capture.mcap --map recorded.topic=external.topic --mode simulated --duration 30",
          "ose replay capture.mcap --map recorded.topic=external.topic --duration 30 --schema-policy compatible"])
     command.add_argument("recording", help="SDL PCAPNG or MCAP capture")
     command.add_argument("--plan", default="build/plan.json", help="target deployment plan (default: build/plan.json)")
     command.add_argument("--map", dest="mappings", action="append", required=True,
                          metavar="RECORDED_TOPIC=EXTERNAL_TOPIC", help="select and map a topic; repeat for each input")
-    command.add_argument("--mode", choices=("simulated", "realtime"), default="simulated", help="replay destination and clock (default: simulated)")
+    command.add_argument("--mode", choices=("simulated", "realtime"), default="realtime", help="replay destination and clock (default: realtime)")
     command.add_argument("--schema-policy", choices=("exact", "compatible"), default="exact",
                          help="recorded schema policy (default: exact; compatible adapts messages to the target contract)")
     command.add_argument("--loops", type=int, default=1, help="total playback passes (default: 1; 0: infinite)")

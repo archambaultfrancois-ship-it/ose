@@ -97,8 +97,8 @@ The [interactive recorder](docs/recording.md), `ose record`, discovers
 live outputs without a model, selects points and SDL filters, and starts/stops
 local PCAPNG or MCAP files. It supports the local broker and distributed workers.
 Use [`ose replay`](docs/replay.md) to feed captured topics into a model's
-external inputs for simulation or paced local/distributed execution, with optional
-interactive speed and pause controls.
+external inputs for paced local/distributed execution by default, with optional
+interactive speed and pause controls. Select `--mode simulated` for simulation.
 
 `SDL_ROOT` defaults to the sibling SDL project (`../sdl`). To use another checkout,
 set `SDL_ROOT=/absolute/path/to/ose/sdl` in the environment or on the `make` command
