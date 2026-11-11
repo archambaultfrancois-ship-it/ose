@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "components": {
+    "demandeur": {
+      "container": {"language": "c", "handler": "demandeur.c"}
+    },
+    "calculateur": {
+      "container": {"language": "c", "handler": "calculateur.c"}
+    }
+  }
+}

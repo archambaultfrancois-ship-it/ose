@@ -1,5 +1,9 @@
 # Getting started with OSE
 
+Pour construire votre propre application depuis zéro en C, consultez le
+[tutoriel en français](tutoriel-application-c.md) : spécification, messages SDL,
+modèle, handlers Push/Pull, get par identifiant, timers et exécutions locales.
+
 This guide is for anyone new to OSE. You will run an existing application,
 understand its output, and change its behavior while it is running. Allow
 about 15–20 minutes for the main walkthrough, excluding tool installation.

@@ -1,0 +1,3 @@
+message Nombre {
+    1: required uint32 valeur;
+}

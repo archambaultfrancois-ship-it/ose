@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "schemas": "messages.sdl",
+  "components": {
+    "demandeur": {
+      "inputs": {
+        "horloge": {
+          "kind": "timer",
+          "timer": {"mode": "periodic", "delay": 0.5},
+          "activates": {"timeout": ["requete"]}
+        },
+        "reponses": {"root": "Nombre", "mode": "pull"}
+      },
+      "outputs": {"requete": {"root": "Nombre"}}
+    },
+    "calculateur": {
+      "inputs": {
+        "requete": {
+          "root": "Nombre",
+          "mode": "push",
+          "activates": {"message": ["reponse"]}
+        }
+      },
+      "outputs": {"reponse": {"root": "Nombre"}}
+    }
+  },
+  "subscriptions": [
+    {
+      "id": "aller",
+      "from": "demandeur.requete",
+      "to": "calculateur.requete",
+      "qos": {"buffer": "fifo", "capacity": 4}
+    },
+    {
+      "id": "retour",
+      "from": "calculateur.reponse",
+      "to": "demandeur.reponses",
+      "qos": {"buffer": "fifo", "capacity": 4}
+    }
+  ]
+}

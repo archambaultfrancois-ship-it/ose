@@ -27,6 +27,11 @@ to run Vibration Watch, compare simulations, inspect live measurements and chang
 an alarm threshold. Optional workshops cover the web console, recording/replay
 and distributed component replacement.
 
+Pour créer une application depuis un dossier vide, suivez le
+**[tutoriel en français : une calculatrice OSE en C](docs/tutoriel-application-c.md)**.
+Il part d'une spécification simple et couvre les handlers Push, les lectures
+Pull/get par identifiant, les timers, la compilation et les exécutions locales.
+
 OSE depends on SDL's public generator and runtime APIs. SDL builds and
 runs independently of OSE. Each project owns its sources, tests,
 examples, documentation, dependencies, and build outputs.
