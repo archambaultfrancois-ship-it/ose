@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import Button from 'primevue/button'
 import { useProject } from '../store'
 import { activationCycle, activationLinks, inputEvents, inputLabel, type ActivationLink } from '../execution'
 import { selectActivation, selectedActivation } from '../component-editing'
 const store = useProject(), marker = useId(), canvas = ref<SVGSVGElement>()
+watch(() => store.selection, async () => {
+  await nextTick()
+  canvas.value?.querySelector('.port-card.selected')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+}, { immediate: true })
 const model = computed(() => store.project?.documents[store.project.model]?.value)
 const name = computed(() => store.editingComponent)
 const component = computed(() => model.value?.components?.[name.value])

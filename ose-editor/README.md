@@ -82,6 +82,23 @@ contains grouping commands. The inspector uses collapsible sections for
 General, Execution, Reception and Contract where applicable, with removal
 commands under the initially collapsed **Advanced** section.
 
+**Go to…** (**Ctrl+K** / **Cmd+K**) searches components, ports, subscription IDs,
+parameters, external topics, SDL declarations and project files. Search terms
+can include a filename or symbol kind. Use **Up/Down** then **Enter** to open a
+result, **Shift+Enter** for its source, or **Escape** to close. Ports open in the
+component editor; components hidden inside folded groups reveal their visible
+ancestor without changing the saved layout. Stale projections are marked and
+open as source. Search displays up to 80 results; refine the query for more.
+
+Diagnostics retain the original validator message and add an explanation,
+source/property links and, for recognized Pull timeout, latest reception and
+retry/ACK errors, explicit **Preview** corrections. Corrections use the normal
+diff, apply and undo workflow. No correction is inferred for an unknown error.
+Source syntax diagnostics carry one-based line/column positions when available.
+JSON paths resolve against the current source draft; coordinate-based and SDL
+locations are withheld when unfinished source text may have shifted them.
+Apply source drafts before preparing a diagnostic correction.
+
 Select a component/link in Graph, an object in Tables or a declaration in the
 explorer. Use the inspector to edit its properties, including explicit defaults,
 SDL IDs/cardinalities, expressions, aliases, dimensions and wire clauses.

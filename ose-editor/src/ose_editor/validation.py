@@ -14,6 +14,7 @@ import threading
 import time
 
 from .json_source import JsonSource, dump, loads, web
+from .diagnostics import source_diagnostic
 
 
 class Validator:
@@ -101,6 +102,8 @@ class Validator:
         if job['status'] == 'cancelled':
             return
         self.update(job, status='running')
+        active_file = self.project.model
+        staged_files = {}
         try:
             with tempfile.TemporaryDirectory(prefix='ose-editor-validate-') as directory:
                 stage = Path(directory)
@@ -114,6 +117,7 @@ class Validator:
                     destination = staged(paths[key])
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     destination.write_bytes(text.encode())
+                staged_files = {str(staged(path)): key for key, path in paths.items()}
                 model_key = self.project.model
                 model_path = staged(paths[model_key])
                 model = JsonSource(snapshot['documents'][model_key])
@@ -143,6 +147,7 @@ class Validator:
                         continue
                     original = self.project.resolve(paths[model_key].parent / source)
                     output = stage / 'exports' / secrets.token_hex(4)
+                    active_file = self.project.key(original)
                     self.update(job, progress='Checking schema input: ' + source)
                     result = self.execute(job, [sys.executable, self.sdl_root / 'sdlc/generator.py', '-json', '-python', staged(original), output], env)
                     if result is None:
@@ -158,6 +163,7 @@ class Validator:
                         return
                     with self.guard:
                         job['catalogues'][source] = json.loads(inspected)
+                active_file = model_key
                 if not job['schema']:
                     # Compare distinct contract pairs, including ports which are
                     # not connected yet. Reuse the public directional SDL check
@@ -230,11 +236,15 @@ class Validator:
         except (ValueError, OSError, KeyError, TypeError) as error:
             if job['status'] != 'cancelled':
                 message = str(error)
+                for staged_name, key in sorted(staged_files.items(), key=lambda item: -len(item[0])):
+                    if staged_name in message:
+                        active_file = key
+                        message = message.replace(staged_name, key)
                 for original in self.project.roots:
                     message = message.replace(str(original), '.')
-                self.update(job, status='failed', diagnostics=[{'severity': 'error', 'origin': 'SDL/OSE', 'message': message,
-                                       'file': job.get('deployment') if 'deployment' in message.lower() else self.project.model,
-                                       'revision': job['revision']}])
+                file = job.get('deployment') if 'deployment' in message.lower() and job.get('deployment') else active_file
+                diagnostic = source_diagnostic(ValueError(message), file, snapshot['documents'].get(file, ''), 'SDL/OSE', job['revision'])
+                self.update(job, status='failed', diagnostics=[diagnostic])
         finally:
             self.update(job, duration_ms=round((time.time() - job['started']) * 1000), stale=job['revision'] != self.project.revision)
             with self.project.mutex:

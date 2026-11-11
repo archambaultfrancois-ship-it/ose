@@ -18,6 +18,10 @@ import ComponentInspector from './components/ComponentInspector.vue'
 import InspectorSection from './components/InspectorSection.vue'
 import { useWorkspacePanels } from './workspace-panels'
 import type { SourceTarget } from './source-location'
+import type { NavigationTarget } from './navigation'
+import NavigationPalette from './components/NavigationPalette.vue'
+import DiagnosticsView from './components/DiagnosticsView.vue'
+import { currentDiagnostics } from './diagnostics'
 const store = useProject(), view = ref('Graph'), filter = ref(''), deployment = ref(''), bottom = ref('Diagnostics'), changes = ref<any[]>([]), usages = ref<any[]>([])
 const { explorerOpen, inspectorOpen, diagnosticsOpen, widths, diagnosticsHeight, resize, resizeKey, stopResize } = useWorkspacePanels()
 const componentMode = computed(() => view.value === 'Graph' && !!store.editingComponent)
@@ -30,17 +34,39 @@ const executionVisible = computed(() => modelSelection.value && store.project?.d
 const receptionVisible = computed(() => modelSelection.value && (selectionPath.value[0] === 'subscriptions' && selectionPath.value.length === 2 || selectionPath.value[0] === 'components' && selectionPath.value[2] === 'inputs' && selectionPath.value.length === 4 && selectionObject.value?.kind !== 'timer'))
 const contractVisible = computed(() => modelSelection.value && (selectionObject.value?.root || selectionPath.value[0] === 'subscriptions' && selectionPath.value.length === 2 || selectionPath.value[0] === 'shared_parameters' && selectionPath.value.length === 2))
 const sourceTarget = ref<SourceTarget>()
+const paletteOpen = ref(false), navigationRequest = ref(0)
 let sourceRequest = 0
+function navigate(target: NavigationTarget, source = false) {
+  if (!store.project?.documents[target.file]) return
+  const path = target.path || [], doc = store.project.documents[target.file]
+  store.closeComponent()
+  if (!source && !doc.stale && target.file === store.project.model && path[0] === 'components' && path.length >= 4) store.editComponent(path[1])
+  store.select(target.file, path, target.sdl)
+  inspectorOpen.value = true
+  if (source || target.line || doc.stale || target.sdl || target.file !== store.project.model || !['components', 'subscriptions', 'external_topics'].includes(path[0]) || !path.length) {
+    sourceTarget.value = { ...target, path, request: ++sourceRequest }
+    view.value = 'Sources'
+  } else {
+    view.value = 'Graph'
+    navigationRequest.value++
+  }
+}
+function navigationShortcut(event: KeyboardEvent) {
+  if (store.project && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k' && !store.pending) {
+    event.preventDefault(); event.stopPropagation(); paletteOpen.value = !paletteOpen.value
+  }
+}
+window.addEventListener('keydown', navigationShortcut, true)
 function showSource() {
   const selection = store.selection
   if (!selection) return
-  sourceTarget.value = { file: selection.file, path: [...(selection.path || [])], request: ++sourceRequest }
+  sourceTarget.value = { file: selection.file, path: [...(selection.path || [])], ...(selection.sdl ? { sdl: selection.sdl } : {}), request: ++sourceRequest }
   view.value = 'Sources'
 }
 const selected = computed(() => store.selection && store.project?.documents[store.selection.file])
 const node = computed(() => { let result = selected.value?.tree; for (const key of store.selection?.path || []) result = result?.children?.find((child: any) => child.name === key); return result })
 const documents = computed(() => Object.values(store.project?.documents || {}).filter((doc: any) => doc.id.toLowerCase().includes(filter.value.toLowerCase())) as any[])
-const errors = computed(() => [...(store.project?.diagnostics || []), ...((store.job?.stale || store.job?.revision !== store.project?.revision) ? [] : store.job?.diagnostics || store.project?.validation?.diagnostics || [])])
+const errors = computed(() => currentDiagnostics(store.project, store.job))
 watch(() => errors.value.length, (count, previous) => { if (count > (previous || 0)) diagnosticsOpen.value = true }, { immediate: true })
 const dirtySource = computed(() => Object.keys(store.sourceDrafts).length > 0)
 const validationState = computed(() => store.job ? store.job.revision !== store.project?.revision ? 'Validation out of date' : store.job.status : store.project?.validation?.revision === store.project?.revision ? store.project.validation.status : 'Not validated')
@@ -81,7 +107,7 @@ async function showUsages() { diagnosticsOpen.value = true; bottom.value = 'Usag
 async function apply() { const result = await store.apply(); if (result) { for (const [file, text] of Object.entries(store.sourceDrafts)) { const doc = await store.api('document?file=' + encodeURIComponent(file)); if (doc.text === text) delete store.sourceDrafts[file] } } }
 function unload(event: BeforeUnloadEvent) { if (store.project?.dirty || dirtySource.value) event.preventDefault() }
 window.addEventListener('beforeunload', unload)
-onBeforeUnmount(() => { stopResize(); window.removeEventListener('beforeunload', unload) })
+onBeforeUnmount(() => { window.removeEventListener('keydown', navigationShortcut, true); stopResize(); window.removeEventListener('beforeunload', unload) })
 </script>
 <template>
   <main v-if="!store.project" class="login-shell">
@@ -89,7 +115,7 @@ onBeforeUnmount(() => { stopResize(); window.removeEventListener('beforeunload',
   </main>
   <div v-else class="app-shell">
     <header class="app-header"><div class="brand"><span class="brand-mark">◇</span><div><strong>OSE <span>Model Editor</span></strong><small>{{ store.project.name }} <span v-if="store.project.dirty || dirtySource">● Unsaved changes</span></small></div></div>
-      <div class="header-actions"><Select v-model="deployment" :options="store.project.deployments" placeholder="Select deployment" aria-label="Deployment" /><span class="validation-badge" :data-state="validationState">{{ validationState }}</span><Button label="Validate" severity="secondary" :disabled="!!store.pending || !!store.job && ['queued','running'].includes(store.job.status)" @click="store.validate(deployment)" /><Button label="Save" :disabled="!!store.pending || dirtySource" @click="store.save()" /><Button label="Save draft" severity="secondary" :disabled="!!store.pending || dirtySource" @click="store.save(true)" /></div></header>
+      <div class="header-actions"><Button label="Go to…" title="Go to… (Ctrl/Cmd+K)" severity="secondary" :disabled="!!store.pending" @click="paletteOpen = true" /><Select v-model="deployment" :options="store.project.deployments" placeholder="Select deployment" aria-label="Deployment" /><span class="validation-badge" :data-state="validationState">{{ validationState }}</span><Button label="Validate" severity="secondary" :disabled="!!store.pending || !!store.job && ['queued','running'].includes(store.job.status)" @click="store.validate(deployment)" /><Button label="Save" :disabled="!!store.pending || dirtySource" @click="store.save()" /><Button label="Save draft" severity="secondary" :disabled="!!store.pending || dirtySource" @click="store.save(true)" /></div></header>
     <div v-if="store.error" class="error-banner" role="alert">{{ store.error }}<Button label="Refresh project" variant="text" @click="store.load" /></div>
     <div v-if="store.project.recovery" class="error-banner">An interrupted save needs recovery.<Button label="Restore previous files" @click="store.guard(async () => { store.project = await store.api('recovery', { choice: 'restore' }) })" /><Button label="Complete save" @click="store.guard(async () => { store.project = await store.api('recovery', { choice: 'complete' }) })" /></div>
     <div v-if="store.project.draft_recovery" class="error-banner">An unsaved authoring draft was recovered.<Button label="Restore draft" @click="store.guard(async () => { store.project = await store.api('draft-recovery', { revision: store.project.revision, restore: true }) })" /><Button label="Discard recovered draft" severity="secondary" @click="store.guard(async () => { store.project = await store.api('draft-recovery', { revision: store.project.revision, restore: false }) })" /></div>
@@ -104,10 +130,10 @@ onBeforeUnmount(() => { stopResize(); window.removeEventListener('beforeunload',
       </aside>
       <div v-if="explorerVisible" class="panel-resizer" role="separator" tabindex="0" aria-label="Resize explorer" aria-orientation="vertical" :aria-valuenow="widths.explorer" :aria-valuemin="180" :aria-valuemax="420" @pointerdown="resize($event, 'explorer')" @keydown="resizeKey($event, 'explorer')" />
       <section class="main-workspace"><nav class="workspace-tabs"><button v-if="!componentMode" class="panel-toggle" :aria-expanded="explorerOpen" aria-controls="project-explorer" @click="explorerOpen = !explorerOpen">Project</button><button v-for="tab in ['Graph', 'Tables', 'Sources']" :key="tab" :class="{ active: view === tab }" @click="view = tab">{{ tab }}</button><div class="history-actions"><Button label="Undo" size="small" severity="secondary" :disabled="!store.project.can_undo" @click="store.history()" /><Button label="Redo" size="small" severity="secondary" :disabled="!store.project.can_redo" @click="store.history(true)" /></div><button class="panel-toggle" :aria-expanded="inspectorOpen" aria-controls="property-inspector" @click="inspectorOpen = !inspectorOpen">Inspector</button></nav>
-        <div class="workspace-content"><GraphView v-if="view === 'Graph'" /><TablesView v-else-if="view === 'Tables'" /><SourceEditor v-else-if="store.selection" :file="store.selection.file" :format="selected?.format || 'json'" :target="sourceTarget" /></div>
+        <div class="workspace-content"><GraphView v-if="view === 'Graph'" :navigation-request="navigationRequest" /><TablesView v-else-if="view === 'Tables'" /><SourceEditor v-else-if="store.selection" :file="store.selection.file" :format="selected?.format || 'json'" :target="sourceTarget" /></div>
         <div v-if="diagnosticsOpen" class="panel-resizer horizontal" role="separator" tabindex="0" aria-label="Resize diagnostics" aria-orientation="horizontal" :aria-valuenow="diagnosticsHeight" :aria-valuemin="110" :aria-valuemax="500" @pointerdown="resize($event, 'diagnostics')" @keydown="resizeKey($event, 'diagnostics')" />
         <section class="diagnostics-panel" :class="{ collapsed: !diagnosticsOpen }" :style="diagnosticsOpen ? { height: diagnosticsHeight + 'px' } : {}"><nav><button v-for="tab in ['Diagnostics', 'Changes', 'Usages']" :key="tab" :class="{ active: bottom === tab }" @click="tab === 'Changes' ? showChanges() : tab === 'Usages' ? showUsages() : (bottom = tab, diagnosticsOpen = true)">{{ tab }}<span v-if="tab === 'Diagnostics'">{{ errors.length }}</span></button><button class="diagnostics-toggle" :aria-expanded="diagnosticsOpen" aria-controls="diagnostics-content" @click="diagnosticsOpen = !diagnosticsOpen">{{ diagnosticsOpen ? 'Collapse' : 'Expand' }}</button><div v-if="store.job && ['queued', 'running'].includes(store.job.status)" class="job-progress">{{ store.job.progress || 'Validating…' }}<Button label="Cancel" variant="text" size="small" @click="store.cancel" /></div></nav>
-          <div v-show="diagnosticsOpen" id="diagnostics-content" class="diagnostics-content"><template v-if="bottom === 'Diagnostics'"><p v-if="!errors.length" class="empty-state">{{ validationState === 'passed' ? 'Validation passed for this revision.' : 'No source syntax errors. Validate to check OSE and SDL semantics.' }}</p><button v-for="(diagnostic, index) in errors" :key="index" class="diagnostic-row" @click="diagnostic.file && store.select(diagnostic.file, [])"><strong>{{ diagnostic.origin }}</strong><span>{{ diagnostic.message }}</span><code>{{ diagnostic.file }}</code></button></template><template v-else-if="bottom === 'Changes'"><article v-for="change in changes" :key="change.file"><strong>{{ change.file }}</strong><pre>{{ change.diff }}</pre></article><p v-if="!changes.length" class="empty-state">No changes to maintained source files.</p></template><template v-else><button v-for="(usage, index) in usages" :key="index" class="diagnostic-row" @click="store.select(usage.file, []); view = 'Sources'"><code>{{ usage.file }}:{{ usage.line }}</code><span>{{ usage.text }}</span></button><small>Source occurrences; external consumers are not assessed.</small></template></div>
+          <div v-show="diagnosticsOpen" id="diagnostics-content" class="diagnostics-content"><template v-if="bottom === 'Diagnostics'"><p v-if="!errors.length" class="empty-state">{{ validationState === 'passed' ? 'Validation passed for this revision.' : 'No source syntax errors. Validate to check OSE and SDL semantics.' }}</p><DiagnosticsView :diagnostics="errors" @navigate="navigate" /></template><template v-else-if="bottom === 'Changes'"><article v-for="change in changes" :key="change.file"><strong>{{ change.file }}</strong><pre>{{ change.diff }}</pre></article><p v-if="!changes.length" class="empty-state">No changes to maintained source files.</p></template><template v-else><button v-for="(usage, index) in usages" :key="index" class="diagnostic-row" @click="store.select(usage.file, []); view = 'Sources'"><code>{{ usage.file }}:{{ usage.line }}</code><span>{{ usage.text }}</span></button><small>Source occurrences; external consumers are not assessed.</small></template></div>
         </section>
       </section>
       <div v-if="inspectorOpen" class="panel-resizer" role="separator" tabindex="0" aria-label="Resize inspector" aria-orientation="vertical" :aria-valuenow="widths.inspector" :aria-valuemin="260" :aria-valuemax="560" @pointerdown="resize($event, 'inspector')" @keydown="resizeKey($event, 'inspector')" />
@@ -137,5 +163,6 @@ onBeforeUnmount(() => { stopResize(); window.removeEventListener('beforeunload',
     </div>
     <footer class="status-bar"><span>● Local authoring · OSE model v{{ store.project.documents[store.project.model]?.value?.version || '?' }} / SDL</span><span>{{ store.project.documents[store.project.model]?.stale ? 'Stale model projection' : 'Sources synchronized' }}</span><code>{{ store.project.revision.slice(0, 8) }}</code></footer>
   </div>
+  <NavigationPalette v-if="store.project" v-model:visible="paletteOpen" @navigate="navigate" />
   <Dialog :visible="!!store.pending" modal header="Review changes" :style="{ width: 'min(900px, 94vw)' }" @update:visible="visible => { if (!visible) store.pending = null }"><template v-if="store.pending"><p>Apply this operation as one reversible change.</p><article v-for="change in store.pending.changes" :key="change.file" class="diff-file"><h3>{{ change.file }}</h3><pre>{{ change.diff }}</pre><p v-if="change.identity_changes.length" class="error">Field identity changes: {{ change.identity_changes }}</p></article><p v-if="!store.pending.changes.length">Editor layout or workspace metadata changes.</p><details v-if="store.pending.handlers_to_review.length"><summary>Handlers to review</summary><code v-for="handler in store.pending.handlers_to_review" :key="handler" class="handler-path">{{ handler }}</code></details><small>{{ store.pending.external_consumers }}</small></template><template #footer><Button label="Cancel" severity="secondary" @click="store.pending = null" /><Button label="Apply changes" :loading="store.busy" @click="apply" /></template></Dialog>
 </template>

@@ -6,9 +6,9 @@ import { StreamLanguage, foldedRanges, unfoldEffect } from '@codemirror/language
 import { json } from '@codemirror/lang-json'
 import Button from 'primevue/button'
 import { useProject } from '../store'
-import { jsonItemStart, type SourceTarget } from '../source-location'
+import { sourcePosition, type SourceTarget } from '../source-location'
 const props = defineProps<{ file: string; format: string; target?: SourceTarget }>()
-const store = useProject(), host = ref<HTMLElement>(), changed = ref(false)
+const store = useProject(), host = ref<HTMLElement>(), changed = ref(false), locationNotice = ref('')
 let view: EditorView | undefined, baseline = '', generation = 0, loadedFile = ''
 const sdl = StreamLanguage.define({
   startState: () => ({ comment: false }),
@@ -40,8 +40,10 @@ async function load() {
   reveal()
 }
 function reveal() {
-  if (!view || props.format !== 'json' || loadedFile !== props.file || props.target?.file !== props.file) return
-  const position = jsonItemStart(view.state.doc.toString(), props.target.path)
+  if (!view || loadedFile !== props.file || props.target?.file !== props.file) return
+  const resolved = sourcePosition(view.state.doc.toString(), baseline, props.format, props.target, store.project?.documents?.[props.file])
+  locationNotice.value = resolved.notice || ''
+  const position = resolved.position
   if (position === null) return
   const line = view.state.doc.lineAt(position)
   const effects: StateEffect<unknown>[] = []
@@ -49,7 +51,7 @@ function reveal() {
     if (from < position && to >= position) effects.push(unfoldEffect.of({ from, to }))
   })
   effects.push(EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 24 }))
-  view.dispatch({ selection: { anchor: line.from }, effects })
+  view.dispatch({ selection: { anchor: props.target.line ? position : line.from }, effects })
   view.focus()
 }
 async function commit() { if (view) await store.command({ action: 'source', file: props.file, text: view.state.doc.toString() }) }
@@ -58,4 +60,4 @@ watch(() => props.target, reveal, { flush: 'post' })
 onMounted(load)
 onBeforeUnmount(() => { generation++; view?.destroy() })
 </script>
-<template><div class="source-editor"><div class="source-toolbar"><code>{{ file }}</code><Button label="Preview source changes" :disabled="!changed" @click="commit" /><small v-if="changed">Unapplied source draft</small></div><div ref="host" class="code-host" /></div></template>
+<template><div class="source-editor"><div class="source-toolbar"><code>{{ file }}</code><Button label="Preview source changes" :disabled="!changed" @click="commit" /><small v-if="changed">Unapplied source draft</small></div><p v-if="locationNotice" class="source-location-notice" role="status">{{ locationNotice }}</p><div ref="host" class="code-host" /></div></template>

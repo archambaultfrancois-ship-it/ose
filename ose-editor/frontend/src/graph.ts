@@ -62,7 +62,7 @@ export function topology(model: any, workspace: any, labels = true, linkStyle: L
         .filter(([port]) => !internal.has(name + '.' + port) || crossing.has(name + '.' + port))
         .map(([port, desc]) => portData(name, direction, port, desc, name + '.' + port)))
     }
-    nodes.push({ id: 'group:' + id, type: 'component', position: workspace?.positions?.['group:' + id] || { x: 0, y: nodes.length * 200 }, data: { name: id, kind: 'group', inputs: ports('inputs'), outputs: ports('outputs') } })
+    nodes.push({ id: 'group:' + id, type: 'component', position: workspace?.positions?.['group:' + id] || { x: 0, y: nodes.length * 200 }, data: { name: id, kind: 'group', members, inputs: ports('inputs'), outputs: ports('outputs') } })
   }
   for (const [name, type] of Object.entries(model?.external_topics || {}) as any) {
     const id = 'external:' + name

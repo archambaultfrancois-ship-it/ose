@@ -17,6 +17,7 @@ import threading
 
 from .json_source import JsonSource, dump, loads, web
 from .sdl_source import SdlSource
+from .diagnostics import source_diagnostic
 
 
 class Conflict(ValueError):
@@ -720,7 +721,7 @@ class Project:
             except (ValueError, KeyError, TypeError, IndexError, AttributeError) as error:
                 item.update(deepcopy(self.last_valid.get(key, {})))
                 item.update(stale=True, dirty=doc.dirty, error=str(error))
-                diagnostics.append({'severity': 'error', 'origin': 'syntax', 'file': key, 'message': str(error)})
+                diagnostics.append(source_diagnostic(error, key, doc.text, revision=self.revision))
             result[key] = item
         validation = self.last_validation if self.last_validation and self.last_validation.get('revision') == self.revision else None
         if not result.get(self.model, {}).get('stale'):

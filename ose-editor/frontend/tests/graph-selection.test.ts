@@ -250,3 +250,16 @@ describe('graph component selection', () => {
     expect(selected()).toEqual(['component:view'])
   })
 })
+
+
+it('reveals the selected component through its collapsed group without changing layout metadata', async () => {
+  const { store, wrapper, command } = await graph()
+  store.project.workspace.groups = { folded: { members: ['source', 'compute'], collapsed: true } }
+  await flushPromises()
+  const before = JSON.stringify(store.project.workspace)
+  store.select('model.json', ['components', 'compute'])
+  await wrapper.setProps({ navigationRequest: 1 }); await flushPromises()
+  expect(selected()).toEqual(['group:folded'])
+  expect(JSON.stringify(store.project.workspace)).toBe(before)
+  expect(command).not.toHaveBeenCalled()
+})

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { VueFlow, useVueFlow } from '@vue-flow/core'
+import { VueFlow, useVueFlow, useNodesInitialized } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
@@ -13,6 +13,7 @@ import { useProject } from '../store'
 import { topology, downstream, type LinkStyle } from '../graph'
 import { layoutGraph } from '../layout'
 import { assessConnection, inputs, publishers, statusLabel, type Publisher } from '../connections'
+const props = defineProps<{ navigationRequest?: number }>()
 const store = useProject(), nodes = ref<any[]>([]), edges = ref<any[]>([]), search = ref(''), labels = ref(true), scope = ref('all'), layoutBusy = ref(false)
 const linkStyle = ref<LinkStyle>('default')
 const showActivations = ref(false)
@@ -54,7 +55,7 @@ watch(() => [store.project?.revision, store.project?.validation, labels.value, s
   const chosen = store.selection?.path?.[0] === 'components' ? store.selection.path[1] : ''
   const inspectedId = chosen ? 'component:' + chosen : store.selection?.path?.[0] === 'external_topics' ? 'external:' + store.selection.path[1] : ''
   const highlighted = chosen && scope.value !== 'all' ? downstream(model.value, chosen, scope.value) : null
-  graph.nodes.forEach(node => { node.class = search.value && !node.data.name.toLowerCase().includes(search.value.toLowerCase()) || highlighted && !highlighted.has(node.data.name) ? 'dimmed' : ''; node.selected = inspectionChanged ? node.id === inspectedId : selectedIds.has(node.id) })
+  graph.nodes.forEach(node => { node.class = search.value && !node.data.name.toLowerCase().includes(search.value.toLowerCase()) || highlighted && !highlighted.has(node.data.name) ? 'dimmed' : ''; node.selected = inspectionChanged ? node.id === inspectedId || !!chosen && !!node.data.members?.includes(chosen) : selectedIds.has(node.id) })
   if (drag.value) for (const node of graph.nodes) {
     for (const port of node.data.inputs) if (drag.value.type === 'source') {
       port.assistance = assessConnection(store.project, drag.value, port.endpoint)
@@ -63,9 +64,28 @@ watch(() => [store.project?.revision, store.project?.validation, labels.value, s
       port.assistance = assessConnection(store.project, { endpoint: port.endpoint, external: node.data.kind === 'external' }, drag.value.endpoint)
     }
   }
+  graph.edges.forEach((edge: any) => { edge.selected = store.selection?.file === store.project?.model && store.selection?.path?.[0] === 'subscriptions' && edge.data.index === Number(store.selection.path[1]) })
   nodes.value = graph.nodes; edges.value = graph.edges
   graphInspection = store.selection
 }, { immediate: true, deep: false })
+const nodesInitialized = useNodesInitialized()
+let pendingNavigation = false
+async function revealNavigation() {
+  if (!pendingNavigation || !nodesInitialized.value || store.editingComponent) return
+  await nextTick()
+  const path = store.selection?.path || []
+  let ids: string[] = []
+  if (path[0] === 'components') {
+    const node = nodes.value.find(node => node.id === 'component:' + path[1] || node.data.members?.includes(path[1]))
+    if (node) ids = [node.id]
+  } else if (path[0] === 'subscriptions') {
+    const edge = edges.value.find(edge => edge.data.index === Number(path[1]))
+    if (edge) ids = [edge.source, edge.target]
+  } else if (path[0] === 'external_topics') ids = ['external:' + path[1]]
+  pendingNavigation = false
+  if (ids.length) { search.value = ''; await nextTick(); fitView({ nodes: ids, padding: 0.35, maxZoom: 1 }) }
+}
+watch(() => props.navigationRequest, request => { pendingNavigation = !!request; revealNavigation() }, { immediate: true })
 async function layout() {
   layoutBusy.value = true
   const graph = layoutGraph(nodes.value, edges.value)
@@ -184,7 +204,7 @@ onBeforeUnmount(() => worker.terminate())
       <p id="connection-assessment" role="status" :data-status="assessment?.status">{{ assessment ? statusLabel[assessment.status] + ' · ' + assessment.message : 'Choose a publisher and destination. Inputs with existing producers can receive another connection.' }}</p>
     </form>
     <p v-if="connectionFeedback" class="connection-feedback" role="status">{{ connectionFeedback }}</p>
-    <VueFlow v-model:nodes="nodes" v-model:edges="edges" fit-view-on-init :is-valid-connection="validConnection" :multi-selection-key-code="['Shift', 'Control', 'Meta']" :delete-key-code="null" :min-zoom="0.15" :max-zoom="2" @node-click="selected" @node-double-click="expand" @edge-click="event => store.select(store.project.model, ['subscriptions', String(event.edge.data.index)])" @connect-start="startConnection" @connect-end="drag = null" @connect="connect" @node-drag-stop="position">
+    <VueFlow v-model:nodes="nodes" v-model:edges="edges" fit-view-on-init :is-valid-connection="validConnection" :multi-selection-key-code="['Shift', 'Control', 'Meta']" :delete-key-code="null" :min-zoom="0.15" :max-zoom="2" @nodes-initialized="revealNavigation" @node-click="selected" @node-double-click="expand" @edge-click="event => store.select(store.project.model, ['subscriptions', String(event.edge.data.index)])" @connect-start="startConnection" @connect-end="drag = null" @connect="connect" @node-drag-stop="position">
       <template #node-component="nodeProps"><ComponentNode v-bind="nodeProps" @port-hover="message => connectionFeedback = message" @input-select="inspectInput" @edit-component="store.editComponent" /></template>
       <Background :gap="24" pattern-color="#c8d5e5" /><MiniMap pannable zoomable /><Controls />
     </VueFlow>

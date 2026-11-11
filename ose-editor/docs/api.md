@@ -115,3 +115,15 @@ bounded to 64 MiB. When `/project` reports `draft_recovery`, use
 `POST /draft-recovery` with `{revision, restore: true}` to restore it or
 `{revision, restore: false}` to discard it. Restoration rechecks disk baselines
 and changes the authoring draft only.
+
+
+### Diagnostic source locations
+
+Diagnostics retain `severity`, `origin`, `message` and an optional `file`.
+Syntax diagnostics and validation failures may additionally include `line` and
+`column` (one-based Unicode code-point coordinates) when the parser reports a
+location, together with the applied `revision`. Clients must not assume a precise
+location when these fields are absent, or reuse coordinates after the source has
+changed. Validation maps reported temporary snapshot filenames back to registered
+project document IDs. Suggested editor corrections are prepared through the
+existing command-preview API and require explicit application.
