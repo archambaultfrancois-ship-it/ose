@@ -14,11 +14,11 @@ async def run(plan_path, duration=None, port=0, *, working_directory=None, recor
               record_from=None, record_until=None):
     plan_path = Path(plan_path).resolve()
     plan = read_plan(plan_path)
+    activation_order(plan)
     from ose.recording.batch import destination, LiveCapture, CaptureWindow
     CaptureWindow(record, record_from, record_until)
     destination(record, record_file, protected=[plan_path, Path(plan['build_dir']) / 'endpoint.json',
                                                 Path(plan['build_dir']) / 'last-status.json'])
-    activation_order(plan)
     from ose.execution.identity import identify
     identify("broker", plan)
     broker = Broker(plan)

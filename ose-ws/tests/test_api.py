@@ -75,7 +75,9 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         started = await self.wait_operation(await self.request("POST", f"/recordings/{identity}/start"))
         self.assertEqual(started["status"], "complete", started)
         envelope = self.broker.codec.wrap(CATALOGUE, self.broker.parameters.service.values["machine/settings"])
-        self.broker.component_recording("source", "recording_input", dict(port="settings", sequence=1), envelope)
+        published_at = time.time_ns()
+        self.broker.component_recording("source", "recording_input",
+            dict(port="settings", sequence=1, publish_time_ns=published_at), envelope)
         await self.broker.publish("source.settings", envelope)
         await self.until(lambda: manager.recorders[identity].capture.counts["written"] == 2)
         stopped = await self.wait_operation(await self.request("POST", f"/recordings/{identity}/stop"))
@@ -86,6 +88,9 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         records = list(RecordingReader(Path(self.config["state_dir"]) / "captures" / identity / "capture.pcapng").iter_records())
         self.assertEqual({r.channel.metadata["ose.kind"] for r in records}, {"input", "output"})
         self.assertEqual({r.channel.topic for r in records}, {"source.settings"})
+        observed_input = next(r for r in records if r.channel.metadata["ose.kind"] == "input")
+        self.assertEqual(observed_input.publish_time_ns, published_at)
+        self.assertGreaterEqual(observed_input.log_time_ns, published_at)
         scoped = await self.wait_operation(await self.request("POST", "/recordings", {"selection": ["all"], "kind": "input"}))
         self.assertEqual([p["kind"] for p in scoped["result"]["selection"]], ["input"])
 
