@@ -137,10 +137,10 @@ also supports an explicit application codec.
 
 ## Feeding a model input
 
-The SDKs below use the local broker. Distributed models can also receive
-[recording replay](replay.md#live-replay-and-speed-control) on declared external
-topics through their coordinator; this publisher-only interface does not add
-distributed subscription support to the SDKs.
+The SDKs use the local broker. A distributed coordinator also accepts the
+publisher-only CENV/2 interface and [recording replay](replay.md#live-replay-and-speed-control).
+External subscriptions remain local. Native SDK connection options are unchanged;
+use their plain connection only for an explicitly insecure loopback coordinator.
 
 The application model declares the external topic's input contract:
 
@@ -162,11 +162,22 @@ compatibility with the input. A required input waits for data before processing,
 but does not delay READY. An external session never participates in the component
 startup barrier.
 
-An external publisher can also declare a new topic without a model. It is the
-only active publisher for that topic. An internal output belongs exclusively to
-its component. A replacement external publisher must satisfy the initial
-contract and existing subscriptions. Releasing the publisher retains the
-contract and the latest state in RAM until the broker stops.
+A producer absent from the model can publish to any ordinary application topic,
+including `component.output`, by declaring a compatible SDL contract. A declaration
+registers that producer and its schema; it does not reserve the topic. Several
+producers, including the component named in the model, can publish simultaneously.
+Each payload must match its producer's schema. Consumers receive the actual source
+catalogue and their own contract must remain compatible. Releasing one producer
+does not revoke another producer or already admitted messages.
+
+`external_topics` supplies a contract when no component output declares it. It is
+not a publication permission list. A producer can also declare a new topic;
+its initial contract remains stable until the broker stops. Later producers and
+subscribers are checked against the contract and existing peers. The diagnostic
+namespace `component.record.*` remains reserved for internal recording points.
+
+Use [component supervision](component-supervision.md) separately when a producer
+must be suspended, for example to replace generated data with recorded data.
 
 ## Delivery and limits
 

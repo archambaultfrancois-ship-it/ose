@@ -39,6 +39,7 @@ def add_parser(commands):
     app.add_argument('--sdl-root', dest='app_sdl_root', help='SDL checkout (default: SDL_ROOT, plan or sibling checkout)')
     actions = app.add_subparsers(dest='app_action', required=True, metavar='ACTION')
     actions.add_parser('env', help='show application, framework and Python paths; never show credentials')
+    _inherit(actions, 'component', core['component'], 'enable, disable or inspect application components')
     _inherit(actions, 'logs', core['logs'], 'read or follow application component logs')
     for name, target in (('build', 'build'), ('validate', 'validate'), ('simulate', 'simulate')):
         command = actions.add_parser(name, help=f'run the application Makefile target {target}')
@@ -207,6 +208,9 @@ def run(args):
         if action == 'parameter':
             context.parameter_token(args)
             args.action, args.sdl_root = 'parameter', str(context.sdl)
+            return execute(args)
+        if action == 'component':
+            args.action = 'component'
             return execute(args)
         if action == 'logs':
             args.action = 'logs'

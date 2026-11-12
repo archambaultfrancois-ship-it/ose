@@ -11,7 +11,7 @@ from ose.execution.broker import Broker
 
 
 async def run(plan_path, duration=None, port=0, *, working_directory=None, record=None, record_file=None,
-              record_from=None, record_until=None, params_sync=None):
+              record_from=None, record_until=None, params_sync=None, disabled=()):
     plan_path = Path(plan_path).resolve()
     plan = read_plan(plan_path)
     activation_order(plan)
@@ -21,7 +21,7 @@ async def run(plan_path, duration=None, port=0, *, working_directory=None, recor
                                                 Path(plan['build_dir']) / 'last-status.json'])
     from ose.execution.identity import identify
     identify("broker", plan)
-    broker = Broker(plan)
+    broker = Broker(plan, disabled=disabled)
     children = []
     waiting = []
     capture = None

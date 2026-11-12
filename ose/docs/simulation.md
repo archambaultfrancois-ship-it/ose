@@ -1,5 +1,9 @@
 # Deterministic simulated execution
 
+Simulation supports initially inactive components with repeated
+`--disable-component NAME` and console `component enable|disable|status` commands.
+See [component supervision](component-supervision.md) for lifecycle and timers.
+
 `simulated` is a functional execution engine for the same compiled graph and
 Python, C, Rust, Java and Ada callback containers used by `realtime`. It runs real component
 processes, selects their input activations centrally and advances a virtual clock without

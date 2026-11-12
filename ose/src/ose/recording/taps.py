@@ -108,7 +108,8 @@ class TapHub:
             token = uuid.uuid4().hex
             self.sessions[token] = dict(peer=peer, label=label, points={t: points[t] for t in selections},
                 capacity=capacity, budget=budget, queue=deque(), bytes=0, active=True,
-                predicates=predicates, identities=identities,
+                predicates=predicates, identities=identities, expressions=dict(filters),
+                filter_catalogues={t: points[t]["catalogue"] for t in filters},
                 changed=asyncio.Event(), polling=False, error=None, counts=Counter())
             self._activation_changed()
             return {"session": token, "label": label, "filtering": "source"}, None
@@ -162,7 +163,7 @@ class TapHub:
         if was_active:
             self._activation_changed()
 
-    def observe(self, topic, body, *, generation, sequence, catalogue, root, app_id=None, publish_time_ns=None):
+    def observe(self, topic, body, *, generation, sequence, catalogue, root, app_id=None, publish_time_ns=None, producer=None):
         # Keep the hot path constant when nobody is recording.
         if not self.sessions:
             return
@@ -173,6 +174,7 @@ class TapHub:
         if type(publish_time_ns) is not int or not 0 <= publish_time_ns < 2**64:
             raise ValueError("publish_time_ns must be an unsigned 64-bit timestamp")
         for session in self.sessions.values():
+            capture_body = body
             expected = session["points"].get(topic)
             if not session["active"] or expected is None:
                 continue
@@ -180,17 +182,34 @@ class TapHub:
                         "publish_time_ns": publish_time_ns}
             if app_id is not None:
                 metadata["app_id"] = app_id
+            if expected.get('multipublisher'):
+                # SDL catalogues can exceed CENV's 64 KiB metadata limit.
+                # Carry the actual schema in the bounded binary body instead.
+                schema = catalogue.encode('utf-8')
+                metadata.update(catalogue_size=len(schema), root=root)
+                capture_body = schema + body
+                if producer is not None:
+                    metadata['producer'] = producer
             if metadata["topic"] != topic:
                 metadata["point"] = topic
             session["counts"]["observed"] += 1
             session.setdefault("point_counts", {}).setdefault(topic, Counter())["observed"] += 1
-            if (catalogue, root, generation) != (expected["catalogue"], expected["root"], expected["generation"]):
+            if ((root, generation) != (expected['root'], expected['generation']) or
+                    (catalogue != expected['catalogue'] and not expected.get('multipublisher'))):
                 session["error"] = "recording point changed; stop and refresh discovery"
                 self.deactivate(session)
                 continue
             predicate = session["predicates"].get(topic)
             if predicate is not None:
                 try:
+                    if expected.get('multipublisher') and catalogue != session['filter_catalogues'][topic]:
+                        replacement = prepare_filter(dict(expected, catalogue=catalogue), session['expressions'][topic],
+                                                     sdl_root=getattr(self.codec, 'root', None))
+                        predicate.close()
+                        predicate = replacement
+                        session['predicates'][topic] = predicate
+                        session['identities'][topic] = self.codec.identity(catalogue)
+                        session['filter_catalogues'][topic] = catalogue
                     identity, payload = self.codec.api.unpack_envelope(body)
                     if identity != session["identities"][topic]:
                         raise ValueError("recording catalogue identity mismatch")
@@ -210,22 +229,22 @@ class TapHub:
             try:
                 # Replies add control fields; reserve room for them before admission.
                 encode({**self.stats(session, topic), "op": "result", "request": 2**63,
-                        "record": metadata, "padding": " " * 128}, body, self.max_frame)
+                        "record": metadata, "padding": " " * 128}, capture_body, self.max_frame)
             except ValueError:
                 session["counts"]["oversize"] += 1
                 session["point_counts"][topic]["oversize"] += 1
                 continue
-            if len(body) > session["budget"]:
+            if len(capture_body) > session["budget"]:
                 session["counts"]["dropped"] += 1
                 session["point_counts"][topic]["dropped"] += 1
                 continue
-            while session["queue"] and (len(session["queue"]) >= session["capacity"] or session["bytes"] + len(body) > session["budget"]):
+            while session["queue"] and (len(session["queue"]) >= session["capacity"] or session["bytes"] + len(capture_body) > session["budget"]):
                 old_metadata, old = session["queue"].popleft()
                 session["bytes"] -= len(old)
                 session["counts"]["dropped"] += 1
                 session["point_counts"][old_metadata.get("point", old_metadata["topic"])]["dropped"] += 1
-            session["queue"].append((metadata, body))
-            session["bytes"] += len(body)
+            session["queue"].append((metadata, capture_body))
+            session["bytes"] += len(capture_body)
             session["changed"].set()
 
     def disconnected(self, peer):

@@ -19,7 +19,10 @@ from ose.recording.inputs import InputRecording
 from ose.execution.logs import ComponentLogs
 
 
-class Adapter:
+from ose.execution.components import ComponentRuntime
+
+
+class Adapter(ComponentRuntime):
     def __init__(self, plan, name, *, working_directory=None):
         require_v2(plan)
         activation_order(plan)
@@ -58,6 +61,7 @@ class Adapter:
         self.started_at = time.monotonic()
         self.tick_index, self.activated_at_ns = 0, 0
         self.closing = False
+        self.setup_component_control()
 
     def _changed(self):
         self.activity.set()
@@ -116,6 +120,8 @@ class Adapter:
                     self.codec.compare(text, self.node["inputs"][port]["catalogue"], self.node["inputs"][port]["root"])
                     self.compatibility.add(key)
                 self.codec.validate_only(text, self.node["inputs"][port]["root"], body)
+                if header.get('target_version', 0) != (self.component_version or 0):
+                    raise ValueError('obsolete target activation')
                 record = {"id": header["id"], "epoch": header["epoch"], "sequence": header["sequence"],
                           "topic": header["topic"],
                           "body": body, "payload": memoryview(body)[self.codec.api.ENVELOPE_HEADER_SIZE:], "catalogue": text}
@@ -125,6 +131,8 @@ class Adapter:
                 check_record_size(port, record)
                 deadline = time.monotonic() + buffer.policy.wait_timeout_ms / 1000
                 while True:
+                    if header.get('target_version', 0) != (self.component_version or 0):
+                        raise ValueError('obsolete target activation')
                     buffer.store.changed.clear()
                     result = self.scheduler.admit(port, record, self._input_now())
                     self._changed()
@@ -151,74 +159,84 @@ class Adapter:
         from ose.execution.identity import describe
         elapsed = max(time.monotonic() - self.started_at, .001)
         metrics = {"inputs": {p: b.snapshot() for p, b in self.buffers.items()},
-            "process": describe("a", self.plan, self.name, self.process),
+            "process": describe("a", self.plan, self.name, getattr(self, 'process', None)),
             "ticks_hz": self.metrics.get("ticks", 0) / elapsed,
             "publications_hz": self.metrics.get("publications", 0) / elapsed,
-            "running": bool(self.activated_at_ns), **self.metrics, **self.timings.snapshot()}
+            "running": bool(self.activated_at_ns) and self.component_active, **self.metrics, **self.timings.snapshot()}
         if hasattr(self, "component_recording"):
             metrics["recording"] = dict(self.component_recording.counts)
-        metrics['measurements'] = self.process.measurements.snapshot()
+        metrics['measurements'] = self.process.measurements.snapshot() if hasattr(self, 'process') else {}
         return metrics
 
     async def _send_report(self, full, timeout=None):
-        metrics = self._snapshot() if full else ({'running': bool(self.activated_at_ns)} if self.reports.managed else {})
-        metrics['log_records'] = self.process.logs.drain()
-        metrics['logs_dropped'] = self.process.logs.dropped
+        metrics = self._snapshot() if full else ({'running': bool(self.activated_at_ns) and self.component_active} if self.reports.managed else {})
+        metrics['log_records'] = self.component_logs.drain()
+        metrics['logs_dropped'] = self.component_logs.dropped
         result, _ = await self.client.request("metrics", json.dumps(metrics).encode(),
             details=full, report_version=self.reports.version, timeout=timeout)
         self.reports.configure(result.get('reporting'))
 
     async def _report(self):
         while not self.closing:
-            full = await self.reports.next(self.process.logs)
+            full = await self.reports.next(self.component_logs)
             if full is None:
                 return
             await self._send_report(full)
 
+    async def initialize_component(self):
+        self.process = await start_component(self.node, self.parameters, self.component_recording.endpoint, self.component_logs,
+            **({"working_directory": self.working_directory} if self.working_directory is not None else {}),
+            inputs=self.input_services)
+        self.process.measurements.on_change = self.reports.mark
+
     async def _work(self):
         while not self.closing:
             self.activity.clear()
-            now = self._input_now()
-            reference = self.scheduler.select(now)
-            if reference is None:
+            async with self.component_lock:
+                now = self._input_now()
+                reference = self.scheduler.select(now)
+                if self.component_active and reference is not None:
+                    await self._callback(reference)
+                    continue
                 deadline = self.scheduler.next_event(now)
                 timeout = max(0, (deadline - now) / 1e9) if deadline is not None else None
-                try:
-                    await asyncio.wait_for(self.activity.wait(), timeout)
-                except asyncio.TimeoutError:
-                    pass
-                continue
-            self.tick_index += 1
-            self.reports.mark()
-            self.input_recording.observe({reference.port: reference.record}, self.tick_index)
-            outputs, size, success = [], 0, False
             try:
-                async for port, payload, app_id in self.timings.events(input_events(
-                        self.process, self.node, reference, self.tick_index, self.input_services,
-                        **({"parameters": self.parameters} if self.node.get("parameter_bindings") else {}))):
-                    size += len(payload) + len(port.encode()) + 12
-                    if size > 16 * 1024 * 1024:
-                        raise ValueError("callback outputs exceed 16 MiB")
-                    desc = self.node["outputs"][port]
-                    envelope = self.codec.wrap(desc["catalogue"], payload)
-                    self.codec.validate_only(desc["catalogue"], desc["root"], envelope)
-                    outputs.append((port, envelope, app_id))
-                success = True
-            finally:
-                self.scheduler.complete(reference, self._input_now(), success=success)
-            # FINISHED releases withdrawn inbox capacity before any outbound
-            # admission wait, so feedback cannot hold its own consumed slot.
-            for port, envelope, app_id in outputs:
-                result, _ = await self.client.request("publish", envelope, timeout=self.request_timeout,
-                    topic=f"{self.name}.{port}", **({"app_id": app_id} if app_id is not None else {}))
-                self.metrics["publications"] = self.metrics.get("publications", 0) + 1
-                refused = {key: value for key, value in result["delivery"].items()
-                           if value not in ("accepted", "duplicate", "stale")}
-                if refused:
-                    self.metrics["delivery_refused"] = self.metrics.get("delivery_refused", 0) + len(refused)
-                    print(f"{self.name}: delivery refused {refused}", file=sys.stderr)
-            self.metrics["ticks"] = self.metrics.get("ticks", 0) + 1
-            self.reports.mark()
+                await asyncio.wait_for(self.activity.wait(), timeout)
+            except asyncio.TimeoutError:
+                pass
+
+    async def _callback(self, reference):
+        self.tick_index += 1
+        self.reports.mark()
+        self.input_recording.observe({reference.port: reference.record}, self.tick_index)
+        outputs, size, success = [], 0, False
+        try:
+            async for port, payload, app_id in self.timings.events(input_events(
+                    self.process, self.node, reference, self.tick_index, self.input_services,
+                    **({"parameters": self.parameters} if self.node.get("parameter_bindings") else {}))):
+                size += len(payload) + len(port.encode()) + 12
+                if size > 16 * 1024 * 1024:
+                    raise ValueError("callback outputs exceed 16 MiB")
+                desc = self.node["outputs"][port]
+                envelope = self.codec.wrap(desc["catalogue"], payload)
+                self.codec.validate_only(desc["catalogue"], desc["root"], envelope)
+                outputs.append((port, envelope, app_id))
+            success = True
+        finally:
+            self.scheduler.complete(reference, self._input_now(), success=success)
+        # FINISHED releases withdrawn inbox capacity before any outbound
+        # admission wait, so feedback cannot hold its own consumed slot.
+        for port, envelope, app_id in outputs:
+            result, _ = await self.client.request("publish", envelope, timeout=self.request_timeout,
+                topic=f"{self.name}.{port}", **({"app_id": app_id} if app_id is not None else {}))
+            self.metrics["publications"] = self.metrics.get("publications", 0) + 1
+            refused = {key: value for key, value in result["delivery"].items()
+                       if value not in ("accepted", "duplicate", "stale")}
+            if refused:
+                self.metrics["delivery_refused"] = self.metrics.get("delivery_refused", 0) + len(refused)
+                print(f"{self.name}: delivery refused {refused}", file=sys.stderr)
+        self.metrics["ticks"] = self.metrics.get("ticks", 0) + 1
+        self.reports.mark()
 
     async def run(self, host, port):
         from ose.execution.identity import identify
@@ -242,10 +260,8 @@ class Adapter:
                     self.data_clients[identity] = client
                     await client.request("attach", node=self.name, subscription=identity)
             self.parameters = await RemoteBindings(self.node, self.client.request, self.activity).open()
-            self.process = await start_component(self.node, self.parameters, self.component_recording.endpoint, self.component_logs,
-                **({"working_directory": self.working_directory} if self.working_directory is not None else {}),
-                inputs=self.input_services)
-            self.process.measurements.on_change = self.reports.mark
+            self.supervision_request = self.client.request
+            await self.initialize_component_state()
             result, _ = await self.client.request("ready")
             self.reports.configure(result.get('reporting'))
             # Supervisor activates delivery only after every component is ready.
@@ -261,7 +277,7 @@ class Adapter:
             self.activated_at_ns = time.monotonic_ns()
             tasks = [*(asyncio.create_task(self._receiver(identity)) for identity in self.subscriptions),
                      asyncio.create_task(self._work()), asyncio.create_task(self._report()), self.client.task,
-                     *(client.task for client in self.data_clients.values()), asyncio.create_task(self.process.wait())]
+                     *(client.task for client in self.data_clients.values()), asyncio.create_task(self.component_exit()), asyncio.create_task(self.component_control())]
             if self.parameters.task:
                 tasks.append(self.parameters.task)
             if self.component_recording.endpoint.points or self.node["inputs"]:

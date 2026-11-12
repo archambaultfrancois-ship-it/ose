@@ -18,8 +18,17 @@ class NativeExternalTests(external.ExternalTests):
             raise unittest.SkipTest('set SDL_ROOT')
         subprocess.run(['make','external-native'],cwd=ROOT,check=True,stdout=subprocess.DEVNULL)
 
-    async def exchange(self,language,transport,evolved=False,resume=False,app_id=None):
+    async def exchange(self,language,transport,evolved=False,resume=False,app_id=None,shared=False):
         c=await self.client('driver')
+        shared_publisher = None
+        if shared:
+            topic = language + '.result'
+            descriptor = dict(root='Measurement', catalogue=external.CAT, catalogue_id=self.codec.identity(external.CAT))
+            self.broker.plan['components'][language] = dict(inputs={}, outputs={'result': descriptor})
+            self.broker.topics[topic] = descriptor
+            self.broker.producers.topics[topic] = descriptor
+            self.broker.internal_topics.add(topic)
+            shared_publisher = await asyncio.to_thread(c.publisher, topic, self.Message)
         message_type=self.Message
         if evolved:
             class Extended(self.codec.api.SdlMessage):
@@ -55,6 +64,12 @@ class NativeExternalTests(external.ExternalTests):
             self.assertEqual(metadata[0].app_id,app_id)
             stdout,stderr=await asyncio.wait_for(proc.communicate(),5)
             self.assertEqual(proc.returncode,0,stderr.decode()+stdout.decode())
+            if shared_publisher is not None:
+                event.clear()
+                result = await asyncio.to_thread(shared_publisher.publish, self.Message(sequence=10, value=8.))
+                self.assertTrue(result.accepted)
+                self.assertTrue(await asyncio.to_thread(event.wait, 5))
+                self.assertEqual(received[-1].value, 8.)
         finally:
             if proc.returncode is None:
                 proc.kill();await proc.wait()
@@ -63,6 +78,8 @@ class NativeExternalTests(external.ExternalTests):
     async def test_native_c_udp(self): await self.exchange('c','udp')
     async def test_native_rust_tcp(self): await self.exchange('rust','tcp')
     async def test_native_rust_udp(self): await self.exchange('rust','udp')
+    async def test_native_c_shares_a_model_output_with_another_producer(self): await self.exchange('c','tcp',shared=True)
+    async def test_native_rust_shares_a_model_output_with_another_producer(self): await self.exchange('rust','tcp',shared=True)
     async def test_c_evolved_catalogue(self): await self.exchange('c','tcp',True)
     async def test_rust_evolved_catalogue(self): await self.exchange('rust','udp',True)
     async def test_c_zero_id_tcp(self): await self.exchange('c','tcp',app_id=0)

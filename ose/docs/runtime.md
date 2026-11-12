@@ -1,5 +1,8 @@
 # Runtime execution and message flow
 
+See [component supervision](component-supervision.md) for initially inactive
+components, runtime enable/disable and independent producers on model topics.
+
 This page describes the default `realtime` engine with application model v2.
 The [simulator](simulation.md) runs the same callbacks with virtual time and
 deterministic publication barriers.

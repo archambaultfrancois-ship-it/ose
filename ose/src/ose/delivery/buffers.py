@@ -34,7 +34,7 @@ class Buffer:
         if self.policy.buffer == "latest":
             # Source streams have independent sequences (and generations in
             # distributed runs). A different stream must not erase this history.
-            source = record.get("topic", "")
+            source = record.get("stream", record.get("topic", ""))
             last_epoch, last_sequence = self.store.meta.get(source, (None, -1))
             if record["epoch"] == last_epoch and record["sequence"] <= last_sequence:
                 self.metrics["stale"] += 1
@@ -52,6 +52,8 @@ class Buffer:
         record = dict(record, admitted_at=self.clock())
         if self.policy.buffer == "latest":
             self.store.meta[source] = (record["epoch"], record["sequence"])
+            if 'stream' in record and len(self.store.meta) > max(4096, self.store.seen_limit):
+                self.store.meta.pop(next(iter(self.store.meta)))
         self.store.put(record)
         if deduplicate:
             self.store.remember(record["id"])

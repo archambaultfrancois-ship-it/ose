@@ -70,9 +70,12 @@ class Router:
                 check_record_size(port, record)
             except ValueError:
                 size = MAX_SIZE + 1
-            if size <= MAX_SIZE:
+            inactive = self.schedulers[name].suspended_at is not None
+            if size <= MAX_SIZE and not inactive:
                 self.schedulers[name].receive(port, record, self.clock.time_ns)
-            if size > MAX_SIZE:
+            if inactive:
+                result = 'disabled'
+            elif size > MAX_SIZE:
                 result = "oversize"
             elif (buffer.policy.overflow == "wait" and buffer.store.size() >= buffer.policy.capacity
                   and self.clock.time_ns < deadline):

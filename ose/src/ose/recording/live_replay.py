@@ -10,6 +10,7 @@ import time
 import uuid
 
 from ose.codec.sdl2 import SDL2
+from ose.execution.publications import topic_contracts
 from ose.execution.simulation.clock import seconds_ns
 from ose.recording.control import ReplayControl
 from ose.recording.pacing import playback_speed
@@ -36,7 +37,8 @@ async def publisher(plan, topics, *, host, port, distributed=False, context=None
             deadline = time.monotonic() + 20
             while True:
                 status, _ = await client.request("status")
-                if all(node.get("metrics", {}).get("running") for node in status["components"].values()):
+                if all(status.get('component_states', {}).get(name, {}).get('active') is False or
+                       node.get('metrics', {}).get('running') for name, node in status['components'].items()):
                     break
                 if time.monotonic() >= deadline:
                     raise ValueError("workers did not start processing within 20 seconds")
@@ -49,8 +51,9 @@ async def publisher(plan, topics, *, host, port, distributed=False, context=None
                                               udp_port=udp.address[1])
             client.tcp.limit = min(client.tcp.limit, result["max_frame"])
             client.request_timeout = 15 + result["max_wait_timeout_ms"] / 1000
+            contracts = topic_contracts(plan)
             for topic in topics:
-                desc = plan["external_topics"][topic]
+                desc = contracts[topic]
                 await client.request("declare_publisher", desc["catalogue"].encode(), topic=topic, root=desc["root"])
 
         async def publish(topic, body, *, app_id=None):
@@ -169,7 +172,7 @@ async def run(path, plan_path, duration=None, *, mappings=None, speed=1, start_n
     CaptureWindow(record, record_from, record_until)
     destination(record, record_file, protected=[path, plan_path, Path(plan['build_dir']) / 'last-status.json',
                                                 Path(plan['build_dir']) / 'endpoint.json'])
-    topics = plan.get("external_topics", {})
+    topics = topic_contracts(plan)
     mapping = topic_mapping(mappings, topics)
     codec = SDL2(plan["sdl_root"])
     distributed = distributed or plan.get("execution") == "distributed" or insecure or any((tls_ca, tls_cert, tls_key))

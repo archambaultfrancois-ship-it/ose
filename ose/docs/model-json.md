@@ -270,6 +270,12 @@ An external topic must not:
 
 Declaring a topic describes its contract. External service access permissions
 are configured separately in the deployment.
+`external_topics` is not a list of permitted producer identities. A producer
+absent from the model may also declare and publish any existing component output
+with a compatible SDL contract. Multiple producers may share that topic without
+changing subscriptions. Use the output's existing `from` subscription; it does
+not need a duplicate `external_topics` declaration. See
+[independent producers](clients.md#feeding-a-model-input).
 
 ## Shared parameters: `shared_parameters`
 

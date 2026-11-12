@@ -25,7 +25,7 @@ class ReplayMappingTests(unittest.TestCase):
 
     def test_automatic_selection_is_deferred_until_reading_the_recording(self):
         self.assertIsNone(topic_mapping(None, {"external.signal": {}}))
-        with self.assertRaisesRegex(ValueError, "declared external topics"):
+        with self.assertRaisesRegex(ValueError, "known application topics"):
             topic_mapping(None, {})
 
     def test_scenario_ids_are_optional_uint64_and_independent_of_event_indices(self):

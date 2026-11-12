@@ -112,13 +112,16 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
         for index, (speed, commands) in enumerate(((0, None), (.5, None), (2, None),
                 (1, ['step-messages', 'wait .03', 'step-messages', 'wait .03', 'step-messages']))):
             output = self.root / f'window-{index}.mcap'
-            result = await run(self.capture(), self.plan_path,
+            # Live windows select actual deposit times. Leave scheduling/RPC
+            # margin on both sides; exact half-open boundaries are tested with
+            # the virtual clock rather than a millisecond wall-clock race.
+            result = await run(self.capture(offsets=(0, 200_000_000, 400_000_000)), self.plan_path,
                 mappings=['source.value=external.signal'], host='127.0.0.1', port=coordinator.port,
                 speed=speed, insecure=True, commands=commands, record=['external.signal'],
-                record_file=output, record_from='40ms', record_until='80ms')
+                record_file=output, record_from='150ms', record_until='300ms')
             self.assertEqual(result['published'], 3)
             records = list(RecordingReader(output).iter_records())
-            self.assertEqual([r.decode().fields['sequence'] for r in records], [2])
+            self.assertEqual([r.decode().fields['sequence'] for r in records], [2], f'speed={speed}, commands={commands}')
 
     async def test_batch_capture_of_distributed_replay_unions_filters_and_overwrites(self):
         from sdl_recording import RecordingReader
@@ -222,12 +225,12 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["completed_loops"], 2)
         self.assertEqual(self.values(), [[1, 1.], [2, 2.], [3, 3.]] * 2)
         self.assertEqual(len(coordinator.external_peers), 0)
-        old_token = coordinator.external_generations["external.signal"]
+        old_token = next(reversed(coordinator.external_generations))
         peer = await connect("127.0.0.1", coordinator.port, self.plan["max_frame"])
         self.addAsyncCleanup(peer.close)
         await peer.request("external_open", topics=["external.signal"], plan_id=fingerprint(self.plan))
-        with self.assertRaisesRegex(ValueError, "obsolete"):
-            coordinator.authorize(self.plan["subscriptions"][0], old_token, worker.token)
+        # A new producer does not revoke already admitted data from an earlier one.
+        coordinator.authorize(self.plan['subscriptions'][0], old_token, worker.token)
 
     async def test_infinite_cli_replay_stops_by_script_or_sigterm(self):
         coordinator, _ = await self.cluster()
@@ -297,9 +300,9 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 await first.request("external_open", topics=topics, plan_id=plan_id)
         result, _ = await first.request("external_open", topics=["external.signal"], plan_id=fingerprint(self.plan))
-        with self.assertRaisesRegex(ValueError, "active publisher"):
-            await second.request("external_open", topics=["external.signal"], plan_id=fingerprint(self.plan))
-        with self.assertRaisesRegex(ValueError, "unowned"):
+        other, _ = await second.request("external_open", topics=["external.signal"], plan_id=fingerprint(self.plan))
+        self.assertNotEqual(result['token'], other['token'])
+        with self.assertRaisesRegex(ValueError, "declare publisher"):
             await first.request("external_publish", b"", token=result["token"], topic="sink.internal")
         coordinator.external_limits["enabled"] = False
         with self.assertRaisesRegex(ValueError, "disabled"):
@@ -430,14 +433,15 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(coordinator.metrics["external_publications"], 0)
         await self.until(lambda: not coordinator.external_owners)
 
-    async def test_distributed_replay_over_tls_requires_replay_identity(self):
+    async def test_distributed_replay_accepts_an_authenticated_producer_identity(self):
         await asyncio.to_thread(distributed_fixture.certificates, self.root, ["coordinator", "sink", "replay", "intruder"])
         tls = lambda name: distributed_fixture.tls(self.root, name)
         coordinator, _ = await self.cluster(tls("coordinator")[0], tls("sink")[1], tls("sink")[0])
         intruder = await connect("127.0.0.1", coordinator.port, self.plan["max_frame"], tls("intruder")[1], "coordinator")
         self.addAsyncCleanup(intruder.close)
-        with self.assertRaisesRegex(ValueError, "replay certificate"):
-            await intruder.request("external_open", topics=["external.signal"], plan_id=fingerprint(self.plan))
+        admitted, _ = await intruder.request("external_open", topics=["external.signal"], plan_id=fingerprint(self.plan))
+        self.assertTrue(admitted['token'])
+        await intruder.request('external_close', token=admitted['token'])
         result = await run(self.capture(), self.plan_path, mappings=["source.value=external.signal"],
             host="127.0.0.1", port=coordinator.port, speed=2, tls_ca=str(self.root / "ca.crt"),
             tls_cert=str(self.root / "replay.crt"), tls_key=str(self.root / "replay.key"))
@@ -464,9 +468,9 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
             coordinator, worker = await self.cluster()
             self.assertEqual(worker.started_at, 0)
             original_publish = coordinator.publish_record
-            async def publish(record):
+            async def publish(record, **options):
                 self.assertGreater(worker.started_at, 0)
-                return await original_publish(record)
+                return await original_publish(record, **options)
             with patch.object(coordinator, "publish_record", publish):
                 await run(self.capture(offsets=(0,)), self.plan_path, mappings=["source.value=external.signal"],
                     host="127.0.0.1", port=coordinator.port, speed=0, insecure=True)

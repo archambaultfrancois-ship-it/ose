@@ -54,6 +54,14 @@ public class ExternalProbe {
      if (!expected.getMessage().contains("uint64")) throw expected;
     }
    }
+   Client otherProducer = Client.connect("127.0.0.1", Integer.parseInt(args[0]), "java-other-producer");
+   try {
+    Client.Publisher<Measurement> firstShared = client.publisher("java.shared", Measurement.class);
+    Client.Publisher<Measurement> secondShared = otherProducer.publisher("java.shared", Measurement.class);
+    Measurement shared = new Measurement(); shared.sequence = 1; shared.value = 4.;
+    firstShared.publish(shared); secondShared.publish(shared);
+    firstShared.close(); secondShared.publish(shared); secondShared.close();
+   } finally { otherProducer.close(); }
    if (!client.listTopics().contains("java.")) throw new Exception("missing topic");
    Client broken = Client.connect("127.0.0.1", Integer.parseInt(args[0]), "java-failure");
    try {

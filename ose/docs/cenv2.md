@@ -106,6 +106,15 @@ compares it with the input contract, and validates/decodes that message. Changin
 catalogues on an established subscription requires no route reconfiguration.
 Schema rejection, cache bounds and full-text collision checks are unchanged.
 
+Component supervision adds generic CENV/2 operations and optional
+`target_version` delivery metadata. Messages with this field use opcode 0;
+ordinary deliveries without extra fields retain their compact encoding. Aggregate
+recording replies carry an actual source catalogue as a binary-body prefix,
+identified by `catalogue_size`; see the
+[recording layout](component-supervision.md#protocol-and-recording). Upgrade the
+recorder with the runtime for these aggregate capture replies. DATA/PUBLISH bodies
+and native SDK publication interfaces remain unchanged.
+
 ## Implementation and qualification
 
 Python broker/adapter/client transports share `ose.transport.protocol`. Native

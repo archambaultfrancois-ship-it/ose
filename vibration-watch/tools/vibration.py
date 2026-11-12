@@ -117,26 +117,6 @@ def prepare(args):
     for component in deployment["components"].values():
         component["container"]["handler"] = str(ROOT / component["container"]["handler"])
         component["cwd"] = str(ROOT)
-    if args.task in ("replay", "replay-build"):
-        model["external_topics"] = {}
-        for number in (1, 2):
-            name = f"sensor_{number}"
-            topic = f"replay.signal_{number}"
-            model["external_topics"][topic] = model["components"][name]["outputs"]["signal"]
-            del model["components"][name]
-            del deployment["components"][name]
-            for sub in model["subscriptions"]:
-                if sub.get("from") == f"{name}.signal":
-                    del sub["from"]
-                    sub["from_topic"] = topic
-                    if sub["id"] in deployment.get("subscriptions", {}):
-                        deployment["subscriptions"][sub["id"]]["routing"] = "broker"
-        for number in (1, 2):
-            del model["shared_parameters"][f"machines/{number}/sensor"]
-        for permissions in deployment.get("parameter_clients", {}).values():
-            for access in ("read", "write"):
-                permissions[access] = [path for path in permissions.get(access, [])
-                                       if path in model["shared_parameters"]]
     if args.profile == "cluster" and args.routing == "broker":
         deployment["subscriptions"] = {key: {"routing": "broker", "transport": "tcp"}
                                        for key in deployment.get("subscriptions", {})}
@@ -144,7 +124,7 @@ def prepare(args):
         # Only the loopback demonstration uses token authentication without TLS.
         deployment["parameter_clients"]["operator"]["token"] = read(
             ROOT / "deployment.local.json")["parameter_clients"]["operator"]["token"]
-    destination = ROOT / ("build/replay/prepared" if args.task in ("replay", "replay-build") else "build/prepared")
+    destination = ROOT / "build/prepared"
     write(destination / "model.json", model)
     write(destination / "deployment.json", deployment)
     write(destination / "inputs.json", {"scenario": args.scenario, "profile": args.profile, "routing": args.routing})
@@ -384,11 +364,13 @@ def main():
                 raise ValueError("replay requires --recording FILE")
             args.profile = "local"
             compile_app(args)
-            options = ["replay", args.recording, "--mode", "simulated", "--plan", ROOT / "build/replay/plan.json",
+            (ROOT / 'build/replay').mkdir(parents=True, exist_ok=True)
+            options = ["replay", args.recording, "--mode", "simulated", "--plan", ROOT / "build/plan.json",
                        "--duration", args.duration, "--workers", args.workers, "--loops", args.loops,
                        "--trace", ROOT / "build/replay/trace.jsonl"]
             for number in (1, 2):
-                options += ["--map", f"sensor_{number}.signal=replay.signal_{number}"]
+                options += ["--map", f"sensor_{number}.signal=sensor_{number}.signal",
+                            "--disable-component", f"sensor_{number}"]
             for name in ("start_ns", "end_ns"):
                 if getattr(args, name) is not None:
                     options += ["--" + name.replace("_", "-"), getattr(args, name)]

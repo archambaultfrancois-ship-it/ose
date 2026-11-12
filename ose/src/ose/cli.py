@@ -113,6 +113,7 @@ For remote distributed execution, start serve and worker instead of run.""")
         if name != "cluster-status":
             command.add_argument("--plan", default="build/plan.json", help="compiled deployment plan (default: build/plan.json)")
         if name == "serve":
+            command.add_argument('--disable-component', action='append', default=[], metavar='NAME', help='leave this component inactive at startup; repeat')
             command.add_argument("--lease-seconds", type=float, default=6, help="worker lease duration in seconds (default: 6)")
             command.add_argument("--kubernetes-lease", help="pre-created Kubernetes Lease for coordinator fencing")
             command.add_argument("--namespace", default="default", help="namespace of --kubernetes-lease (default: default)")
@@ -141,6 +142,7 @@ For remote distributed execution, start serve and worker instead of run.""")
     command.add_argument('--logs', help='log directory (default: plan build directory/distributed-logs)')
     command.add_argument('--lease-seconds', type=float, default=2, help='worker lease duration (default: 2 seconds)')
     add_sync_options(command)
+    command.add_argument('--disable-component', action='append', default=[], metavar='NAME', help='leave this component inactive at startup; repeat')
     command = _command(commands, "run", "run a local application in real time or simulated time",
         "Execute a compiled plan; real-time mode starts the local broker and component processes.\n"
         "Real-time execution runs until interrupted unless --duration is provided.\n"
@@ -164,8 +166,9 @@ For remote distributed execution, start serve and worker instead of run.""")
     _execution_controls(command)
     _batch_recording(command)
     add_sync_options(command)
-    command = _command(commands, "replay", "replay a recording into simulated or live external inputs",
-        "Replay matching external input topic names; use --map to select or rename topics.\n"
+    command.add_argument('--disable-component', action='append', default=[], metavar='NAME', help='leave this component inactive at startup; repeat')
+    command = _command(commands, "replay", "replay a recording into simulated or live application topics",
+        "Replay matching application topic names; use --map to select or rename topics.\n"
         "Real-time replay is the default and publishes into an already running application.\n"
         "Simulation starts an application with --mode simulated; no time limit by default.\n"
         "Interactive and scripted controls start paused in both modes.\n"
@@ -176,9 +179,10 @@ For remote distributed execution, start serve and worker instead of run.""")
          "ose replay capture.mcap --map recorded.topic=external.topic --mode simulated --duration 30",
          "ose replay capture.mcap --map recorded.topic=external.topic --command 'step 100ms' --command status"])
     command.add_argument("recording", help="SDL PCAPNG or MCAP capture")
+    command.add_argument('--disable-component', action='append', default=[], metavar='NAME', help='leave this component inactive at startup (simulated replay only); repeat')
     command.add_argument("--plan", default="build/plan.json", help="target deployment plan (default: build/plan.json)")
     command.add_argument("--map", dest="mappings", action="append",
-                         metavar="RECORDED_TOPIC=EXTERNAL_TOPIC", help="select and map a topic; repeat; default: matching external topic names")
+                         metavar="RECORDED_TOPIC=APPLICATION_TOPIC", help="select and map a topic; repeat; default: matching application topic names")
     command.add_argument("--mode", choices=("simulated", "realtime"), default="realtime", help="replay destination and clock (default: realtime)")
     command.add_argument("--schema-policy", choices=("exact", "compatible"), default="exact",
                          help="recorded schema policy (default: exact; compatible adapts messages to the target contract)")
@@ -198,7 +202,7 @@ For remote distributed execution, start serve and worker instead of run.""")
     command.add_argument("--port", type=int, help="target broker or coordinator TCP port")
     command.add_argument("--distributed", action="store_true", help="publish through the distributed coordinator")
     command.add_argument("--tls-ca", help="trusted CA certificate file for distributed mutual TLS")
-    command.add_argument("--tls-cert", help="distributed client certificate with common name replay")
+    command.add_argument("--tls-cert", help="CA-signed distributed client certificate")
     command.add_argument("--tls-key", help="private key file matching --tls-cert")
     command.add_argument("--insecure", action="store_true", help="distributed loopback-only development mode")
     command = _command(commands, "inspect", "print local application status as JSON",
@@ -286,6 +290,17 @@ For remote distributed execution, start serve and worker instead of run.""")
         "Load it in the current Bash terminal or add it to ~/.bashrc.",
         ["source <(ose completion bash)"])
     command.add_argument("shell", choices=("bash",), help="target shell")
+    command = commands.add_parser('component', help='enable, disable or inspect components at callback boundaries')
+    command.add_argument('operation', choices=('enable', 'disable', 'status'))
+    command.add_argument('components', nargs='*', metavar='NAME')
+    command.add_argument('--endpoint', default='build/endpoint.json')
+    command.add_argument('--host')
+    command.add_argument('--port', type=int)
+    command.add_argument('--distributed', action='store_true')
+    command.add_argument('--insecure', action='store_true')
+    command.add_argument('--tls-ca')
+    command.add_argument('--tls-cert')
+    command.add_argument('--tls-key')
     from ose.app import add_parser
     add_parser(commands)
     return parser
@@ -322,6 +337,9 @@ def execute(args, parser=None):
                 asyncio.run(parameter_cli.run(args))
             except KeyboardInterrupt:
                 return 130
+        elif args.action == 'component':
+            from ose.execution.components import command
+            asyncio.run(command(args))
         elif args.action in ("build", "validate"):
             if not args.sdl_root:
                 raise ValueError("set SDL_ROOT or pass --sdl-root explicitly")
@@ -343,7 +361,8 @@ def execute(args, parser=None):
             if args.action == "serve":
                 from ose.execution.distributed import serve
                 asyncio.run(serve(args.plan, args.host, args.port, server_context, args.lease_seconds,
-                                  args.kubernetes_lease, args.namespace))
+                                  args.kubernetes_lease, args.namespace,
+                                  **({'disabled': args.disable_component} if args.disable_component else {})))
             elif args.action == "worker":
                 from ose.execution.distributed import work
                 asyncio.run(work(args.plan, args.node, args.host, args.port, listen_host=args.listen_host,
@@ -368,12 +387,15 @@ def execute(args, parser=None):
             if not 0 <= args.port < 65536:
                 raise ValueError('port must be between 0 and 65535')
             asyncio.run(run(args.plan, args.duration, port=args.port, logs=args.logs,
-                            lease_seconds=args.lease_seconds, params_sync=sync_options(args) or None))
+                            lease_seconds=args.lease_seconds, params_sync=sync_options(args) or None,
+                            **({'disabled': args.disable_component} if args.disable_component else {})))
         elif args.action == "run":
             controlled = args.interactive or args.command is not None or args.command_file is not None
             if controlled and args.mode != "simulated":
                 raise ValueError("execution controls (--interactive, --command, --command-file) require simulated mode for run")
             execution_options = {}
+            if args.disable_component:
+                execution_options['disabled'] = args.disable_component
             if args.params_sync is not None:
                 from ose.execution.launch import sync_options
                 if args.mode != 'realtime':
@@ -431,11 +453,14 @@ def execute(args, parser=None):
                     start_ns=args.start_ns, end_ns=args.end_ns,
                     workers=1 if args.workers is None else args.workers, trace=args.trace, loops=args.loops,
                     schema_policy=args.schema_policy, interactive=args.interactive, commands=commands,
+                    **({'disabled': args.disable_component} if args.disable_component else {}),
                     record=args.record, record_file=args.record_file,
                     record_from=args.record_from, record_until=args.record_until,
                     **({"microsteps": True, "max_microsteps": args.max_microsteps} if args.microsteps else {})))
             else:
                 from ose.recording.live_replay import run
+                if args.disable_component:
+                    raise ValueError('--disable-component is a launch option; use ose component disable for live replay')
                 if args.microsteps or args.workers is not None or args.trace is not None:
                     raise ValueError("--workers, --trace and --microsteps require simulated replay")
                 async def replay():

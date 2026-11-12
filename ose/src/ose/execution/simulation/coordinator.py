@@ -51,9 +51,11 @@ class Simulation:
     def __init__(self, plan, duration, *, workers=1, scenario=None, events=None, trace=None,
                  max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT, working_directory=None,
                  microsteps=False, max_microsteps=None, controller=None, record=None, record_file=None,
-                 record_from=None, record_until=None):
-        self.controller = controller
+                 record_from=None, record_until=None, disabled=()):
         require_v2(plan)
+        from ose.execution.components import disabled_components
+        self.disabled = disabled_components(plan, disabled)
+        self.controller = controller
         self.microstep_limit = microstep_limit(microsteps, max_microsteps)
         if controller is not None:
             if controller.mode != "simulated":
@@ -123,6 +125,8 @@ class Simulation:
         self.router.schedulers = {name: schedule.core for name, schedule in self.schedules.items()}
         self.input_services = {name: InputServices(schedule.core, lambda: self.clock.time_ns, trace=True)
                                for name, schedule in self.schedules.items()}
+        for name in self.disabled:
+            self.schedules[name].core.enable(False, self.clock.time_ns)
         self.processes, self.busy, self.external = {}, {}, []
         self.external_bytes = 0
         self.cursor, self.waves, self.ticks = 0, 0, 0
@@ -131,6 +135,8 @@ class Simulation:
         self.parameter_scenario_events = 0
 
     async def _start(self, name):
+        if name in self.disabled:
+            return
         capture = self.capture
         async def declare(local, desc):
             capture.declare(name, local, desc)
@@ -150,6 +156,26 @@ class Simulation:
             **({"working_directory": self.working_directory} if self.working_directory is not None else {}),
             inputs=self.input_services[name])
         self.processes[name] = process
+
+    async def component_command(self, operation, names):
+        if operation not in ('status', 'enable', 'disable'):
+            raise ValueError('expected component status, enable or disable')
+        from ose.execution.components import disabled_components
+        disabled_components(self.plan, names)
+        if operation != 'status':
+            if not names:
+                raise ValueError('select at least one component')
+            for name in names:
+                enabled = operation == 'enable'
+                self.schedules[name].core.enable(enabled, self.clock.time_ns)
+                if enabled:
+                    self.disabled.discard(name)
+                    if name not in self.processes:
+                        await self._start(name)
+                else:
+                    self.disabled.add(name)
+                self.trace.emit('component_state', component=name, enabled=enabled)
+        return {name: dict(active=name not in self.disabled) for name in names or self.order}
 
     async def _calculate(self, name, selected, semaphore):
         async with semaphore:
@@ -309,6 +335,7 @@ class Simulation:
                     **({"microstep": self.clock.microstep, "max_microsteps": self.microstep_limit,
                         **({"microstep_diagnostic": self.microstep_diagnostic} if self.microstep_diagnostic else {})}
                        if self.microstep_limit is not None else {}),
+                    component_states={name: dict(active=name not in self.disabled) for name in self.order},
                     time_ns=self.clock.time_ns, ticks=self.ticks, waves=self.waves, publications=self.router.sequence,
                     stop_reason=self.reason, waiting_inputs=waiting, pending_ticks=len(self.busy),
                     pending_external=len(self.external), external_events=self.cursor - self.parameter_scenario_events, parameter_changes=self.parameter_changes,
@@ -370,6 +397,7 @@ class Simulation:
                 self.trace.emit('parameter_initial', path=path, sha256=hashlib.sha256(payload).hexdigest())
             control = self.controller
             if control is not None:
+                control.component_command = self.component_command
                 control.position = lambda: self.clock.time_ns
                 control.snapshot = self._control_snapshot
                 control.start()

@@ -39,6 +39,22 @@ class InputScheduler:
         self.deadlines, self.last, self._receipts = {}, {}, OrderedDict()
         self.active, self._views = None, {}
         self.time_ns, self.start_ns = 0, None
+        self.suspended_at = None
+
+    def enable(self, enabled, now_ns):
+        if self.active is not None:
+            raise RuntimeError('suspend only at a callback boundary')
+        self._time(now_ns)
+        if not enabled and self.suspended_at is None:
+            self.suspended_at = now_ns
+            for buffer in self.buffers.values():
+                for record in buffer.store.records():
+                    buffer.store.remove(record['id'])
+        elif enabled and self.suspended_at is not None:
+            delay = now_ns - self.suspended_at
+            self.deadlines = {port: self._after(deadline, delay) if deadline is not None else None
+                              for port, deadline in self.deadlines.items()}
+            self.suspended_at = None
 
     def _time(self, now_ns):
         if type(now_ns) is not int or not self.time_ns <= now_ns <= MAX_NS:
@@ -69,6 +85,8 @@ class InputScheduler:
         history. That history is separate from queue deduplication: a full first
         attempt must remain admissible when its retry eventually finds space.
         """
+        if self.suspended_at is not None:
+            return 'disabled'
         self.receive(port, record, now_ns)
         return self.buffers[port].admit(dict(record, received_ns=now_ns))
 
@@ -105,6 +123,8 @@ class InputScheduler:
 
     def select(self, now_ns):
         self._time(now_ns)
+        if self.suspended_at is not None:
+            return None
         if self.active is not None:
             return None
         selected = min(self._candidates(now_ns), key=lambda item: item[:3], default=None)
@@ -185,6 +205,8 @@ class InputScheduler:
 
     def next_event(self, now_ns):
         self._time(now_ns)
+        if self.suspended_at is not None:
+            return None
         if self.active is not None:
             return None
         if next(self._candidates(now_ns), None) is not None:

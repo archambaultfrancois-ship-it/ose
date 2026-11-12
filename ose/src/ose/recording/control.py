@@ -28,6 +28,9 @@ def control_help(*, replay=True, mode=None, microsteps=None):
         ("breakpoints", "List armed breakpoints."),
         ("clear-break-time TIME|all", "Remove one or all breakpoints."),
     ])
+    if mode != "realtime":
+        commands.append(("component enable|disable NAME...", "Activate or suspend simulated components."))
+        commands.append(("component status [NAME...]", "Show simulated component states."))
     if replay and mode != "simulated":
         commands.append(("speed N", "Live replay only: set speed; 0 means fastest."))
     commands.extend([
@@ -206,6 +209,13 @@ class ReplayControl:
             self.clock.set_speed(float(parts[1]))
             self.clock_changed()
             self.changed.set()
+        elif name == 'component' and len(parts) >= 2:
+            if not hasattr(self, 'component_command'):
+                raise ValueError('use ose component for live component supervision')
+            self.pause()
+            async with self.busy:
+                result = await self.component_command(parts[1], parts[2:])
+            print(json.dumps({'components': result}), file=self.output, flush=True)
         elif parts == ['pause']:
             self.pause()
             self.pause_reason = 'pause'

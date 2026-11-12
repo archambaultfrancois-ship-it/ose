@@ -532,8 +532,8 @@ updates using `ose run --mode simulated --scenario FILE`, as described in the
 [framework parameter guide](../ose/docs/parameters.md).
 
 The same commands accept `--host`, `--port` and `--plan`; use
-`--plan build/replay/plan.json --endpoint build/replay/endpoint.json` for a local
-replay application (detection and observer display blocks are retained there).
+`--plan build/plan.json --endpoint build/endpoint.json` for a local
+replay application (all component parameter blocks remain available).
 Distributed clients use `--distributed --tls-ca build/pki/ca.crt --tls-cert build/pki/operator.crt
 --tls-key build/pki/operator.key` with an explicit host and port. `make certs`
 generates the development operator credentials. Cluster access authenticates the
@@ -568,12 +568,14 @@ make replay RECORDING=signals.pcapng DURATION=6 LOOPS=2
 make test-replay
 ```
 
-`replay` builds a separate model under `build/replay/`: the C sensors are removed
-and their subscriptions are connected to external topics. The workflow invokes
-`ose replay` with `sensor_1.signal=replay.signal_1` and
-`sensor_2.signal=replay.signal_2`. It accepts PCAPNG or MCAP captures; both sensor
-topics must contain messages. `tools/vibration.py replay --recording FILE`
-also accepts `--start-ns` and `--end-ns` for a source publication-time range.
+`replay` uses the normal complete model in `build/plan.json`. It leaves the two
+C sensors inactive with `--disable-component sensor_1 --disable-component sensor_2`
+and injects the recorded messages into their original `sensor_1.signal` and
+`sensor_2.signal` topics. Components, subscriptions and parameter blocks are
+retained; no replay-specific model is generated. It accepts PCAPNG or MCAP
+captures; both sensor topics must contain messages.
+`tools/vibration.py replay --recording FILE` also accepts `--start-ns` and
+`--end-ns` for a source publication-time range.
 To record internal points while replaying, use
 
 ```sh
@@ -591,16 +593,22 @@ choose it long enough to cover the selected capture. Terminal observations are
 recomputed from the samples, including the original payload sequence numbers
 and timestamps. The logical trace is saved as `build/replay/trace.jsonl`.
 
-For live replay, build the model without sensors and start it separately:
+For live replay, build the normal model and start it with the sensors inactive:
 
 ```sh
 make replay-build
-ose run --plan build/replay/plan.json
+ose run --plan build/plan.json --disable-component sensor_1 --disable-component sensor_2
 # In a second terminal with the same framework environment:
-ose replay signals.pcapng --mode realtime --plan build/replay/plan.json \
-  --map sensor_1.signal=replay.signal_1 --map sensor_2.signal=replay.signal_2 \
+ose replay signals.pcapng --mode realtime --plan build/plan.json \
+  --map sensor_1.signal=sensor_1.signal --map sensor_2.signal=sensor_2.signal \
   --speed 1 --interactive
 ```
+
+Component supervision is independent of replay. On a running local application,
+`ose component disable sensor_1 sensor_2 --endpoint build/endpoint.json` suspends
+the sensors; `ose component enable sensor_1 sensor_2` resumes their existing state.
+Initially disabled sensors do not run their startup hooks. See the
+[supervision guide](../ose/docs/component-supervision.md) for lifecycle semantics.
 
 The replay console starts paused. Enter `help` or `?` for available commands,
 then `resume` to start automatic playback. Use `step`, `step 100ms` or
@@ -616,14 +624,16 @@ replay. A capture that finishes earlier cancels the remaining commands.
 Add `--loops N` for N passes or `--loops 0` for continuous live replay. In the
 latter case, commands, signals or an optional global `--duration` stop playback.
 
-`make replay-build PROFILE=cluster` builds the four-worker distributed version.
-Start its coordinator and workers using `build/replay/plan.json`, as described
+`make replay-build` is a compatibility entry point for the ordinary build.
+`make replay-build PROFILE=cluster` builds the distributed version.
+Start its coordinator with both sensor names passed to `--disable-component`,
+and its workers using `build/plan.json`, as described
 in the [framework's distributed guide](../ose/docs/distributed.md).
 Feed it with the same replay command plus `--host HOST --port PORT` and the TLS
-credentials of a client certificate named `replay`. For a loopback development
-cluster, use `--host 127.0.0.1 --port 7000 --insecure`. External signal routes use
-the coordinator. Live replay uses the running application's state and ordinary
-queue policies; increasing speed can cause `drop_oldest` to discard inputs if
+credentials of a valid CA-signed client certificate. For a loopback development
+cluster, use `--host 127.0.0.1 --port 7000 --insecure`. Injected signal routes use
+the coordinator, including when their ordinary component routes are direct.
+Live replay uses the running application's state and ordinary queue policies; increasing speed can cause `drop_oldest` to discard inputs if
 the consumers cannot keep up. Check runtime counters when selecting a rate.
 
 `make test-replay` prepares the optional recording dependency, captures a live

@@ -100,7 +100,7 @@ class RPCServer:
                 await peer.send(packet, binary)
             except (ValueError, KeyError, TypeError) as error:
                 await peer.send({"op": "result", "request": header.get("request"),
-                                 "error": str(error), "error_code": "distributed"})
+                                 "error": str(error), "error_code": getattr(error, 'code', 'distributed')})
             except (ConnectionError, asyncio.IncompleteReadError):
                 pass
 

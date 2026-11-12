@@ -4,7 +4,7 @@ The coordinator authorizes every admission. Leases alone do not fence a partitio
 sender; direct receivers check the current generation with the coordinator too.
 """
 import asyncio
-from collections import Counter
+from collections import Counter, OrderedDict
 import hashlib
 import json
 import math
@@ -89,11 +89,13 @@ def engine(sub):
 
 
 class Coordinator:
-    def __init__(self, plan, context=None, lease_seconds=6, authority=lambda: None):
+    def __init__(self, plan, context=None, lease_seconds=6, authority=lambda: None, *, disabled=()):
         check_plan(plan)
         if not math.isfinite(lease_seconds) or lease_seconds < .3:
             raise ValueError("lease must be finite and at least 0.3 seconds")
         self.plan, self.codec = plan, SDL2(plan["sdl_root"])
+        from ose.execution.components import ComponentStates
+        self.components = ComponentStates(plan, disabled)
         self.parameters = ParameterEndpoint(plan, self.codec)
         self.lease_seconds = lease_seconds
         self.authority = authority
@@ -102,13 +104,18 @@ class Coordinator:
         self.sessions, self.metrics = {}, Counter()
         self.observation = describe(plan)
         self.demand = ObservationDemand()
-        self.external_peers, self.external_owners, self.external_generations = {}, {}, {}
+        self.external_peers, self.external_owners, self.external_generations = {}, {}, OrderedDict()
+        from ose.execution.publications import Producers
+        self.producers = Producers(plan, self.codec)
+        self.catalogues = {self.codec.identity(desc['catalogue']): desc['catalogue']
+                           for desc in self.producers.topics.values()}
+        self.catalogue_baseline = len(self.catalogues)
         self.external_limits = {**EXTERNAL_LIMITS, **plan.get("broker", {}).get("external", {})}
         self.subscriptions = {s["id"]: s for s in plan["subscriptions"]}
         self.engines = {key: engine(sub) for key, sub in self.subscriptions.items()
                         if sub.get("routing", "broker") == "broker"}
         self.activated = False
-        self.recording = TapHub(self.recording_points, plan["max_frame"])
+        self.recording = TapHub(self.recording_points, plan["max_frame"], codec=self.codec)
         self.rpc = RPCServer(plan["max_frame"], self.request, context, self.disconnected)
 
     async def start(self, host="127.0.0.1", port=0):
@@ -131,13 +138,19 @@ class Coordinator:
         session = self.sessions.pop(name, None)
         if not session:
             return
+        self.components.disconnected(name)
         self.demand.forget(session['peer'])
         self.metrics["retired"] += 1
         # No input replay or sender state survives a component generation change.
         for key, delivery in self.engines.items():
             sub = self.subscriptions[key]
             if name == sub["to"].split(".")[0] or ("from_topic" not in sub and name == sub["from"].split(".")[0]):
-                delivery.store.close()
+                if name == sub['to'].split('.')[0]:
+                    delivery.store.close()
+                else:
+                    for record in delivery.store.records():
+                        if record.get('source_token') == session['token']:
+                            delivery.store.remove(record['id'])
                 delivery.store.notify()
 
     def disconnected(self, peer):
@@ -163,18 +176,16 @@ class Coordinator:
                 session = self.current(name, ready=True)
             except ValueError:
                 continue
+            if self.components.observed[name] is False:
+                continue
             nodes[name] = {key: session[key] for key in ("host", "port", "token")}
+            nodes[name]['version'] = self.components.desired[name]['version']
         return {"epoch": self.epoch, "enabled": self.activated, "nodes": nodes,
                 "lease_seconds": self.lease_seconds}
 
     def recording_points(self):
         nodes = self.directory()["nodes"]
-        points = {f"{name}.{port}": dict(topic=f"{name}.{port}", root=desc["root"], catalogue=desc["catalogue"], kind="output",
-                    available=self.activated and name in nodes,
-                    generation=nodes.get(name, {}).get("token"),
-                    endpoint={"host": nodes[name]["host"], "port": nodes[name]["port"], "identity": name}
-                             if name in nodes else None)
-                for name, node in self.plan["components"].items() for port, desc in node["outputs"].items()}
+        points = {}
         for name in self.plan["components"]:
             endpoint = ({"host": nodes[name]["host"], "port": nodes[name]["port"], "identity": name}
                         if name in nodes else None)
@@ -186,111 +197,191 @@ class Coordinator:
                 points[topic] = dict(desc, topic=topic, kind="internal", component=name, name=local,
                     available=self.activated and name in nodes, generation=session["token"],
                     endpoint={"host": session["host"], "port": session["port"], "identity": name})
-        for topic, desc in self.plan.get("external_topics", {}).items():
-            points[topic] = dict(topic=topic, root=desc["root"], catalogue=desc["catalogue"], kind="external",
-                generation=self.external_generations.get(topic),
-                available=self.activated and topic in self.external_owners, endpoint=None)
+        for topic, desc in self.producers.topics.items():
+            points[topic] = dict(topic=topic, root=desc['root'], catalogue=desc['catalogue'],
+                kind='output' if topic not in self.plan.get('external_topics', {}) else 'external',
+                generation=self.epoch, available=self.activated, endpoint=None, multipublisher=True)
         return points
 
     def authorize(self, sub, source_token, target_token):
         if not self.activated:
             raise ValueError("graph is not activated")
-        if "from_topic" in sub:
-            self.authority()
-            if source_token is None or self.external_generations.get(sub["from_topic"]) != source_token:
-                raise ValueError("obsolete external publisher generation")
+        if source_token in self.external_generations:
+            if sub['from'] not in self.external_generations[source_token]:
+                raise ValueError('publisher did not declare this topic')
+        elif 'from_topic' in sub:
+            raise ValueError('obsolete external publisher generation')
         else:
-            self.current(sub["from"].split(".")[0], source_token, ready=True)
+            self.current(sub['from'].split('.')[0], source_token, ready=True)
         self.current(sub["to"].split(".")[0], target_token, ready=True)
 
     def release_external(self, peer):
         session = self.external_peers.pop(peer, None)
         if session:
-            self.recording.invalidate(session["topics"])
-            for topic in session["topics"]:
-                if self.external_owners.get(topic) is peer:
-                    del self.external_owners[topic]
-        # Accepted records may drain after disconnect. A new publisher replaces
-        # the topic generation and fences any remaining old broker records.
+            self.producers.release(session['token'])
+            for topic in session['topics']:
+                owners = self.external_owners.get(topic, set())
+                owners.discard(session['token'])
+                if not owners:
+                    self.external_owners.pop(topic, None)
+        # Already admitted publications drain; release never closes a shared link.
+
+    def _publisher(self, peer, client_id=None):
+        if not self.external_limits['enabled']:
+            raise ValueError('external publishers are disabled')
+        if peer in self.external_peers or any(s['peer'] is peer for s in self.sessions.values()):
+            raise ValueError('connection already identified')
+        if len(self.external_peers) >= self.external_limits['max_clients']:
+            raise ValueError('too many external publishers')
+        if client_id is not None and (not isinstance(client_id, str) or not 0 < len(client_id) <= 128):
+            raise ValueError('invalid client identity')
+        if client_id is not None and any(s.get('client_id') == client_id for s in self.external_peers.values()):
+            raise ValueError('duplicate client identity')
+        token = uuid.uuid4().hex
+        session = dict(token=token, topics=set(), sequence=0, client_id=client_id)
+        self.external_peers[peer] = session
+        self.external_generations[token] = set()
+        # Bound retired generations independently of the lifetime of the application.
+        while len(self.external_generations) > 4096:
+            oldest = next((key for key in self.external_generations
+                           if all(s['token'] != key for s in self.external_peers.values())), None)
+            if oldest is None:
+                break
+            self.external_generations.pop(oldest)
+        return session
+
+    def _declare(self, session, topic, root, catalogue):
+        if topic not in self.producers.topics and len(self.producers.topics) >= self.external_limits['max_topics']:
+            raise ValueError('too many topics')
+        identity = self.codec.identity(catalogue)
+        if identity in self.catalogues and self.catalogues[identity] != catalogue:
+            raise ValueError('CATALOGUE_COLLISION')
+        if identity not in self.catalogues and len(self.catalogues) - self.catalogue_baseline >= self.external_limits['max_catalogues']:
+            raise ValueError('too many catalogues')
+        try:
+            descriptor = self.producers.declare(session['token'], topic, root, catalogue)
+        except ValueError as error:
+            from ose.execution.sessions import ClientError
+            raise ClientError('schema', str(error)) from error
+        self.catalogues[identity] = catalogue
+        for key, sub in self.subscriptions.items():
+            if sub['from'] == topic and key not in self.engines:
+                self.engines[key] = engine(sub)
+        session['topics'].add(topic)
+        self.external_generations[session['token']].add(topic)
+        self.external_owners.setdefault(topic, set()).add(session['token'])
+        return descriptor
 
     async def external_request(self, peer, header, body, caller):
-        if caller is not None and caller != "replay":
-            raise ValueError("external publication requires a replay certificate identity")
-        if not self.external_limits["enabled"]:
-            raise ValueError("external publishers are disabled")
-        op = header["op"]
-        if op == "external_open":
-            if peer in self.external_peers or any(s["peer"] is peer for s in self.sessions.values()):
-                raise ValueError("connection already identified")
-            if header.get("plan_id") != self.plan_id:
-                raise ValueError("application plan mismatch")
-            topics = header.get("topics")
-            if (not isinstance(topics, list) or not topics or any(not isinstance(t, str) for t in topics)
-                    or len(set(topics)) != len(topics) or set(topics) - self.plan.get("external_topics", {}).keys()):
-                raise ValueError("select declared external topics")
-            if len(self.external_peers) >= self.external_limits["max_clients"]:
-                raise ValueError("too many external publishers")
-            if any(topic in self.external_owners for topic in topics):
-                raise ValueError("external topic already has an active publisher")
+        op = header['op']
+        if op == 'client_hello':
+            session = self._publisher(peer, header.get('client_id'))
+            return dict(session=session['token'], udp_port=self.port, max_frame=self.plan['max_frame'],
+                max_datagram=self.plan.get('max_datagram', 1200), max_wait_timeout_ms=max(
+                    self.external_limits['max_wait_timeout_ms'],
+                    max((sub['policy']['wait_timeout_ms'] for sub in self.subscriptions.values()), default=0))), None
+        if op == 'external_open':
+            if header.get('plan_id') != self.plan_id:
+                raise ValueError('application plan mismatch')
+            topics = header.get('topics')
+            if not isinstance(topics, list) or not topics or len(set(topics)) != len(topics) or any(t not in self.producers.topics for t in topics):
+                raise ValueError('select known application topics')
             if not self.activated:
-                raise ValueError("graph is not activated")
-            token = uuid.uuid4().hex
-            self.external_peers[peer] = dict(topics=set(topics), token=token, sequence=0)
-            for topic in topics:
-                self.external_owners[topic] = peer
-                self.external_generations[topic] = token
-                for key, delivery in self.engines.items():
-                    if self.subscriptions[key].get("from_topic") == topic:
-                        delivery.store.close()
-                        delivery.store.notify()
-            return {"token": token, "epoch": self.epoch}, None
+                raise ValueError('graph is not activated')
+            session = self._publisher(peer)
+            try:
+                for topic in topics:
+                    desc = self.producers.topics[topic]
+                    self._declare(session, topic, desc['root'], desc['catalogue'])
+            except BaseException:
+                self.release_external(peer)
+                raise
+            return dict(token=session['token'], epoch=self.epoch), None
         session = self.external_peers.get(peer)
-        if session is None or session["token"] != header.get("token"):
-            raise ValueError("unknown external publisher session")
-        if op == "external_close":
+        if session is None:
+            raise ValueError('publisher session required')
+        if op == 'external_close':
+            if header.get('token') != session['token']:
+                raise ValueError('unknown external publisher session')
             self.release_external(peer)
             return {}, None
-        topic = header.get("topic")
-        if topic not in session["topics"] or self.external_owners.get(topic) is not peer:
-            raise ValueError("publication from an unowned external topic")
+        if op == 'list_topics':
+            return {'topics': [dict(topic=t, root=d['root'], catalogue_id=self.codec.identity(d['catalogue']),
+                publisher_connected=t in self.external_owners or t.split('.')[0] in self.sessions,
+                producer_count=len(self.external_owners.get(t, ())) + int(t.split('.')[0] in self.sessions
+                    and self.components.observed[t.split('.')[0]] is not False))
+                for t, d in self.producers.topics.items()]}, None
+        if op == 'catalogue':
+            text = self.catalogues.get(header['catalogue_id'])
+            if text is None:
+                raise ValueError('unknown catalogue')
+            return {}, text.encode()
+        topic = header['topic']
+        if op == 'declare_publisher':
+            desc = self._declare(session, topic, header['root'], body.decode())
+            return dict(topic=topic, catalogue_id=desc['catalogue_id']), None
+        if topic not in session['topics']:
+            raise ValueError('declare publisher before publication')
+        if op == 'release_publisher':
+            self.producers.release(session['token'], topic)
+            self.external_owners[topic].discard(session['token'])
+            if not self.external_owners[topic]:
+                self.external_owners.pop(topic)
+            session['topics'].remove(topic)
+            return {}, None
+        if not self.external_limits['enabled']:
+            raise ValueError('external publishers are disabled')
+        if op not in ('publish', 'external_publish'):
+            raise ValueError('publisher-only session')
+        if op == 'external_publish' and header.get('token') != session['token']:
+            raise ValueError('unknown external publisher session')
         if not self.activated:
-            raise ValueError("graph is not activated")
-        desc = self.plan["external_topics"][topic]
+            raise ValueError('graph is not activated')
+        desc = self.producers.members[session['token'], topic]
         extra = application_id(header)
-        self.codec.validate_only(desc["catalogue"], desc["root"], body)
-        session["sequence"] += 1
-        sequence, token = session["sequence"], session["token"]
-        self.recording.observe(topic, body, generation=token, sequence=sequence,
-                               catalogue=desc["catalogue"], root=desc["root"], **extra)
-        record = dict(id=f"{token}:{sequence}", epoch=self.epoch, sequence=sequence,
-                      source_token=token, source=topic, body=body, topic=topic, **extra)
-        result = await self.publish_record(record)
-        self.metrics["external_publications"] += 1
-        return result, None
+        self.codec.validate_only(desc['catalogue'], desc['root'], body)
+        session['sequence'] += 1
+        sequence, token = session['sequence'], session['token']
+        self.recording.observe(topic, body, generation=self.epoch, sequence=sequence,
+                               catalogue=desc['catalogue'], root=desc['root'], producer=token, **extra)
+        record = dict(id=f'{token}:{sequence}', epoch=self.epoch, sequence=sequence,
+            source_token=token, source=topic, body=body, topic=topic, catalogue=desc['catalogue'], **extra)
+        result = await self.publish_record(record, external=True)
+        self.metrics['external_publications'] += 1
+        return dict(result, publication_id=record['id'], epoch=self.epoch, sequence=sequence), None
 
-    async def publish_record(self, record):
+    async def publish_record(self, record, *, external=False):
         async def enqueue(key, delivery):
             sub = self.subscriptions[key]
-            if sub["from"] != record["topic"]:
+            if sub["from"] != record["topic"] or (not external and sub.get('routing') == 'direct'):
                 return None
             try:
-                target = self.current(sub["to"].split(".")[0], ready=True)
+                target_name = sub['to'].split('.')[0]
+                if self.components.observed[target_name] is False:
+                    return key, 'disabled'
+                target = self.current(target_name, ready=True)
             except ValueError:
                 return key, "unavailable"
-            metadata = {k: record[k] for k in ("id", "epoch", "sequence", "source_token", "source", "topic", "app_id") if k in record}
+            version = self.components.desired[target_name]['version']
+            value = dict(record, target_version=version)
+            metadata = {k: value[k] for k in ("id", "epoch", "sequence", "source_token", "source", "topic", "app_id", "target_version") if k in value}
             try:
                 encode({"op": "result", "request": 2**63 - 1, "record": metadata}, record["body"], self.plan["max_frame"])
             except ValueError:
                 return key, "oversize"
-            valid = lambda: self.authorize(sub, record["source_token"], target["token"])
+            def valid():
+                self.authorize(sub, record['source_token'], target['token'])
+                if self.components.observed[target_name] is False or self.components.desired[target_name]['version'] != version:
+                    raise ValueError('obsolete target activation')
             try:
-                return key, await admit(delivery, record, valid)
+                return key, await admit(delivery, value, valid)
             except ValueError:
                 return key, "unavailable"
         results = dict(pair for pair in await asyncio.gather(*(enqueue(key, delivery)
                        for key, delivery in self.engines.items())) if pair is not None)
-        self.metrics["broker_publications"] += 1
-        self.metrics["broker_bytes"] += len(record["body"])
+        if results:
+            self.metrics["broker_publications"] += 1
+            self.metrics["broker_bytes"] += len(record["body"])
         return {"delivery": results}
 
     async def request(self, peer, header, body):
@@ -308,12 +399,41 @@ class Coordinator:
             return await self.parameters.request(peer, header, body, node=node, certificate=caller)
         if peer in self.parameters.external:
             raise ValueError("parameter-only client session")
+        if op in ('component_status', 'component_set', 'component_poll', 'component_ack'):
+            if op == 'component_status':
+                return self.components.snapshot(), None
+            if op == 'component_set':
+                return await self.components.set(header['components'], header['enabled']), None
+            name = header['node']
+            session = self.current(name, header['token'])
+            if session['peer'] is not peer or (caller is not None and caller != name):
+                raise ValueError('component connection required')
+            if op == 'component_poll':
+                return await self.components.poll(name, header.get('after')), None
+            accepted = self.components.acknowledge(name, header['version'], header['enabled'])
+            if accepted and header['enabled'] is False:
+                for key, sub in self.subscriptions.items():
+                    if sub['to'].split('.')[0] == name and key in self.engines:
+                        for record in self.engines[key].store.records():
+                            self.engines[key].store.remove(record['id'])
+            return {}, None
         if op in RECORDING_OPERATIONS:
             if op == "recording_open":
                 selected = header.get("points")
-                if not isinstance(selected, dict) or set(selected) - self.plan.get("external_topics", {}).keys():
-                    raise ValueError("coordinator taps require declared external topics; use producer endpoints for component outputs")
-            return await self.recording.request(peer, header)
+                if not isinstance(selected, dict) or set(selected) - self.producers.topics.keys():
+                    raise ValueError("coordinator taps require application topics")
+            result = await self.recording.request(peer, header)
+            if op == 'recording_open':
+                selected = set(header['points'])
+                version = self.recording.activation_version
+                deadline = time.monotonic() + 5
+                while any(s.get('output_recording_version', -1) < version for name, s in self.sessions.items()
+                          if any(t.startswith(name + '.') for t in selected)):
+                    if time.monotonic() >= deadline:
+                        await self.recording.request(peer, dict(op='recording_close', session=result[0]['session']))
+                        raise ValueError('workers did not acknowledge output recording activation')
+                    await asyncio.sleep(.01)
+            return result
         if op == "status":
             await self.demand.refresh(s['peer'] for s in self.sessions.values() if s['ready'])
             return self.snapshot(), None
@@ -322,7 +442,7 @@ class Coordinator:
         if op == 'subscription_schema':
             result, catalogue = subscription_schema(self.plan, self.subscriptions[header['subscription']], header.get('side', 'source'))
             return {**result, 'epoch': self.epoch}, catalogue
-        if op in ("external_open", "external_publish", "external_close"):
+        if op in ('client_hello', 'declare_publisher', 'release_publisher', 'list_topics', 'external_open', 'external_publish', 'external_close') or (peer in self.external_peers and op in ('publish', 'catalogue')):
             return await self.external_request(peer, header, body, caller)
         if peer in self.external_peers:
             raise ValueError("external publisher cannot act as a worker")
@@ -356,6 +476,20 @@ class Coordinator:
         session = self.current(name, header["token"])
         if session["peer"] is not peer:
             raise ValueError("generation belongs to another control connection")
+        if op == 'catalogue':
+            text = self.catalogues.get(header['catalogue_id'])
+            if text is None:
+                raise ValueError('unknown catalogue')
+            return {}, text.encode('utf-8')
+        if op == 'output_recording_state':
+            version, active = await self.recording.activation(header.get('after'))
+            return dict(version=version, topics=sorted(active & self.producers.topics.keys())), None
+        if op == 'output_recording_ack':
+            version = header['version']
+            if type(version) is not int or version != self.recording.activation_version:
+                return {}, None
+            session['output_recording_version'] = version
+            return {}, None
         if op == "recording_authorize":
             self.current(name, header["token"], ready=True)
             if not self.activated:
@@ -364,7 +498,7 @@ class Coordinator:
         if op == "recording_declare":
             local = validate_name(header["name"])
             points = session.setdefault("recording_points", {})
-            if session["ready"] or local in points or f"{name}.record.{local}" in self.plan.get("external_topics", {}) or len(points) >= MAX_POINTS:
+            if (session["ready"] and self.components.observed[name] is True) or local in points or f"{name}.record.{local}" in self.plan.get("external_topics", {}) or len(points) >= MAX_POINTS:
                 raise ValueError("recording declarations require initialization and unique names")
             root, description, catalogue = header["root"], header.get("description", ""), body.decode()
             if not isinstance(description, str) or len(description.encode()) > 1024 or "\0" in description:
@@ -422,15 +556,20 @@ class Coordinator:
             sequence = header["sequence"]
             if type(sequence) is not int or sequence < 1:
                 raise ValueError("invalid publication sequence")
+            self.recording.observe(topic, body, generation=self.epoch, sequence=sequence,
+                catalogue=desc['catalogue'], root=desc['root'], producer=session['token'], **application_id(header))
             record = dict(id=f"{session['token']}:{sequence}", epoch=self.epoch, sequence=sequence,
                           source_token=session["token"], source=name, body=body, topic=topic, **application_id(header))
             return await self.publish_record(record), None
         if op in ("poll", "ack"):
             key = header["subscription"]
             sub = self.subscriptions[key]
-            if sub["to"].split(".")[0] != name or key not in self.engines:
+            if sub["to"].split(".")[0] != name:
                 raise ValueError("invalid broker subscription")
-            delivery = self.engines[key]
+            delivery = self.engines.get(key)
+            if delivery is None:
+                await asyncio.sleep(.25)
+                return {'empty': True}, None
             if op == "ack":
                 delivery.acknowledge(header["id"])
                 return {}, None
@@ -447,7 +586,7 @@ class Coordinator:
                         continue
                     delivery.sent(record["id"])
                     return {"record": {key: value for key, value in record.items()
-                                       if key in ("id", "epoch", "sequence", "source_token", "source", "topic", "app_id")}}, record["body"]
+                                       if key in ("id", "epoch", "sequence", "source_token", "source", "topic", "app_id", "target_version")}}, record["body"]
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return {"empty": True}, None
@@ -472,7 +611,7 @@ class Coordinator:
                 if self.sessions.get(name, {}).get("metric_time") is not None else None}
             for name, desc in self.observation["components"].items()}}
         return {"epoch": self.epoch, "process": describe("coord", self.plan), "logs_version": 1, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
-                "enabled": self.activated, "metrics": dict(self.metrics),
+                "component_states": self.components.snapshot(), "enabled": self.activated, "metrics": dict(self.metrics),
                 "external_publishers": len(self.external_peers),
                 "components": {name: {"ready": session["ready"], "host": session["host"],
                     "port": session["port"], "metrics": session["metrics"]} for name, session in self.sessions.items()},
@@ -490,7 +629,10 @@ class Coordinator:
             delivery.store.close()
 
 
-class Worker:
+from ose.execution.components import ComponentRuntime
+
+
+class Worker(ComponentRuntime):
     def __init__(self, plan, name, host, port, *, listen_host="127.0.0.1", listen_port=0,
                  advertise_host="127.0.0.1", server_context=None, client_context=None):
         check_plan(plan)
@@ -499,6 +641,7 @@ class Worker:
         self.listen_host, self.listen_port, self.advertise_host = listen_host, listen_port, advertise_host
         self.context = client_context
         self.codec = SDL2(plan["sdl_root"])
+        self.catalogues = {}
         self.subscriptions = {s["id"]: s for s in plan["subscriptions"]}
         self.incoming = {key: s for key, s in self.subscriptions.items() if s["to"].split(".")[0] == name}
         self.outgoing = {key: s for key, s in self.subscriptions.items()
@@ -535,8 +678,10 @@ class Worker:
         self.started = asyncio.Event()
         self.started_at = 0
         self.sequence = 0
+        self.observed_outputs = set()
         self.direct_clients = {}
         self.closing = False
+        self.setup_component_control()
 
     def _changed(self):
         self.activity.set()
@@ -604,8 +749,8 @@ class Worker:
             self.parameters = await RemoteBindings(self.node, self.control, self.activity).open()
             if self.parameters.task:
                 tasks.append(self.parameters.task)
-            initialization = asyncio.create_task(start_component(self.node, self.parameters, self.internal_recording, self.component_logs,
-                inputs=self.input_services))
+            self.supervision_request = self.control
+            initialization = asyncio.create_task(self.initialize_component_state())
             tasks.append(initialization)
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             if initialization not in done:
@@ -614,16 +759,15 @@ class Worker:
                 for task in done:
                     task.result()
                 raise RuntimeError("control connection failed during initialization")
-            self.process = initialization.result()
-            self.process.measurements.on_change = self.reports.mark
+            initialization.result()
             tasks.remove(initialization)
             self.directory, _ = await self.control("ready")
             self.reports.configure(self.directory.get('reporting'))
             self.started.set()
-            tasks += [asyncio.create_task(self._work()), asyncio.create_task(self._metrics()),
-                      asyncio.create_task(self.process.wait()),
+            tasks += [asyncio.create_task(self._output_recording()), asyncio.create_task(self._work()), asyncio.create_task(self._metrics()),
+                      asyncio.create_task(self.component_exit()), asyncio.create_task(self.component_control()),
                       *(asyncio.create_task(self._poll(key)) for key, sub in self.incoming.items()
-                        if sub.get("routing", "broker") == "broker"),
+                        ),
                       *(asyncio.create_task(self._send(key)) for key in self.outgoing)]
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for task in done:
@@ -674,6 +818,14 @@ class Worker:
         for delivery in self.engines.values():
             delivery.store.close()
 
+    async def _output_recording(self):
+        version = None
+        while not self.closing:
+            state, _ = await self.control('output_recording_state', after=version)
+            self.observed_outputs = set(state['topics'])
+            version = state['version']
+            await self.control('output_recording_ack', version=version)
+
     async def _heartbeat(self):
         while not self.closing:
             result, _ = await self.control("heartbeat")
@@ -697,13 +849,13 @@ class Worker:
     async def _send_report(self, full):
         from ose.execution.identity import describe
         process = getattr(self, 'process', None)
-        metrics = ({**self.metrics, 'running': bool(self.started_at),
+        metrics = ({**self.metrics, 'running': bool(self.started_at) and self.component_active,
             'process': describe('w', self.plan, self.name, process),
             **self.timings.snapshot(),
             'inputs': {key: value.snapshot() for key, value in self.buffers.items()},
             'direct': {key: value.snapshot() for key, value in self.engines.items()},
             'measurements': process.measurements.snapshot() if process is not None else {}} if full else
-            ({'running': bool(self.started_at)} if self.reports.managed else {}))
+            ({'running': bool(self.started_at) and self.component_active} if self.reports.managed else {}))
         metrics['log_records'] = self.component_logs.drain()
         metrics['logs_dropped'] = self.component_logs.dropped
         result, _ = await self.control('metrics', json.dumps(metrics).encode(),
@@ -734,6 +886,8 @@ class Worker:
         if header.get("target_token") != self.token:
             raise ValueError("obsolete target generation")
         record = {key: header[key] for key in ("id", "epoch", "sequence", "source_token", "source", "topic")}
+        if 'target_version' in header:
+            record['target_version'] = header['target_version']
         record.update(application_id(header))
         result = await self._admit(key, record, body)
         self.metrics["direct_bytes_received"] += len(body)
@@ -741,8 +895,9 @@ class Worker:
 
     async def _admit(self, key, record, body):
         sub = self.incoming[key]
-        source = sub["from_topic"] if "from_topic" in sub else sub["from"].split(".")[0]
-        if record["epoch"] != self.epoch or record["topic"] != sub["from"] or record["source"] != source:
+        if record.get('target_version', 0) != (self.component_version or 0):
+            raise ValueError('obsolete target activation')
+        if record["epoch"] != self.epoch or record["topic"] != sub["from"]:
             raise ValueError("wrong publication identity")
         if type(record["sequence"]) is not int or record["sequence"] < 1 or record["id"] != f"{record['source_token']}:{record['sequence']}":
             raise ValueError("invalid publication sequence")
@@ -752,19 +907,35 @@ class Worker:
             source_name, source_port = sub["from"].split(".")
             desc = self.plan["components"][source_name]["outputs"][source_port]
         port = sub["to"].split(".")[1]
-        self.codec.validate_only(desc["catalogue"], desc["root"], body)
-        value = dict(record, body=body, payload=body[self.codec.api.ENVELOPE_HEADER_SIZE:], catalogue=desc["catalogue"],
+        identity, _ = self.codec.api.unpack_envelope(body)
+        catalogue = desc['catalogue']
+        if identity != self.codec.identity(catalogue):
+            if identity not in self.catalogues:
+                _, schema = await self.control('catalogue', catalogue_id=identity)
+                text = schema.decode('utf-8')
+                if self.codec.identity(text) != identity:
+                    raise ValueError('catalogue identity mismatch')
+                if len(self.catalogues) >= 64:
+                    self.catalogues.pop(next(iter(self.catalogues)))
+                self.catalogues[identity] = text
+            catalogue = self.catalogues[identity]
+        self.codec.compare(catalogue, self.node['inputs'][port]['catalogue'], self.node['inputs'][port]['root'])
+        self.codec.validate_only(catalogue, desc['root'], body)
+        value = dict(record, body=body, payload=body[self.codec.api.ENVELOPE_HEADER_SIZE:], catalogue=catalogue,
                      **application_id(record))
         from ose.execution.input_ipc import check_record_size
         check_record_size(port, value)
         # Latest sequence numbers belong to a source generation, not a whole run.
         value["epoch"] = record["source_token"]
+        value['stream'] = record['source_token']
         buffer = self.buffers[port]
         async with self.locks[key]:
             deadline = time.monotonic() + buffer.policy.wait_timeout_ms / 1000
             while True:
                 buffer.store.changed.clear()
                 await self.control("authorize", subscription=key, source_token=record["source_token"])
+                if record.get('target_version', 0) != (self.component_version or 0):
+                    raise ValueError('obsolete target activation')
                 result = self.scheduler.admit(port, value, self._input_now())
                 self._changed()
                 if result != "full" or buffer.policy.overflow != "wait" or time.monotonic() >= deadline:
@@ -800,45 +971,54 @@ class Worker:
         self.started_at = time.monotonic_ns()
         await self._input_work()
 
+    async def initialize_component(self):
+        self.process = await start_component(self.node, self.parameters, self.internal_recording, self.component_logs,
+                                             inputs=self.input_services)
+        self.process.measurements.on_change = self.reports.mark
+
     async def _input_work(self):
         while not self.closing:
             self.activity.clear()
-            if hasattr(self, "parameters"):
-                await updates(self.process, self.node, self.parameters.drain())
-            now = self._input_now()
-            reference = self.scheduler.select(now)
-            if reference is None:
+            async with self.component_lock:
+                if self.component_active:
+                    await updates(self.process, self.node, self.parameters.drain())
+                now = self._input_now()
+                reference = self.scheduler.select(now)
+                if self.component_active and reference is not None:
+                    await self._callback(reference)
+                    continue
                 deadline = self.scheduler.next_event(now)
                 timeout = max(0, (deadline - now) / 1e9) if deadline is not None else None
-                try:
-                    await asyncio.wait_for(self.activity.wait(), timeout)
-                except asyncio.TimeoutError:
-                    pass
-                continue
-            self.metrics["ticks"] += 1
-            self.reports.mark()
-            self.input_recording.observe({reference.port: reference.record}, self.metrics["ticks"])
-            outputs, size, success = [], 0, False
             try:
-                async for port, payload, app_id in self.timings.events(input_events(
-                        self.process, self.node, reference, self.metrics["ticks"], self.input_services,
-                        **({"parameters": self.parameters} if self.node.get("parameter_bindings") else {}))):
-                    size += len(payload) + len(port.encode()) + 12
-                    if size > 16 * 1024 * 1024:
-                        raise ValueError("callback outputs exceed 16 MiB")
-                    desc = self.node["outputs"][port]
-                    envelope = self.codec.wrap(desc["catalogue"], payload)
-                    self.codec.validate_only(desc["catalogue"], desc["root"], envelope)
-                    outputs.append((port, envelope, app_id))
-                success = True
-            finally:
-                self.scheduler.complete(reference, self._input_now(), success=success)
-            # Commit withdrawals before outbound admission waits, as in local
-            # execution. A failed/missing FINISHED publishes no staged output.
-            for port, envelope, app_id in outputs:
-                await self.publish(f"{self.name}.{port}", envelope, app_id=app_id)
-            self.metrics["completed_ticks"] += 1
-            self.reports.mark()
+                await asyncio.wait_for(self.activity.wait(), timeout)
+            except asyncio.TimeoutError:
+                pass
+
+    async def _callback(self, reference):
+        self.metrics["ticks"] += 1
+        self.reports.mark()
+        self.input_recording.observe({reference.port: reference.record}, self.metrics["ticks"])
+        outputs, size, success = [], 0, False
+        try:
+            async for port, payload, app_id in self.timings.events(input_events(
+                    self.process, self.node, reference, self.metrics["ticks"], self.input_services,
+                    **({"parameters": self.parameters} if self.node.get("parameter_bindings") else {}))):
+                size += len(payload) + len(port.encode()) + 12
+                if size > 16 * 1024 * 1024:
+                    raise ValueError("callback outputs exceed 16 MiB")
+                desc = self.node["outputs"][port]
+                envelope = self.codec.wrap(desc["catalogue"], payload)
+                self.codec.validate_only(desc["catalogue"], desc["root"], envelope)
+                outputs.append((port, envelope, app_id))
+            success = True
+        finally:
+            self.scheduler.complete(reference, self._input_now(), success=success)
+        # Commit withdrawals before outbound admission waits, as in local
+        # execution. A failed/missing FINISHED publishes no staged output.
+        for port, envelope, app_id in outputs:
+            await self.publish(f"{self.name}.{port}", envelope, app_id=app_id)
+        self.metrics["completed_ticks"] += 1
+        self.reports.mark()
 
     async def publish(self, topic, body, *, app_id=None):
         extra = {"app_id": validate_app_id(app_id)} if app_id is not None else {}
@@ -851,7 +1031,7 @@ class Worker:
                       source_token=self.token, source=self.name, body=body, topic=topic, **extra)
         broker = any(s["from"] == topic and s.get("routing", "broker") == "broker"
                      for s in self.subscriptions.values())
-        if broker:
+        if broker or topic in self.observed_outputs:
             result, _ = await self.control("publish", body, topic=topic, sequence=self.sequence, **extra)
             self.metrics["refused"] += sum(v not in ("accepted", "stale") for v in result["delivery"].values())
         for key, sub in self.outgoing.items():
@@ -861,7 +1041,7 @@ class Worker:
             if target is None:
                 self.metrics["unavailable"] += 1
                 continue
-            value = dict(record, target_token=target["token"])
+            value = dict(record, target_token=target["token"], target_version=target.get('version', 0))
             # Refuse oversize DATA before queue admission, including framing metadata.
             encode(self._header(key, value), body, self.plan["max_frame"])
             admission = await admit(self.engines[key], value)
@@ -871,7 +1051,7 @@ class Worker:
 
     def _header(self, key, record):
         return {"op": "deliver", "request": 1, "subscription": key,
-                **{key: record[key] for key in ("id", "epoch", "sequence", "source_token", "target_token", "source", "topic", "app_id") if key in record}}
+                **{key: record[key] for key in ("id", "epoch", "sequence", "source_token", "target_token", "source", "topic", "app_id", "target_version") if key in record}}
 
     async def _send(self, key):
         sub, delivery = self.outgoing[key], self.engines[key]
@@ -882,7 +1062,7 @@ class Worker:
             for record in list(delivery.due(limit=32)):
                 if self.closing:
                     return
-                if target is None or record["target_token"] != target["token"]:
+                if target is None or record["target_token"] != target["token"] or record.get('target_version', 0) != target.get('version', 0):
                     delivery.fail(record["id"], "target_generation_changed")
                     continue
                 try:
@@ -916,14 +1096,14 @@ class Worker:
                 pass
 
 
-async def serve(plan_path, host, port, server_context=None, lease_seconds=6, kubernetes_lease=None, namespace="default"):
+async def serve(plan_path, host, port, server_context=None, lease_seconds=6, kubernetes_lease=None, namespace="default", *, disabled=()):
     from ose.execution.identity import identify
     plan = read_plan(plan_path)
     identify("coord", plan)
     from ose.execution.leadership import KubernetesLease
     leader = KubernetesLease(kubernetes_lease, namespace) if kubernetes_lease else None
     coordinator = Coordinator(plan, server_context, lease_seconds,
-                              leader.check if leader else lambda: None)
+                              leader.check if leader else lambda: None, disabled=disabled)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):

@@ -22,8 +22,10 @@ from ose.execution.logs import LogStore
 
 
 class Broker(Sessions):
-    def __init__(self, plan):
+    def __init__(self, plan, *, disabled=()):
         self.plan, self.codec = plan, SDL2(plan["sdl_root"])
+        from ose.execution.components import ComponentStates
+        self.components = ComponentStates(plan, disabled)
         self.parameters = ParameterEndpoint(plan, self.codec)
         self.catalogues, self.topics, self.engines = {}, {}, {}
         self.epoch, self.sequence = uuid.uuid4().hex, 0
@@ -75,7 +77,7 @@ class Broker(Sessions):
     def recording_points(self):
         available = self.enabled or self.recording_ready
         outputs = {topic: dict(topic=topic, root=port["root"], catalogue=port["catalogue"], kind="output",
-                    generation=self.publisher_owners.get(topic, self.epoch),
+                    generation=self.epoch, multipublisher=True,
                     available=available and (topic in self.publisher_owners or topic.split(".")[0] in self.peers), endpoint=None)
                 for topic, port in self.topics.items()}
         outputs.update({topic: dict(desc, topic=topic, kind="internal", endpoint=None,
@@ -115,7 +117,7 @@ class Broker(Sessions):
         name = validate_name(header["name"])
         topic = prefix + name
         if op == "recording_declare":
-            if node in self.ready or topic in self.topics or topic in self.internal_points or sum(
+            if (node in self.ready and self.components.observed[node] is True) or topic in self.topics or topic in self.internal_points or sum(
                     desc["component"] == node for desc in self.internal_points.values()) >= MAX_POINTS:
                 raise ValueError("recording declarations require initialization and unique names")
             root, description, catalogue = header["root"], header.get("description", ""), body.decode()
@@ -222,6 +224,14 @@ class Broker(Sessions):
                         publications.add(publication)
                         publication.add_done_callback(publications.discard)
                     continue
+                if op in ('component_status', 'component_set', 'component_poll', 'component_ack'):
+                    if len(status_reads) >= 32:
+                        await self._reply(peer, header.get('request'), error='too many pending control requests')
+                        continue
+                    request = asyncio.create_task(self._component_reply(peer, node, header))
+                    status_reads.add(request)
+                    request.add_done_callback(status_reads.discard)
+                    continue
                 if op == 'status':
                     if len(status_reads) >= 32:
                         await self._reply(peer, header.get('request'), error='too many pending status reads')
@@ -289,8 +299,7 @@ class Broker(Sessions):
                             topic = header["topic"]
                             if topic not in session.publishers:
                                 raise ClientError("ownership", "publisher not owned by session")
-                            session.publishers.remove(topic)
-                            self.publisher_owners.pop(topic, None)
+                            self.release_publisher(session, topic)
                         elif op == "subscribe":
                             result = self.add_subscription(session, header, body)
                         else:
@@ -410,6 +419,7 @@ class Broker(Sessions):
                 for topic in topics:
                     del self.internal_points[topic]
                 self.peers.pop(node, None)
+                self.components.disconnected(node)
                 self.metrics.get(node, {}).pop('measurements', None)
                 self.ready.discard(node)
                 self.dedicated_data.discard(node)
@@ -435,6 +445,30 @@ class Broker(Sessions):
         except (ValueError, KeyError, TypeError) as error:
             await self._reply(peer, header.get('request'), error=str(error))
 
+    async def _component_reply(self, peer, node, header):
+        try:
+            op = header['op']
+            if op == 'component_status':
+                result = self.components.snapshot()
+            elif op == 'component_set':
+                result = await self.components.set(header['components'], header['enabled'])
+            else:
+                if node is None:
+                    raise ValueError('component connection required')
+                if op == 'component_poll':
+                    result = await self.components.poll(node, header.get('after'))
+                else:
+                    accepted = self.components.acknowledge(node, header['version'], header['enabled'])
+                    if accepted and header['enabled'] is False:
+                        for key, sub in self.subscriptions.items():
+                            if sub['to'].split('.')[0] == node:
+                                for record in self.engines[key].store.records():
+                                    self.engines[key].store.remove(record['id'])
+                    result = {}
+            await self._reply(peer, header['request'], result)
+        except (ValueError, KeyError, TypeError) as error:
+            await self._reply(peer, header['request'], error=str(error))
+
     async def _parameter_reply(self, peer, header, body, node):
         try:
             result, binary = await self.parameters.request(peer, header, body,
@@ -459,13 +493,15 @@ class Broker(Sessions):
                 if not self.enabled:
                     raise ClientError("not_ready", "broker is not enabled")
                 if session is not None:
-                    if self.publisher_owners.get(topic) != session.identity:
+                    if session.identity not in self.publisher_owners.get(topic, set()):
                         raise ClientError("ownership", "declare publisher before publication")
                 elif node is None or topic not in {f"{node}.{p}" for p in self.plan["components"][node]["outputs"]}:
                     raise ClientError("ownership", "publication is not enabled for this component")
                 if "app_id" in header:
                     validate_app_id(header["app_id"])
-                result = await self.publish(header["topic"], body,
+                descriptor = self.producers.members[session.identity, topic] if session else self.topics[topic]
+                result = await self.publish(header["topic"], body, descriptor=descriptor,
+                    producer=session.identity if session else self.generations.get(node, self.epoch),
                     **({"app_id": header["app_id"]} if "app_id" in header else {}))
                 await self._reply(peer, header["request"], result)
             except (ValueError, KeyError) as error:
@@ -494,17 +530,17 @@ class Broker(Sessions):
                 return
         raise ValueError("unknown UDP peer")
 
-    async def publish(self, topic, envelope, *, app_id=None):
+    async def publish(self, topic, envelope, *, app_id=None, descriptor=None, producer=None):
         if app_id is not None:
             validate_app_id(app_id)
-        port = self.topics[topic]
+        port = descriptor or self.topics[topic]
         try:
             self.codec.validate_only(port["catalogue"], port["root"], envelope)
         except ValueError as error:
             raise ClientError("schema", str(error)) from error
         self.sequence += 1
         self.recording.observe(topic, envelope,
-            generation=self.publisher_owners.get(topic, self.epoch), sequence=self.sequence,
+            generation=self.epoch, sequence=self.sequence, producer=producer,
             catalogue=port["catalogue"], root=port["root"], app_id=app_id)
         record = {"id": f"{self.epoch}:{self.sequence}", "epoch": self.epoch, "sequence": self.sequence,
                   "topic": topic, "body": bytes(envelope), "published_at": time.time()}
@@ -518,14 +554,22 @@ class Broker(Sessions):
             engine = self.engines.get(identity)
             if engine is None:
                 return identity, "closed"
-            if not self._fits(identity, record, envelope):
+            target = sub['to'].split('.')[0]
+            if target in self.components.observed and self.components.observed[target] is False:
+                return identity, 'disabled'
+            value = dict(record, target_version=self.components.desired[target]['version']) if target in self.components.desired else record
+            if not self._fits(identity, value, envelope):
                 return identity, "oversize"
             deadline = time.monotonic() + engine.policy.wait_timeout_ms / 1000
             while True:
+                if target in self.components.observed and self.components.observed[target] is False:
+                    return identity, 'disabled'
+                if target in self.components.desired and value['target_version'] != self.components.desired[target]['version']:
+                    return identity, 'disabled'
                 engine.store.changed.clear()
                 if self.engines.get(identity) is not engine:
                     return identity, "closed"
-                result = engine.enqueue(record)
+                result = engine.enqueue(value)
                 if result != "full" or engine.policy.overflow != "wait" or time.monotonic() >= deadline:
                     return identity, result
                 try:
@@ -547,6 +591,7 @@ class Broker(Sessions):
     def _header(self, identity, record):
         return {"op": "data", "subscription": identity, "id": record["id"], "epoch": record["epoch"],
                 "sequence": record["sequence"], "topic": record["topic"],
+                **({'target_version': record['target_version']} if record.get('target_version') else {}),
                 **({"app_id": record["app_id"]} if "app_id" in record else {})}
 
     def _fits(self, identity, record, envelope):
@@ -605,7 +650,7 @@ class Broker(Sessions):
             "report_age_ms": (time.monotonic() - self.metric_times[name]) * 1000 if name in self.metric_times else None}
             for name, desc in self.observation["components"].items()}}
         return {"epoch": self.epoch, "process": describe("broker", self.plan), "logs_version": 1, "measurements_version": 1, "observation": observation, "parameters": self.parameters.service.snapshot(),
-                "enabled": self.enabled, "ready": sorted(self.ready), "subscriptions": {key: engine.snapshot() for key, engine in self.engines.items()},
+                "component_states": self.components.snapshot(), "enabled": self.enabled, "ready": sorted(self.ready), "subscriptions": {key: engine.snapshot() for key, engine in self.engines.items()},
                 "components": dict(self.metrics), "udp_errors": self.udp.errors, "errors": self.errors,
                 "topics": {topic: {"root": port["root"], "publications": self.topic_counts[topic],
                     "frequency_hz": self.topic_counts[topic] / max(time.time() - self.started_at, .001),

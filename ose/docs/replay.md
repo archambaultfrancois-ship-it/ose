@@ -1,7 +1,7 @@
 # Recording replay
 
 `ose replay` feeds selected PCAPNG or MCAP messages into a compiled model's
-external topics, either in deterministic simulation or through a running local
+application topics, either in deterministic simulation or through a running local
 broker or distributed coordinator. Use it to reproduce an incident or test a
 component change with captured inputs. Real-time replay is the default mode and
 publishes into an already running application.
@@ -20,19 +20,20 @@ the cluster; residual uncertainty is accepted. Timestamp ties retain file order 
 replay. Payload timestamps are unchanged. There is no fallback to recorder
 arrival timestamps.
 
-Build a model with [external inputs](clients.md#feeding-a-model-input), then run:
+Use the ordinary model and suspend its original producers when replacing their data:
 
 ```sh
 ose replay signals.pcapng --mode simulated --plan build/plan.json \
-  --map sensor_1.signal=external.signal_1 \
-  --map sensor_2.signal=external.signal_2 \
+  --map sensor_1.signal=sensor_1.signal \
+  --map sensor_2.signal=sensor_2.signal \
+  --disable-component sensor_1 --disable-component sensor_2 \
   --duration 3 --workers 4 --trace build/replay.jsonl
 ```
 
 `--map` is optional. Without it, replay selects recorded messages whose topic
-names exactly match external topics declared in the plan, preserving those names.
-Other recorded topics and external topics absent from the selected recording range
-are ignored. If no messages match, replay fails before starting components or
+names exactly match application output topics or `external_topics` declared in
+the plan, preserving those names. Other recorded topics and topics absent from
+the selected recording range are ignored. If no messages match, replay fails before starting components or
 publishers and suggests using `--map`. Schema validation still applies.
 
 ```sh
@@ -40,12 +41,14 @@ ose replay signals.pcapng --interactive
 ose replay signals.pcapng --mode simulated --duration 3
 ```
 
-Each `--map RECORDED_TOPIC=EXTERNAL_TOPIC` selects one recorded topic and assigns
-it to a declared external topic. Other recorded topics are ignored. Internal
-component outputs cannot be targets: use a model without the original producers
-and connect the retained consumers to external topics. A source or destination
-may appear only once in the mappings. Each mapped source must have at least one
-message in the selected range.
+Each `--map RECORDED_TOPIC=APPLICATION_TOPIC` selects one recorded topic and
+assigns it to a known application topic. Other recorded topics are ignored.
+Component outputs are valid targets. The model, subscriptions and parameter blocks
+remain unchanged. Multiple compatible producers are allowed; replay does not
+implicitly stop the original producer. Use `--disable-component NAME` at simulated
+startup, or [component supervision](component-supervision.md) on a live application.
+A source or destination may appear only once in the mappings. Each mapped source
+must have at least one message in the selected range.
 
 Replay preserves each recorded `ose.app_id` as the optional application ID in
 simulation and live local/distributed publication. Zero, uint64 maximum and
@@ -338,8 +341,7 @@ admission results per message; deferred admissions may finish in a later command
 ## Distributed live replay
 
 For distributed execution, use the same compiled application plan and connect
-to its coordinator with a CA-signed client certificate whose common name is
-`replay`:
+to its coordinator with a valid CA-signed client certificate:
 
 ```sh
 ose replay signals.pcapng --mode realtime --plan build/plan.json \
@@ -350,15 +352,15 @@ ose replay signals.pcapng --mode realtime --plan build/plan.json \
 
 The plan's execution mode also selects distributed transport automatically.
 `--insecure` replaces TLS only for explicit loopback development. External
-subscriptions must use broker routing; internal routes can remain direct.
-The coordinator checks plan identity and exclusive topic ownership. A new
-publisher generation fences the previous one. Accepted records may drain after
-disconnect; opening a new publisher clears remaining broker records for its
-topics. Replay does not participate in the component READY barrier; it waits up
-to 20 seconds for registered workers to report that their processing loops have
-started before publishing. Only
-declared external topics are writable. The `broker.external.enabled` and
-`max_clients` settings control access and session capacity.
+publications enter through the coordinator, including subscriptions normally
+routed directly between workers. Ordinary direct publications retain their direct
+path. The coordinator checks plan identity, schema and producer session identity.
+Several producers can share a topic. Closing one session does not invalidate
+accepted records or other producers. Replay does not participate in READY; it
+waits for active workers' processing loops, exempting explicitly inactive
+components. Output topics and declared `external_topics` are writable; internal
+diagnostic points are not. `broker.external.enabled` and `max_clients` control
+access and session capacity.
 
 Live replay does not start or reset application components. `--endpoint` selects
 a local endpoint JSON; otherwise the local plan's `endpoint.json` is used when
@@ -416,7 +418,7 @@ speed, pauses and backpressure.
 
 Before starting simulation components or opening a live publisher, replay scans the complete container for integrity,
 validates selected payloads, and checks their root types and catalogues
-against the external topics. The default `--schema-policy exact` requires the
+against the selected application topic contracts. The default `--schema-policy exact` requires the
 declared catalogue. Use `--schema-policy compatible` for compatible schema
 evolution, as described below. Missing explicitly mapped topics, empty
 selections, oversized envelopes and invalid recordings fail explicitly.

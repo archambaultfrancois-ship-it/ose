@@ -1,5 +1,11 @@
 # Interactive live recording
 
+Application output taps aggregate compatible producers, including producers
+absent from the model. The recorder retains each actual SDL schema and producer
+identity; see [supervision and publication contracts](component-supervision.md#protocol-and-recording).
+In distributed execution these output taps reside at the coordinator; input and
+internal diagnostic taps remain at workers.
+
 `ose record` is a generic external console included in OSE. It discovers
 the inputs, outputs and declared internal points of a running application and records
 selected samples through SDL's recording service. It needs no model, generated application classes or
@@ -472,7 +478,8 @@ functions such as `len`, `abs` and `isfinite`; see the selected SDL checkout's
 `docs/filtering.md` for the expression language. No Python `eval` is used.
 
 Filters are prepared per source session at `recording_open` and evaluated on
-the original wire payload at the local broker or distributed producer worker,
+the original wire payload at the local broker, distributed coordinator (outputs)
+or receiving/diagnostic worker,
 before capture queue admission, reply serialization and network transfer.
 Match keeps a message; NoMatch and Indeterminate skip it and increment separate
 source counters. Only matching messages consume capture queue capacity or cross
@@ -483,7 +490,8 @@ An evaluation Error stops only the affected capture session with a diagnostic;
 other capture sessions and application delivery continue. Filters do not modify
 application subscriptions or their payloads. In local execution the broker still
 receives application publications; in distributed execution the recording data
-already flows directly from each worker to the recorder.
+flows from the coordinator for application outputs, and directly from workers
+for input and diagnostic points.
 Wire quantization therefore affects predicate results exactly as in SDL.
 
 ## Distributed applications
@@ -496,10 +504,11 @@ ose record --distributed --host coordinator.example --port 7000 \
   --tls-ca ca.crt --tls-cert recorder.crt --tls-key recorder.key
 ```
 
-The coordinator advertises live worker endpoints. The recorder opens a separate
-connection to each selected producer and verifies its exact certificate identity.
-Those endpoints must be reachable and resolvable from the recorder, for example
-inside the cluster network or through a VPN. It needs no worker installation and
+The coordinator serves aggregate application outputs and advertises worker
+endpoints for input and diagnostic points. For the latter, the recorder opens
+a separate connection and verifies the worker certificate identity. Those
+endpoints must be reachable and resolvable from the recorder, for example inside
+the cluster network or through a VPN. It needs no worker installation and
 does not join the READY barrier. OSE does not expose cluster Services publicly.
 For loopback-only distributed demonstrations use `--insecure` instead of TLS.
 
@@ -508,8 +517,11 @@ Any client certificate trusted by the application CA can read recording points;
 v1 has no separate recording role or per-topic access rules. The local broker
 uses its existing plaintext endpoint and respects `broker.external.enabled`.
 
-Direct payloads are captured at their producer, without routing them through the
-coordinator. A broker route is captured at the same worker publication boundary.
+While an output capture is active, workers forward selected direct publications
+to the coordinator for aggregation with independent producers. Normal direct
+delivery remains independent and is not duplicated to consumers. Broker-routed
+publications already pass through the coordinator. Activating capture waits for
+workers to acknowledge the forwarding selection.
 Output observation captures publication; input observation captures tick selection.
 Neither confirms that downstream processing completed.
 There is no historical replay or network ACK-to-disk guarantee.

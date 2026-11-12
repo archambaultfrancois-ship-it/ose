@@ -83,8 +83,10 @@ class ExternalTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.to_thread(c.subscribe,'missing',self.Message,lambda v,i:None)
         pub=await asyncio.to_thread(c.publisher,'topic',self.Message)
         other=await self.client('two')
-        with self.assertRaises(PublicationRefused):
-            await asyncio.to_thread(other.publisher,'topic',self.Message)
+        second = await asyncio.to_thread(other.publisher, 'topic', self.Message)
+        await asyncio.to_thread(pub.close)
+        pub = second
+        self.assertTrue((await asyncio.to_thread(second.publish, self.Message(sequence=0, value=0.))).accepted)
         with self.assertRaises(QoSError):
             await asyncio.to_thread(other.subscribe,'topic',self.Message,lambda v,i:None,qos=Fifo(capacity=999999))
         def fail(v,i): raise RuntimeError('user failed')
@@ -299,8 +301,7 @@ class ExternalTests(unittest.IsolatedAsyncioTestCase):
                 c=await asyncio.to_thread(Client.connect,port=endpoint['port'],client_id='injector')
                 self.clients.append(c)
                 pub=await asyncio.to_thread(c.publisher,'external.input',self.Message)
-                with self.assertRaises(PublicationRefused):
-                    await asyncio.to_thread(c.publisher,'transform.result',self.Message)
+                injected = await asyncio.to_thread(c.publisher, 'transform.result', self.Message)
                 event=threading.Event();received=[]
                 def callback(value,info):received.append(value);event.set()
                 await asyncio.to_thread(c.subscribe,'transform.result',self.Message,callback)

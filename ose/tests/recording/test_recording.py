@@ -525,9 +525,8 @@ class DistributedRecordingTests(unittest.IsolatedAsyncioTestCase):
         await rejected.start(empty_path)
         capture = await accepted.start(kept_path)
         await self.until(lambda: all(capture.topic_counts[topic] >= 3 for topic in topics) and len(self.values()) >= 3)
-        for name in ("source", "middle"):
-            self.assertEqual({session["label"] for session in self.workers[name].recording.sessions.values()},
-                             {"rejetés", "acceptés"})
+        self.assertEqual({session['label'] for session in self.coordinator.recording.sessions.values()},
+                         {'rejetés', 'acceptés'})
         await rejected.stop()
         await accepted.stop()
         self.assertFalse(rejected.capture.error)

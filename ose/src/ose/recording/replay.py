@@ -76,7 +76,7 @@ def topic_mapping(values, topics):
     """Validate explicit mappings; None selects matching names during preflight."""
     if values is None:
         if not topics:
-            raise ValueError("automatic replay requires declared external topics in the plan")
+            raise ValueError("automatic replay requires known application topics in the plan")
         return None
     result = {}
     for value in values:
@@ -86,7 +86,7 @@ def topic_mapping(values, topics):
         if source in result:
             raise ValueError(f"duplicate recorded topic mapping: {source}")
         if target not in topics:
-            raise ValueError(f"replay target must be a declared external topic: {target}")
+            raise ValueError(f"replay target must be a known application topic: {target}")
         if target in result.values():
             raise ValueError(f"multiple recorded topics map to {target}")
         result[source] = target
@@ -112,7 +112,7 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
     if automatic:
         mapping = {topic: topic for topic in topics}
         if not mapping:
-            raise ValueError("automatic replay requires declared external topics in the plan")
+            raise ValueError("automatic replay requires known application topics in the plan")
     adapters = SchemaAdapters(codec, schema_policy)
     for name, value in (("start-ns", start_ns), ("end-ns", end_ns)):
         if value is not None and (type(value) is not int or not 0 <= value <= MAX_NS):
@@ -163,8 +163,8 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
         if automatic:
             mapping = {source: target for source, target in mapping.items() if source in counts}
             if not mapping:
-                raise ValueError("no recorded messages match declared external topic names in the selected range; "
-                                 "use --map RECORDED_TOPIC=EXTERNAL_TOPIC to select or rename topics")
+                raise ValueError("no recorded messages match known application topic names in the selected range; "
+                                 "use --map RECORDED_TOPIC=APPLICATION_TOPIC to select or rename topics")
         missing = sorted(set(mapping) - counts.keys())
         if missing:
             raise ValueError("no selected messages for mapped topics: " + ", ".join(missing))
@@ -182,7 +182,7 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
 async def run(path, plan_path, duration=None, *, mappings=None, start_ns=None, end_ns=None,
               workers=1, trace=None, loops=1, schema_policy='exact', microsteps=False, max_microsteps=None,
               interactive=False, commands=None, output=None, record=None, record_file=None,
-              record_from=None, record_until=None):
+              record_from=None, record_until=None, disabled=()):
     from ose.execution.simulation import run as simulate
     from ose.execution.simulation.options import microstep_limit
     microstep_limit(microsteps, max_microsteps)
@@ -201,7 +201,8 @@ async def run(path, plan_path, duration=None, *, mappings=None, start_ns=None, e
     from ose.recording.batch import destination, CaptureWindow
     CaptureWindow(record, record_from, record_until)
     destination(record, record_file, protected=[path, plan_path, diagnostic, trace])
-    topics = plan.get("external_topics", {})
+    from ose.execution.publications import topic_contracts
+    topics = topic_contracts(plan)
     mapping = topic_mapping(mappings, topics)
     codec = SDL2(plan["sdl_root"])
     with recording_events(path, topics, mapping, codec, start_ns=start_ns, end_ns=end_ns,
@@ -212,6 +213,7 @@ async def run(path, plan_path, duration=None, *, mappings=None, start_ns=None, e
                                  microsteps=microsteps)
                    if interactive or commands is not None else None)
         summary = await simulate(plan_path, duration, workers=workers, events=repeated, trace=trace,
+            **({'disabled': disabled} if disabled else {}),
             record=record, record_file=record_file, record_from=record_from, record_until=record_until,
             **({"controller": control} if control is not None else {}),
             **({"microsteps": microsteps, "max_microsteps": max_microsteps}

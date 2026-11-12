@@ -159,6 +159,8 @@ class AdapterShutdownTests(unittest.IsolatedAsyncioTestCase):
                     return True
 
         adapter = Adapter.__new__(Adapter)
+        adapter.setup_component_control()
+        adapter.component_active = True
         adapter.closing = False
         adapter.activity = Activity()
         adapter._input_now = lambda: 0
@@ -211,6 +213,19 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(newest, latest)
         self.assertEqual(active, set())
         self.assertEqual((await self.hub.activation())[0], newest)
+
+    async def test_aggregate_capture_carries_large_catalogues_in_the_binary_body(self):
+        self.point['multipublisher'] = True
+        peer = object()
+        token = await self.open(peer)
+        catalogue, envelope = 'x' * 70000, b'envelope'
+        self.hub.observe(self.point['topic'], envelope, generation=self.point['generation'],
+                         sequence=1, catalogue=catalogue, root='Value', producer='outside')
+        result, body = await self.hub.request(peer, dict(op='recording_next', session=token))
+        self.assertEqual(result['record']['catalogue_size'], len(catalogue))
+        self.assertNotIn('catalogue', result['record'])
+        self.assertEqual(body, catalogue.encode() + envelope)
+        self.assertEqual(result['record']['producer'], 'outside')
 
     async def test_invalid_versions_and_watch_cancellation(self):
         for version in (True, -1, '1'):

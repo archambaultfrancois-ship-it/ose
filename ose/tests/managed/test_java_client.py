@@ -21,7 +21,11 @@ class JavaClientTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.to_thread(SDL2(SDL).generate, schema, root / 'types', ['java'])
             sources = [ROOT / 'tests/managed/java/ExternalProbe.java', ROOT / 'examples/external/java/ClientExample.java', *[p for p in (root / 'types/java').rglob('*.java') if p.name != 'SdlCodec.java']]
             classes, library = await asyncio.to_thread(build_java, SDL, ROOT / 'build/client-java-test', sources)
-            broker = Broker(dict(sdl_root=str(SDL), components={}, subscriptions=[], max_frame=1024*1024, max_datagram=1200))
+            codec = SDL2(SDL)
+            catalogue = 'SDL2|Measurement{1:uint64:sequence;2:fl64:value;}'
+            descriptor = dict(root='Measurement', catalogue=catalogue, catalogue_id=codec.identity(catalogue))
+            broker = Broker(dict(sdl_root=str(SDL), components={'java': dict(inputs={}, outputs={'shared': descriptor})},
+                subscriptions=[], max_frame=1024*1024, max_datagram=1200))
             broker.sequence = 2**63
             await broker.start(); broker.enabled = True
             try:

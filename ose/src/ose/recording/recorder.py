@@ -218,7 +218,11 @@ class Capture:
         if record["generation"] != desc["generation"]:
             raise ValueError("recording source generation changed")
         identity, payload = self.runtime.api.unpack_envelope(envelope)
-        if identity != self.runtime.identity(desc["catalogue"]):
+        catalogue = record.get('catalogue', desc['catalogue'])
+        root = record.get('root', desc['root'])
+        if root != desc['root']:
+            raise ValueError('recording root changed')
+        if identity != self.runtime.identity(catalogue):
             raise ValueError("recording catalogue changed")
         self.counts["received"] += 1
         if self.max_size is not None and self.file_messages and self.file_bytes >= self.max_size:
@@ -227,10 +231,23 @@ class Capture:
             self.files.check_next()
             self.finish_file(final=False)
             self.prepare()
-        self.writer.write_encoded(self.channels[topic], payload, log_time_ns=record["log_time_ns"],
+        channel = self.channels[topic]
+        if catalogue != desc['catalogue']:
+            key = topic, catalogue
+            if key not in self.channels:
+                if len(self.channels) >= 1024:
+                    raise ValueError('recording schema channel limit exceeded')
+                self.channels[key] = self.writer.register_channel(topic=desc['topic'], catalogue=catalogue,
+                    root_type=root, metadata={'ose.generation': desc['generation'], 'ose.kind': desc.get('kind', 'output')})
+            channel = self.channels[key]
+        metadata = {}
+        if 'app_id' in record:
+            metadata['ose.app_id'] = str(validate_app_id(record['app_id']))
+        if 'producer' in record:
+            metadata['ose.producer'] = record['producer']
+        self.writer.write_encoded(channel, payload, log_time_ns=record["log_time_ns"],
                                   publish_time_ns=record["publish_time_ns"], sequence=record["sequence"] % (2**32),
-                                  metadata=({"ose.app_id": str(validate_app_id(record["app_id"]))}
-                                            if "app_id" in record else None))
+                                  metadata=metadata or None)
         self.counts["written"] += 1
         self.topic_counts[topic] += 1
         self.topic_bytes[topic] += len(payload)
@@ -261,6 +278,12 @@ class Capture:
                     return
             else:
                 record = dict(result["record"], log_time_ns=time.time_ns())
+                if 'catalogue_size' in record:
+                    size = record.pop('catalogue_size')
+                    if type(size) is not int or not 0 < size < len(body):
+                        raise ValueError('invalid recording catalogue size')
+                    record['catalogue'] = body[:size].decode('utf-8')
+                    body = body[size:]
                 if self.accept is None or self.accept(record):
                     await self.disk(self.write, record, body)
 

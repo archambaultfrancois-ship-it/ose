@@ -9,13 +9,15 @@ from ose.execution.plan import read_plan
 
 
 class LocalCluster:
-    def __init__(self, plan_path, *, port=0, logs=None, lease_seconds=2, params_sync=None):
+    def __init__(self, plan_path, *, port=0, logs=None, lease_seconds=2, params_sync=None, disabled=()):
         from ose.execution.distributed import check_plan
         self.path = Path(plan_path).resolve()
         self.plan = read_plan(self.path)
         check_plan(self.plan)
         self.port, self.lease_seconds = port, lease_seconds
         self.logs = Path(logs or Path(self.plan['build_dir']) / 'distributed-logs').resolve()
+        from ose.execution.components import disabled_components
+        self.disabled = disabled_components(self.plan, disabled)
         self.params_sync = params_sync
         self.processes, self.streams = Processes(), []
 
@@ -56,7 +58,8 @@ class LocalCluster:
             for name in ('coordinator', 'params-sync', *self.plan['components']):
                 (self.logs / (name + '.log')).write_bytes(b'')
             await self.launch('coordinator', ['serve', '--plan', self.path, '--port', self.port,
-                                            '--insecure', '--lease-seconds', self.lease_seconds])
+                                            '--insecure', '--lease-seconds', self.lease_seconds,
+                                            *[arg for name in sorted(self.disabled) for arg in ('--disable-component', name)]])
             # Read this child's startup announcement, not a stale endpoint or a
             # probed free port. Port zero is bound atomically by the coordinator.
             async def endpoint():
@@ -101,7 +104,7 @@ class LocalCluster:
             stream.close()
 
 
-async def run(plan_path, duration=300, *, port=0, logs=None, lease_seconds=2, params_sync=None, exercise=None):
+async def run(plan_path, duration=300, *, port=0, logs=None, lease_seconds=2, params_sync=None, exercise=None, disabled=()):
     """Run until duration/interrupt/failure; an optional application exercise may replace the timer."""
     loop, task = asyncio.get_running_loop(), asyncio.current_task()
     previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
@@ -109,7 +112,7 @@ async def run(plan_path, duration=300, *, port=0, logs=None, lease_seconds=2, pa
         loop.add_signal_handler(sig, task.cancel)
     try:
         async with LocalCluster(plan_path, port=port, logs=logs, lease_seconds=lease_seconds,
-                                params_sync=params_sync) as cluster:
+                                params_sync=params_sync, disabled=disabled) as cluster:
             monitor = asyncio.create_task(cluster.processes.monitor())
             running = asyncio.create_task(exercise(cluster) if exercise else asyncio.sleep(duration))
             try:

@@ -11,6 +11,7 @@
 
 ## Callbacks and execution
 
+- **[Component supervision](component-supervision.md)**: start selected components inactive, suspend at callback boundaries and resume retained state in local, distributed and simulated execution.
 - **[Typed callbacks](callbacks.md#lifecycle-and-execution)**: process one input reference per activation and publish through typed output methods.
 - **[Lifecycle hooks](callbacks.md#python-callbacks)**: initialize component resources before READY and release them during shutdown.
 - **[Periodic and input-driven execution](runtime.md#selecting-one-activation)**: run independent Push callbacks and explicitly declared timers.
@@ -50,6 +51,7 @@
 
 ## External integration and inspection
 
+- **[Independent producers](clients.md#feeding-a-model-input)**: share ordinary model output topics with compatible SDL producers, without rewriting the model or reserving a topic for one component.
 - **[Interactive recording](recording.md)**: select live outputs and component-owned internal points by name or message type and record labeled PCAPNG/MCAP sessions without adding a model component.
 - **[Internal diagnostic points](recording.md#component-owned-internal-points)**: declare namespaced SDL points in Python, C, Rust, Java or Ada; context-owned hash registries cache encoders and skip serialization while disabled.
 - **[Source content filters](recording.md#content-filters)**: filter publications at the broker or producer worker before transfer to the recorder.

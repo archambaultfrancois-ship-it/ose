@@ -8,12 +8,13 @@ use the existing local APIs. Simulation remains local.
 
 Add `"execution": "distributed"` to a deployment. Subscription bindings accept
 `"routing": "broker"` (default) or `"routing": "direct"`, with `"transport": "tcp"`.
-UDP and the general external client SDKs remain local-only. Declared external
-topics support [live recording replay](replay.md#live-replay-and-speed-control)
-through broker routes, with a dedicated `replay` certificate identity.
-The read-only [interactive recorder](recording.md) can discover outputs through
-the coordinator and capture publications directly from workers, without external
-publisher topics or changes to the application model.
+UDP and external client subscriptions remain local-only. The coordinator accepts
+publisher-only CENV/2 clients and [live recording replay](replay.md), with a valid
+CA-signed identity or explicit loopback `--insecure`. Producers may feed ordinary
+component outputs without changing the plan, including direct subscriptions.
+The [recorder](recording.md) captures application outputs at the coordinator;
+workers forward direct outputs there only while selected for capture. Input and
+internal diagnostic recording points remain worker-local.
 
 Components may declare Kubernetes constraints in `placement`:
 
@@ -62,32 +63,33 @@ Rust, Java and Ada use the same worker path and are qualified separately through
 local CH/2 tests (GNAT 12 for Ada). Their native distributed worker combinations
 have not been separately exercised by this qualification.
 
-## External recording publishers
+## Independent publishers
 
-The coordinator accepts publisher-only RPCs used by `ose replay`. They use
-the same authenticated CENV/2 control connection as worker RPCs, with a separate
-certificate common name `replay`. Loopback development can use explicit
-`--insecure`. The application must already be activated.
+Producer declarations register sessions and compatible schemas, rather than
+exclusive ownership. Model outputs and `external_topics` are both valid targets.
+Multiple producers can coexist with the model component; disabling the component
+is a separate [supervision operation](component-supervision.md).
+
+The publisher-only SDK operations are `client_hello`, `declare_publisher`,
+`publish`, `release_publisher`, `list_topics` and `catalogue`. External subscriptions
+are not implemented by the coordinator. Valid TLS client identities are accepted;
+worker registration still requires the corresponding component identity.
+
+Replay also uses the compatibility operations below:
 
 | Operation | Request | Result |
 | --- | --- | --- |
-| `external_open` | `topics`: declared external topic names; `plan_id`: application fingerprint | Session `token` and coordinator `epoch` |
-| `external_publish` | Session `token`, owned `topic`, S2PS/2 binary body | Per-subscription `delivery` admission results |
-| `external_close` | Session `token` | Releases topic ownership |
+| `external_open` | `topics`: known application topics; `plan_id`: application fingerprint | Session `token` and coordinator `epoch` |
+| `external_publish` | Session `token`, declared `topic`, S2PS/2 binary body | Per-subscription admission results |
+| `external_close` | Session `token` | Releases this producer's registrations |
 
-One connection owns one session and reserves its selected topics exclusively.
-The coordinator validates envelopes against the declared contracts and assigns
-publication sequence numbers. Broker records identify an external source by its
-full topic name; the session token is the source generation. Workers authorize
-admissions through the coordinator, including after publisher disconnect while
-accepted records drain. Reopening a topic creates a new generation and clears
-its remaining broker records. Disconnect or close releases ownership. No external
-publisher can impersonate a worker or publish to internal component outputs.
-
-These RPCs do not provide external subscriptions or dynamic topic declarations.
-`broker.external.enabled` controls access; `max_clients` bounds simultaneous
-publisher sessions. Recordings and live replay do not join the READY barrier.
-See [replay](replay.md) for timing, speed and interactive controls.
+The coordinator checks actual SDL schemas and assigns transport sequences.
+Workers validate the actual source catalogue against their input contracts and
+check session generations. Closing or reopening a producer does not clear another
+producer's deliveries; already accepted records may drain after disconnect.
+Retired external generation history is bounded to 4096 sessions.
+`broker.external.enabled`, `max_clients`, topic/catalogue limits and normal queue
+policies continue to apply. Producers do not join the READY barrier.
 
 ## Managed local development cluster
 

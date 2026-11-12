@@ -60,16 +60,28 @@ class SimulationControlTests(unittest.IsolatedAsyncioTestCase):
         self.scenario = self.root / 'scenario.json'
         self.scenario.write_text(json.dumps(dict(version=1, events=events)))
 
-    async def execute(self, commands=None, *, scenario=True, name='trace', microsteps=True):
+    async def execute(self, commands=None, *, scenario=True, name='trace', microsteps=True, disabled=()):
         output = io.StringIO()
         control = (ReplayControl('simulated', replay=False, commands=commands, output=output,
                                  microsteps=microsteps) if commands is not None else None)
         trace = self.root / (name + '.jsonl')
         engine = Simulation(self.plan, 50e-9, scenario=self.scenario if scenario else None,
-                            trace=trace, microsteps=microsteps, controller=control)
+                            trace=trace, microsteps=microsteps, controller=control, disabled=disabled)
         summary = await asyncio.wait_for(engine.execute(), 5)
         statuses = [json.loads(line) for line in output.getvalue().splitlines() if line.startswith('{')]
         return summary, statuses, trace.read_bytes()
+
+    async def test_initially_disabled_component_can_be_enabled_in_the_same_plan(self):
+        result, _, _ = await self.execute(['step 40ns', 'stop'], scenario=False, disabled=['timer'])
+        self.assertEqual(result['ticks'], 0)
+        result, _, trace = await self.execute(
+            ['component enable timer', 'step 20ns', 'component disable timer', 'stop'],
+            scenario=False, disabled=['timer'], name='supervision')
+        self.assertEqual(result['ticks'], 1)
+        self.assertEqual(result['time_ns'], 20)
+        changes = [json.loads(line) for line in trace.splitlines()
+                   if json.loads(line).get('event') == 'component_state']
+        self.assertEqual([row['enabled'] for row in changes], [True, False])
 
     async def test_instant_and_microsteps_stop_before_callbacks_and_preserve_the_trace(self):
         _, _, continuous = await self.execute(name='continuous')

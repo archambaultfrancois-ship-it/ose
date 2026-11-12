@@ -15,7 +15,7 @@ The broker accepts at most 32 concurrent publications per connection.
 | --- | --- | --- | --- |
 | `client_hello` | `client_id`, `udp_port` | empty | `session`, `udp_port`, `max_frame`, `max_datagram`, `max_wait_timeout_ms` |
 | `logs` | optional `filters` object | empty | epoch, ordered items, cursor, more, truncated, evicted, retained |
-| `list_topics` | none | empty | `topics`: topic/root/catalogue_id/publisher_connected |
+| `list_topics` | none | empty | `topics`: topic/root/catalogue_id/publisher_connected/producer_count |
 | `catalogue` | `catalogue_id` | empty | raw SDL2 catalogue |
 | `declare_publisher` | `topic`, `root` | SDL2 catalogue | topic/catalogue_id |
 | `release_publisher` | `topic` | empty | empty object |
@@ -57,11 +57,30 @@ are ACKed without invoking the callback again within the deduplication window.
 
 Subscriptions belong to sessions, and their policies are independent. A client
 session is never an internal component and cannot send READY on its behalf.
-Disconnect deletes session subscriptions/queues and releases publisher leases;
+Disconnect deletes session subscriptions/queues and releases that session’s producer registrations;
 topic contracts and retained states remain in bounded RAM until broker exit.
 
 Known error codes include unknown_topic, schema, qos, ownership, capacity,
 disabled, duplicate_client, invalid_client, invalid_endpoint, session, not_ready,
 oversize, invalid_request. Publication `delivery` maps subscription IDs to
-accepted/full/oversize/duplicate/stale/closed. This is broker RAM admission,
+accepted/full/oversize/duplicate/stale/closed/disabled. This is broker RAM admission,
 not a callback completion receipt. See [client semantics](../../docs/clients.md).
+
+`declare_publisher` registers a producer and its SDL schema without reserving the
+topic. Model outputs and declared external topics accept multiple compatible
+producers, including their original component. The contract remains stable;
+every message is checked against its producer's actual schema. Closing or releasing
+one producer does not revoke another producer or accepted messages. Diagnostic
+`component.record.*` points cannot be declared as application topics.
+
+The distributed coordinator implements the publisher-only subset: `client_hello`,
+`list_topics`, `catalogue`, `declare_publisher`, `release_publisher` and `publish`.
+It does not support external subscription/data-channel operations. TLS identities
+need a valid application CA signature; explicit insecure mode is loopback-only.
+Native SDK APIs are unchanged and retain their existing connection capabilities.
+See [distributed execution](../../docs/distributed.md#independent-publishers).
+
+Separate component RPCs are `component_status`, `component_set` (`components` list,
+`enabled` boolean), and adapter/worker `component_poll`/`component_ack`.
+State changes are versioned and acknowledged at callback boundaries; see
+[component supervision](../../docs/component-supervision.md).

@@ -16,6 +16,29 @@ def message(number, *, topic="source.out", **metadata):
 
 
 class InputSchedulerTests(unittest.TestCase):
+    def test_suspend_freezes_timers_discards_inputs_and_refuses_new_admissions(self):
+        scheduler = self.scheduler(dict(clock=dict(kind='timer', timer=dict(mode='periodic', delay=.1)),
+                                         input=dict(root='Value')))
+        scheduler.admit('input', message(1), 10 * MS)
+        scheduler.enable(False, 40 * MS)
+        self.assertEqual(scheduler.buffers['input'].store.size(), 0)
+        self.assertEqual(scheduler.admit('input', message(2), 50 * MS), 'disabled')
+        self.assertIsNone(scheduler.select(200 * MS))
+        self.assertIsNone(scheduler.next_event(200 * MS))
+        scheduler.enable(True, 240 * MS)
+        self.assertIsNone(scheduler.select(299 * MS))
+        reference = scheduler.select(300 * MS)
+        self.assertEqual((reference.port, reference.due_ns), ('clock', 300 * MS))
+
+    def test_cannot_suspend_inside_callback(self):
+        scheduler = self.scheduler(dict(input=dict(root='Value')))
+        scheduler.admit('input', message(1), 0)
+        reference = scheduler.select(0)
+        with self.assertRaisesRegex(RuntimeError, 'callback boundary'):
+            scheduler.enable(False, 0)
+        scheduler.complete(reference, 0)
+        scheduler.enable(False, 0)
+
     def scheduler(self, inputs, *, policies=None, outputs=()):
         node = dict(inputs=inputs, outputs={port: dict(root="Value") for port in outputs})
         buffers = {port: Buffer(Policy.resolve((policies or {}).get(port)), MemoryStore(), clock=lambda: 0.)

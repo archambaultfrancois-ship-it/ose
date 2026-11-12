@@ -47,7 +47,9 @@ class ReplayApplicationTests(unittest.IsolatedAsyncioTestCase):
                     env=environment, stdout=asyncio.subprocess.PIPE, stderr=log)
                 recorder = None
                 try:
-                    running = json.loads(await asyncio.wait_for(process.stdout.readline(), 30))
+                    announcement = await asyncio.wait_for(process.stdout.readline(), 30)
+                    self.assertTrue(announcement, (directory / 'live.log').read_text())
+                    running = json.loads(announcement)
                     self.assertTrue(running["running"])
                     recorder = Recorder(running["host"], running["port"])
                     await recorder.connect()
@@ -82,17 +84,28 @@ class ReplayApplicationTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(all(row["state"] == 0 for row in expected if row["machine_id"] == 2))
             reference = None
             for workers in (1, 4):
-                result = await self.invoke("replay", "--recording", capture, "--duration", 3, "--workers", workers)
+                internal = directory / 'replayed-inputs.mcap'
+                capture_options = (['--record', 'analyzer_*.record.dsp.input', '--record-file', internal]
+                                   if workers == 4 else [])
+                result = await self.invoke("replay", "--recording", capture, "--duration", 3,
+                                           "--workers", workers, *capture_options)
                 self.assertEqual(ordered(observations(result.stderr)), ordered(expected))
                 summary = json.loads(result.stdout.splitlines()[-1])
                 self.assertEqual(summary["replay"]["message_count"], len(keys))
-                plan = json.loads((ROOT / "build/replay/plan.json").read_text())
-                self.assertEqual(set(plan["components"]), {"analyzer_1", "analyzer_2", "alarm", "observer"})
-                self.assertEqual(set(plan["shared_parameters"]), {"machines/1/detection", "machines/2/detection", "observer/display"})
+                plan = json.loads((ROOT / "build/plan.json").read_text())
+                self.assertEqual(set(plan["components"]), {"sensor_1", "sensor_2", "analyzer_1", "analyzer_2", "alarm", "observer"})
+                self.assertEqual(set(plan["shared_parameters"]), {"machines/1/detection", "machines/2/detection", "machines/1/sensor", "machines/2/sensor", "observer/display"})
                 trace = (ROOT / "build/replay/trace.jsonl").read_bytes()
                 if reference is None:
                     reference = trace
                 self.assertEqual(trace, reference)
+                if workers == 4:
+                    recorded = list(reader(internal).iter_records())
+                    self.assertEqual(len(recorded), len(keys))
+                    self.assertEqual({row.channel.topic for row in recorded},
+                                     {'analyzer_1.record.dsp.input', 'analyzer_2.record.dsp.input'})
+                    self.assertEqual({(row.decode().fields['machine_id'], row.decode().fields['sequence'])
+                                      for row in recorded}, keys)
             repeated = await self.invoke("replay", "--recording", capture, "--duration", 5, "--loops", 2)
             self.assertEqual(ordered(observations(repeated.stderr)), ordered(expected * 2))
             self.assertEqual(json.loads(repeated.stdout.splitlines()[-1])["completed_loops"], 2)
@@ -102,7 +115,7 @@ class ReplayApplicationTests(unittest.IsolatedAsyncioTestCase):
 
     async def replay_live(self, capture, directory, environment, expected, profile, speed):
         await self.invoke("replay-build", "--profile", profile)
-        plan = ROOT / "build/replay/plan.json"
+        plan = ROOT / "build/plan.json"
         processes = []
         log_path = directory / (profile + ".log")
         with log_path.open("w") as log:
@@ -112,8 +125,9 @@ class ReplayApplicationTests(unittest.IsolatedAsyncioTestCase):
                 processes.append(process)
                 return process
             try:
-                runtime = await launch("run", "--plan", plan) if profile == "local" else await launch(
-                    "serve", "--plan", plan, "--port", 0, "--insecure")
+                disabled = ['--disable-component', 'sensor_1', '--disable-component', 'sensor_2']
+                runtime = await launch("run", "--plan", plan, *disabled) if profile == "local" else await launch(
+                    "serve", "--plan", plan, "--port", 0, "--insecure", *disabled)
                 address = json.loads(await asyncio.wait_for(runtime.stdout.readline(), 20))
                 if profile == "cluster":
                     for name in json.loads(plan.read_text())["components"]:
@@ -133,7 +147,7 @@ class ReplayApplicationTests(unittest.IsolatedAsyncioTestCase):
                         await control.close()
                 arguments = ["replay", capture, "--mode", "realtime", "--plan", plan,
                     "--host", address["host"], "--port", address["port"], "--speed", speed,
-                    "--map", "sensor_1.signal=replay.signal_1", "--map", "sensor_2.signal=replay.signal_2"]
+                    "--map", "sensor_1.signal=sensor_1.signal", "--map", "sensor_2.signal=sensor_2.signal"]
                 if profile == "cluster":
                     arguments += ["--insecure"]
                 replayer = await launch(*arguments)
