@@ -8,18 +8,21 @@ PROFILE ?= local
 PARAMS_SYNC ?= 0
 PARAMS_DIR ?= parameters
 NAMESPACE ?= vibration-watch
-OPTIONS = --scenario "$(SCENARIO)" --duration "$(DURATION)" --workers "$(WORKERS)" --routing "$(ROUTING)"
+CONFIG_OPTIONS = --scenario "$(SCENARIO)" --routing "$(ROUTING)"
+OPTIONS = $(CONFIG_OPTIONS) --duration "$(DURATION)" --workers "$(WORKERS)"
 SYNC_OPTIONS = $(if $(filter 1 yes true,$(PARAMS_SYNC)),--params-sync "$(PARAMS_DIR)")
 
 .PHONY: validate build run simulate replay replay-build demo-local demo-distributed test test-unit test-integration test-replay test-cluster certs images push-images render deploy help
-validate build simulate:
+validate build:
+	"$(PYTHON)" tools/vibration.py $@ --profile "$(PROFILE)" $(CONFIG_OPTIONS)
+simulate:
 	"$(PYTHON)" tools/vibration.py $@ --profile "$(PROFILE)" $(OPTIONS)
 run:
 	"$(PYTHON)" tools/vibration.py run $(OPTIONS) $(SYNC_OPTIONS)
 replay:
 	"$(PYTHON)" tools/vibration.py replay --recording "$(RECORDING)" --loops "$(LOOPS)" $(OPTIONS)
 replay-build:
-	"$(PYTHON)" tools/vibration.py replay-build --profile "$(PROFILE)" $(OPTIONS)
+	"$(PYTHON)" tools/vibration.py replay-build --profile "$(PROFILE)" $(CONFIG_OPTIONS)
 demo-local: run
 demo-distributed:
 	"$(PYTHON)" tools/vibration.py distributed-local $(OPTIONS) $(SYNC_OPTIONS) $(if $(FAIL_NODE),--fail-node "$(FAIL_NODE)")
