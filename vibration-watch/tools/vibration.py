@@ -46,6 +46,17 @@ def cli(args, *arguments, **kwargs):
                           cwd=ROOT, env=environment(args), check=True, **kwargs)
 
 
+def recording_options(args):
+    options = []
+    for clause in getattr(args, "record", None) or []:
+        options += ["--record", clause]
+    for name in ("record_file", "record_from", "record_until"):
+        value = getattr(args, name, None)
+        if value is not None:
+            options += ["--" + name.replace("_", "-"), value]
+    return options
+
+
 def finite(value, minimum, maximum, name, integer=False):
     if type(value) not in (int, float) or not math.isfinite(value) or not minimum <= value <= maximum:
         raise ValueError(f"invalid {name}")
@@ -221,7 +232,7 @@ def run_with_params_sync(args):
     processes = []
     try:
         application = subprocess.Popen([sys.executable, "-m", "ose.cli", "run", "--plan", "build/plan.json",
-            "--duration", str(args.duration), "--port", str(port)], cwd=ROOT,
+            "--duration", str(args.duration), "--port", str(port), *recording_options(args)], cwd=ROOT,
             env=environment(args), start_new_session=True)
         processes.append(application)
         wait_for_listener(application, port)
@@ -432,6 +443,12 @@ def main():
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--loops", type=int, default=1, help="total replay passes; 0 repeats until the duration limit")
     parser.add_argument("--recording", help="PCAPNG/MCAP signal capture for replay")
+    parser.add_argument("--record", action="append", metavar="TOPIC_GLOB[, FILTER]",
+                        help="capture matching points during run, simulate or replay; repeat to union selections")
+    parser.add_argument("--record-file", metavar="FILE",
+                        help="capture destination .pcapng or .mcap (default: capture.pcapng)")
+    parser.add_argument("--record-from", metavar="TIME", help="inclusive capture start position")
+    parser.add_argument("--record-until", metavar="TIME", help="exclusive capture end position")
     parser.add_argument("--start-ns", type=int)
     parser.add_argument("--end-ns", type=int)
     parser.add_argument("--file", help="bare sensor settings or single path-keyed sensor export for set-sensor")
@@ -460,6 +477,8 @@ def main():
                 f"Python 3.10+ is required; {sys.executable} is Python {sys.version.split()[0]}. "
                 "Use a Python 3.10+ interpreter from PATH.")
         finite(args.duration, 1e-6, 1e9, "duration")
+        if recording_options(args) and args.task not in ("run", "simulate", "replay"):
+            raise ValueError("recording options are supported for run, simulate and replay only")
         if args.task in ('run', 'distributed-local', 'simulate', 'replay'):
             sys.path.insert(0, str(framework(args) / 'ose/src'))
             from ose.execution.identity import identify
@@ -483,7 +502,7 @@ def main():
         elif args.task in ("run", "simulate"):
             args.profile = "local"
             compile_app(args)
-            options = ["run", "--duration", args.duration]
+            options = ["run", "--duration", args.duration, *recording_options(args)]
             if args.task == "simulate":
                 options += ["--mode", "simulated", "--workers", args.workers, "--trace", ROOT / "build/simulation.jsonl"]
             if args.params_sync is not None:
@@ -504,6 +523,7 @@ def main():
             for name in ("start_ns", "end_ns"):
                 if getattr(args, name) is not None:
                     options += ["--" + name.replace("_", "-"), getattr(args, name)]
+            options += recording_options(args)
             cli(args, *options)
         elif args.task == "distributed-local":
             with launch_signals() if args.params_sync is not None else nullcontext():

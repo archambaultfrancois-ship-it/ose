@@ -398,7 +398,9 @@ not run inside component emission; normal component pipe flow control still
 applies. Capture `status` shows per-point observed, filtered and dropped counts
 for the source taps. SDK budget drops and adapter transfer drops occur upstream
 of these counters. Component disconnect invalidates its active captures; refresh
-discovery after restart. Simulation leaves all internal points disabled.
+discovery after restart. In simulation, `run` and `replay` enable the internal
+points selected by `--record`; unselected points stay disabled. Use their complete
+topic names, for example `--record 'analyseur.record.dsp.*'`.
 
 ## File rotation and cyclic retention
 

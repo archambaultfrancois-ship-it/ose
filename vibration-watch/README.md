@@ -218,7 +218,26 @@ record> stop
 
 These points observe analyzer inputs; `sensor_*.signal` observes sensor
 publications. Capture both to compare sequences across delivery. Internal points
-are also available in distributed execution and stay disabled in simulation.
+are also available in distributed execution and in simulation when selected
+with `--record`. Unselected internal points stay disabled.
+
+The application launcher accepts `--record 'TOPIC_GLOB[, FILTER]'` (repeatable),
+`--record-file`, `--record-from` and `--record-until` for `run`, `simulate` and
+`replay`. Select internal points using their full topic names:
+
+```sh
+python3 tools/vibration.py simulate --duration 1 \
+  --record 'analyzer_*.record.dsp.input' --record-file build/analyzer-inputs.mcap
+source ./setenv.sh
+ose app record inspect build/analyzer-inputs.mcap --check --summary --format json
+```
+
+This captures the signal blocks observed inside both analyzers. To also capture
+sensor publications, add `--record 'sensor_*.signal'`. The output defaults to
+`capture.pcapng`; an existing output is overwritten. Optional `--record-from 0.2s`
+and `--record-until 0.8s` select the half-open interval `[0.2s, 0.8s)` in virtual
+time for simulation and replay, or elapsed time for `run`. The file and time
+options require `--record`.
 
 ## Read the current RMS measurement
 
@@ -537,6 +556,13 @@ and their subscriptions are connected to external topics. The workflow invokes
 `sensor_2.signal=replay.signal_2`. It accepts PCAPNG or MCAP captures; both sensor
 topics must contain messages. `tools/vibration.py replay --recording FILE`
 also accepts `--start-ns` and `--end-ns` for a source publication-time range.
+To record internal points while replaying, use
+
+```sh
+python3 tools/vibration.py replay --recording signals.pcapng --duration 3 \
+  --record 'analyzer_*.record.dsp.input' --record-file build/replayed-inputs.mcap
+```
+
 `LOOPS` (CLI: `--loops`) is the total number of passes, defaulting to 1; 0 repeats
 until the global `DURATION` limit. Components retain state between passes, and
 payload timestamps and sequence numbers are preserved.
