@@ -95,7 +95,11 @@ ose-ws setup
 ```
 
 The console uses the same PATH Python as the application and editor. `setup`
-installs its dependencies into the framework's `build/python-deps` directory.
+installs its dependencies into the framework's `build/python-deps` directory
+and builds the SDL services. The framework provides this launcher for every
+application, like `ose-editor`; Vibration Watch has no separate web-console
+script. Missing Python dependencies are also prepared on the first server
+launch. Help, `init` and `check` do not prepare dependencies.
 
 Start the local application in one Bash terminal:
 

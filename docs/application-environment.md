@@ -49,6 +49,27 @@ or repairs those dependencies explicitly. `--help` and `--check` never install
 anything. The editor, console, application and Make commands all use the same
 detected Python from `PATH`. The bundled frontend needs no Node.js build.
 
+`ose-ws` launches the selected application's web console through the framework's
+`ose-ws/tools/console.py`, following the same checkout-launcher convention:
+
+```sh
+ose-ws
+ose-ws --port 8081
+ose-ws check
+ose-ws setup
+```
+
+The first server launch prepares missing Python dependencies; `setup` also
+builds the SDL recording/filter services. Help, `init` and `check` do not prepare
+dependencies. The launcher supplies `--root "$OSE_APP_ROOT"`, so the default
+configuration and login token remain in the selected application even when
+launched elsewhere. Configuration is created automatically only for `serve`
+without an explicit `--config`. Runtime state and captures follow the calling
+directory or `--working-directory`. Parameter credentials are resolved afresh
+from the configured application's current plan or local deployment, with
+explicit environment credentials taking precedence. Applications need no
+custom `web_console.py`; see the [console guide](../ose-ws/README.md).
+
 ## Recording commands
 
 With Vibration Watch, run the application and recorder in separate terminals:

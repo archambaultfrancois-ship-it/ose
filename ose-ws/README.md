@@ -23,8 +23,16 @@ must be built from source rather than installed from a compatible wheel.
 ```sh
 make python-info  # Detect Python 3.10+, including versioned commands
 make setup
-source vibration-watch/setenv.sh
+cd /path/to/application
+source /path/to/ose/setenv.sh
 ```
+
+The checkout's `ose-ws` shortcut is provided by the framework, like `ose-editor`;
+applications need no console launcher of their own. It uses
+`ose-ws/tools/console.py` and the same detected Python. Missing Python dependencies
+are prepared on the first server launch and reused from `build/python-deps`.
+`ose-ws setup` explicitly installs/repairs them and builds the SDL services.
+Help, `init` and `check` never install or probe dependencies.
 
 The checked-in frontend is included in the wheel. Installed users do not need
 Node.js, a CDN, a model checkout or generated application classes. The SDL runtime
@@ -41,6 +49,27 @@ export PYTHONPATH="$PWD/sdl/runtime/filter/python:$PWD/sdl/build/filter/release:
 No HTTP request downloads dependencies or invokes a compiler.
 
 ## Start
+
+With the checkout environment loaded, start the application separately and run:
+
+```sh
+ose-ws
+```
+
+The shortcut passes `--root "$OSE_APP_ROOT"`. On the first `serve` without an
+explicit `--config`, the console creates `ose-ws.json` and its login token in
+that application. The initial display name comes from the application directory.
+Subsequent launches preserve both files. An explicit configuration, `init` and
+`check` retain their existing-file checks; `check` never creates missing files.
+
+Application mode resolves the configured application's current parameter client
+token from its compiled plan, then its local deployment defaults when no plan
+exists. Explicit environment credentials take precedence. The process-name
+prefix also follows the configured plan/deployment unless explicitly set.
+These defaults are scoped to the console invocation.
+
+The installed command also accepts `ose-ws --root /path/to/application`. Without
+`--root`, it keeps the standalone, explicit-configuration workflow below.
 
 Run from the application directory, where `build/endpoint.json` identifies the
 running local broker:

@@ -59,5 +59,5 @@ done
             script = 'set -eu\nsource "$APP_ENV"\nose-ws --port 8081 --config "my console.json"\n'
             result = subprocess.run(['bash', '--noprofile', '--norc', '-c', script],
                                     cwd=temporary, env=env, capture_output=True, text=True, check=True)
-            self.assertEqual(json.loads(result.stdout), [str(ROOT / 'tools/web_console.py'),
+            self.assertEqual(json.loads(result.stdout), [str(ROOT.parent / 'ose-ws/tools/console.py'),
                 '--port', '8081', '--config', 'my console.json'])

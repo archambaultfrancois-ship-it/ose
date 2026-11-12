@@ -85,3 +85,14 @@ class DirectoryTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             self.assertEqual(cli.main(['check', '--config', str(self.config)]), 0)
         self.assertFalse((self.caller / '.ose-ws').exists())
+
+    def test_init_refuses_a_broken_configuration_symlink_in_both_modes(self):
+        target = self.caller / 'missing.json'
+        link = self.caller / 'linked.json'
+        link.symlink_to(target)
+        for options in ([], ['--root', str(self.application)]):
+            with self.subTest(options=options), redirect_stderr(io.StringIO()):
+                self.assertEqual(cli.main(['init', '--config', str(link), *options]), 3)
+            self.assertTrue(link.is_symlink())
+            self.assertFalse(target.exists())
+            self.assertFalse((self.caller / '.ose-ws/access.token').exists())

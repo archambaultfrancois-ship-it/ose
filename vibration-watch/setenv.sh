@@ -30,8 +30,3 @@ else
     unset -f _app_source_environment
     return 1
 fi
-
-# The console uses the same PATH Python as the application and editor.
-ose-ws() {
-    "$PYTHON" "$OSE_APP_ROOT/tools/web_console.py" "$@"
-}

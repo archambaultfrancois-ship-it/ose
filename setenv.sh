@@ -77,6 +77,10 @@ ose-editor() {
     "$PYTHON" "$FRAMEWORK_ROOT/ose-editor/tools/editor.py" "$@"
 }
 
+ose-ws() {
+    "$PYTHON" "$FRAMEWORK_ROOT/ose-ws/tools/console.py" "$@"
+}
+
 # Application commands resolve credentials afresh on every invocation.
 if [[ ${_ose_env_parameter_token_auto+x} &&
         "${OSE_PARAMETER_TOKEN-}" == "${_ose_env_parameter_token_auto-}" ]]; then
