@@ -51,11 +51,15 @@ def create_parser():
     parser = argparse.ArgumentParser(
         prog="ose", formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Build, run and observe SDL applications with OSE.",
-        epilog="""Application workflows:
+        epilog="""Typical application development workflow:
+  ose app env
+  ose app validate
+  ose app build
+  ose app simulate --duration 3
   ose app run
+  ose logs -f
   ose app record
-  ose app parameter get
-  ose app --root /path/to/application env
+  ose replay capture.mcap
 
 Explicit model/plan workflow:
   ose validate --model model.json --deployment deployment.json
@@ -303,6 +307,16 @@ For remote distributed execution, start serve and worker instead of run.""")
     command.add_argument('--tls-key')
     from ose.app import add_parser
     add_parser(commands)
+    from ose.cli_help import group_commands
+    group_commands(parser, commands, [
+        ('1. Application environment', ('app', 'completion')),
+        ('2. Validation and build', ('validate', 'build')),
+        ('3. Local execution and simulation', ('run', 'distributed-local')),
+        ('4. Observation and control', ('top', 'logs', 'measure', 'inspect', 'parameter', 'component', 'cluster-status')),
+        ('5. Recording and replay', ('record', 'replay')),
+        ('6. Distributed deployment', ('export-kubernetes', 'serve', 'worker')),
+        ('7. Runtime internals', ('adapter',)),
+    ])
     return parser
 
 

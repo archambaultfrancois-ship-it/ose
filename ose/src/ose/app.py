@@ -89,6 +89,15 @@ def add_parser(commands):
     command.add_argument('-a', '--full', action='store_true')
     command.add_argument('-f', '--format', choices=('text', 'json', 'table'), default='text')
     command.add_argument('-i', '--indent-width', type=int)
+    from ose.cli_help import group_commands
+    group_commands(app, actions, [
+        ('1. Application environment', ('env',)),
+        ('2. Validation and build', ('validate', 'build')),
+        ('3. Execution and simulation', ('simulate', 'run', 'distributed')),
+        ('4. Observation and control', ('logs', 'parameter', 'component')),
+        ('5. Recording and capture analysis', ('record',)),
+        ('6. Advanced Makefile commands', ('make',)),
+    ])
 
 
 class Application:
