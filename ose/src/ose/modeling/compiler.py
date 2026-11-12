@@ -14,6 +14,7 @@ from ose.modeling.validation import validate_graph
 from ose.modeling.containers import generate_python, scaffold_handler
 from ose.modeling.native_containers import generate_c, generate_rust, scaffold_native
 from ose.modeling.managed_containers import generate_java, generate_ada, scaffold_managed
+from ose.modeling.incremental import stable_sources, build_c
 
 BACKENDS = {"c": generate_c, "rust": generate_rust, "java": generate_java, "ada": generate_ada}
 
@@ -122,7 +123,8 @@ def compile_plan(model_path, deployment_path, sdl_root, destination):
                 node["command"] = [sys.executable, str(wrapper)]
             else:
                 kwargs = {"identity": execution["container"].get("class", execution["container"].get("unit"))} if language in ("java", "ada") else {}
-                generated = BACKENDS[language](name, node, handler, codec.root, schemas, component_dir, **kwargs)
+                with stable_sources(component_dir):
+                    generated = BACKENDS[language](name, node, handler, codec.root, schemas, component_dir, **kwargs)
                 types, node["command"], generated_build = generated["types"], generated["command"], generated["build"]
             node["container"] = {**execution["container"], "handler": str(handler), "types": types}
         else:
@@ -194,7 +196,10 @@ def build(model, deployment, sdl_root, destination, component=None):
                 scaffold_native(node, container["handler"], container["types"], container["language"])
         env = dict(os.environ, **node["env"])
         for command in node["build"]:
-            subprocess.run(command, cwd=node["cwd"], env=env, check=True)
+            if node.get('container', {}).get('language') == 'c' and command is node['build'][-1]:
+                build_c(command, cwd=node['cwd'], env=env)
+            else:
+                subprocess.run(command, cwd=node["cwd"], env=env, check=True)
     path = Path(destination).resolve() / "plan.json"
     path.write_text(json.dumps(plan, indent=2) + "\n")
     return path

@@ -38,6 +38,10 @@ To use another framework checkout with the command-line tools, set
 paths live in `build/`. Rebuild after moving a checkout. The workflow uses the
 public `python -m ose.cli` interface from the selected framework checkout.
 
+`make clean` removes the entire application `build/` directory, including compiled
+components, compilation caches, traces, generated certificates and any captures
+saved there. The next build regenerates its artifacts.
+
 For local development, load the application environment and shortcuts in each
 Bash terminal from `vibration-watch`:
 

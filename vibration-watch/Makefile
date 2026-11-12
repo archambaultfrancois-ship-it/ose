@@ -12,7 +12,7 @@ CONFIG_OPTIONS = --scenario "$(SCENARIO)" --routing "$(ROUTING)"
 OPTIONS = $(CONFIG_OPTIONS) --duration "$(DURATION)" --workers "$(WORKERS)"
 SYNC_OPTIONS = $(if $(filter 1 yes true,$(PARAMS_SYNC)),--params-sync "$(PARAMS_DIR)")
 
-.PHONY: validate build run simulate replay replay-build demo-local demo-distributed test test-unit test-integration test-replay test-cluster certs images push-images render deploy help
+.PHONY: validate build run simulate replay replay-build demo-local demo-distributed test test-unit test-integration test-replay test-cluster certs images push-images render deploy clean help
 validate build:
 	"$(PYTHON)" tools/vibration.py $@ --profile "$(PROFILE)" $(CONFIG_OPTIONS)
 simulate:
@@ -53,8 +53,10 @@ deploy: render certs
 	kubectl apply -f build/namespace.json
 	kubectl apply -f build/tls-secrets.json
 	kubectl apply -f build/kubernetes.json
+clean:
+	rm -rf -- build
 help:
-	@echo 'make validate build run simulate demo-distributed test'
+	@echo 'make validate build run simulate demo-distributed test clean'
 	@echo 'make replay RECORDING=signals.pcapng DURATION=3; make test-replay'
 	@echo 'make replay-build PROFILE=local (or cluster), then ose replay --mode realtime'
 	@echo 'make demo-distributed FAIL_NODE=analyzer_1 DURATION=8'

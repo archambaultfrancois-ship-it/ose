@@ -261,6 +261,30 @@ class NativeContainerTests(unittest.TestCase):
         self.assertEqual([op for op, _ in messages], ["R"])
         self.assertIn(b"STOP source", result.stderr)
 
+    def test_identical_build_skips_compilation_and_rebuilds_only_the_edited_handler(self):
+        for language, fixture in self.fixtures.items():
+            with self.subTest(language=language):
+                root, plan = fixture['root'], fixture['plan']
+                binaries = {name: Path(node['command'][0]) for name, node in plan['components'].items()}
+                # Cargo can refresh the final binary even when the crate is
+                # fresh; rustc's dependency file changes only on compilation.
+                artifacts = (binaries if language == 'c' else {
+                    name: next((root / 'build/rust-target/release/deps').glob('ose_component_' + name + '-*.d'))
+                    for name in binaries})
+                before = {name: path.stat().st_mtime_ns for name, path in artifacts.items()}
+                build(root / 'model.json', root / 'deployment.json', SDL_ROOT, root / 'build')
+                self.assertEqual({name: path.stat().st_mtime_ns for name, path in artifacts.items()}, before)
+                handler = root / ('source' + fixture['suffix'])
+                original = handler.read_text()
+                try:
+                    handler.write_text(original + '\n// edited handler\n')
+                    build(root / 'model.json', root / 'deployment.json', SDL_ROOT, root / 'build')
+                    self.assertNotEqual(artifacts['source'].stat().st_mtime_ns, before['source'])
+                    for name in ('echo', 'sink'):
+                        self.assertEqual(artifacts[name].stat().st_mtime_ns, before[name])
+                finally:
+                    handler.write_text(original)
+
     def test_rebuild_preserves_native_user_files(self):
         for language, fixture in self.fixtures.items():
             with self.subTest(language=language):

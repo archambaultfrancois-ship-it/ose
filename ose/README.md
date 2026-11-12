@@ -213,6 +213,17 @@ if the file is missing. Runnable examples use single-input callbacks and explici
 timers. See [model v2 migration](docs/model-v2-migration.md) for the model and API
 changes, and [callback containers](docs/callbacks.md) for generation and lifecycle rules.
 
+Native builds are incremental for generated C and Rust containers. C compilation
+is skipped when the command, environment, compiler identity, source/header contents
+and executable are unchanged. Headers are discovered by the C preprocessor,
+including transitive and system headers. Each component keeps a disposable
+`.ose-c-build.json` beside its executable; a missing or damaged executable rebuilds.
+A changed dependency rebuilds that complete C component, rather than individual
+objects. Rust sources regenerated with identical contents retain their timestamps,
+allowing Cargo to reuse its existing artifacts. Plan resolution and generation
+still run on every build. Custom build commands and Java/Ada builds retain their
+existing behavior.
+
 Push inputs can set `"timeout": 0.5` (seconds). At expiry, their callback receives
 a timeout reference without a message. Push inputs activate independently;
 Pull inboxes are accessed explicitly during another callback. Output activation
