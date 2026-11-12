@@ -307,9 +307,23 @@ include `build/distributed-logs/params-sync.log`; local sync messages appear on
 stderr. Synchronization is available for real-time `run` and `distributed-local`,
 and is disabled by default.
 
-After sourcing the environment, `ose app make run PARAMS_SYNC=1 DURATION=60` forwards
-these Make options. The framework's generic `app-run` shortcut starts OSE directly;
-use `make run` or `ose app make run` to enable Vibration's managed synchronizer.
+OSE now owns the synchronizer lifecycle and the local cluster orchestration.
+The application launcher retains scenario preparation and the deliberate worker
+replacement exercise (`--fail-node`); existing Make commands remain available.
+After sourcing the environment, the generic entry points are:
+
+```sh
+ose app run --params-sync parameters --duration 60 SCENARIO=normal
+ose app distributed --duration 60 PROFILE=cluster SCENARIO=normal
+ose app make demo-distributed PARAMS_SYNC=1 DURATION=60
+```
+
+For the synchronized cluster demonstration, retain the last command: it also
+prepares the loopback operator token. A plain `PROFILE=cluster` build keeps the
+production configuration without that development token. Generic launchers honor
+an explicitly supplied `OSE_PARAMETER_TOKEN`; Vibration's demonstration wrapper
+selects its own prepared operator token. `app-run --params-sync parameters` also
+uses the generic OSE synchronizer.
 
 ## Project resources
 

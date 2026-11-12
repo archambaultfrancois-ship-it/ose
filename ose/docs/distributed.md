@@ -89,6 +89,43 @@ These RPCs do not provide external subscriptions or dynamic topic declarations.
 publisher sessions. Recordings and live replay do not join the READY barrier.
 See [replay](replay.md) for timing, speed and interactive controls.
 
+## Managed local development cluster
+
+For loopback development, OSE can supervise the coordinator and all workers:
+
+```sh
+ose distributed-local --plan build/plan.json --duration 30
+ose distributed-local --params-sync parameters --params-client operator
+ose app distributed --duration 30 PROFILE=cluster
+```
+
+The low-level command uses an already compiled distributed plan. `ose app
+distributed` first invokes the application's `build` Makefile target (or
+`--build-target TARGET`), forwarding its `NAME=VALUE` assignments. The example
+assignment `PROFILE=cluster` is an application convention, not an OSE requirement.
+The application must produce a distributed plan; local plans are rejected.
+Application-specific demonstrations remain available through `ose app make`.
+
+The coordinator binds an automatically assigned port (`--port` overrides it).
+Workers come from the compiled plan, and execution is supervised after the
+coordinator reports the graph enabled. The duration defaults to 300 seconds
+after readiness. Any child exit fails the launch; duration, Ctrl+C and SIGTERM
+stop and reap all children. Workers are not automatically replaced by this
+launcher. An application exercise can use the internal `LocalCluster.restart`
+operation for deliberate replacement.
+
+This command uses insecure transport on loopback only. For remote or production
+execution, use the authenticated `serve`/`worker` commands below.
+
+Logs are reset for the current processes under `BUILD/distributed-logs`, or
+`--logs DIR`. `BUILD` is the plan's build directory. The launcher publishes its
+actual port in `BUILD/distributed-endpoint.json`; use that port explicitly for
+`cluster-status --insecure --port PORT`. Successful completion writes
+`distributed-status.json` and `distributed-processes.json` in `BUILD`.
+With synchronization enabled, its messages go to `params-sync.log` and its
+failure stops the cluster too. Relative sync and custom log directories follow
+the launch directory, including with `ose app --root`.
+
 ## Processes and authentication
 
 Build normally, then start a coordinator and one worker per logical component:

@@ -10,7 +10,7 @@ GROUPS = {
     "runtime": (
         "test_application_directory", "test_component_recording", "test_containers",
         "test_event_control", "test_example_inputs", "test_input_callbacks",
-        "test_input_timeouts", "test_logs", "test_measurements",
+        "test_input_timeouts", "test_logs", "test_managed_launch", "test_measurements",
         "test_native_containers", "test_ose", "test_parameter_sync",
         "test_parameters", "test_process_identity", "test_shutdown",
     ),

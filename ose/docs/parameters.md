@@ -267,6 +267,31 @@ client and token. The sync directory is resolved before entering the application
 so `--dir .` uses the terminal's current directory. Run it in a separate terminal
 or under a supervisor; Ctrl+C and SIGTERM close watchers and connections.
 
+To tie the synchronizer to an execution, use:
+
+```sh
+ose run --params-sync parameters --duration 60
+ose app run --params-sync parameters --params-client maintenance --params-initial app
+ose distributed-local --params-sync parameters --duration 60
+ose app distributed --params-sync parameters PROFILE=cluster
+```
+
+These real-time launchers select the endpoint actually opened by the current
+execution, including an automatically assigned port. The synchronizer starts
+after component readiness; initial restoration can follow `on_start` and the
+first callbacks. Existing files win by default; `--params-initial app` instead
+exports application values. Invalid files retain the synchronizer's usual
+per-file diagnostics and do not themselves terminate the application.
+An unexpected synchronizer process exit stops the application; duration and
+interruption stop the synchronizer and all other owned processes.
+
+`--params-client` defaults to `OSE_PARAMETER_CLIENT` or `operator`.
+`OSE_PARAMETER_TOKEN`, including an explicitly empty value, takes precedence
+over the selected client's token in the current plan. `--params-token-env NAME`
+selects an explicitly managed alternative variable. The sync directory follows
+the launch directory, even with `ose app --root`. The managed option requires
+the same optional watcher and is rejected in simulated mode.
+
 Each path maps to one file: `machines/press_1/detection` becomes
 `parameters/machines/press_1/detection.json`. The file must contain exactly one
 path-keyed export, and the embedded path must match the filename. Complete SDL

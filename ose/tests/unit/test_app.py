@@ -190,7 +190,7 @@ class ApplicationTests(unittest.TestCase):
             build.assert_not_called()
 
     def test_all_help_commands_skip_builds_dependencies_and_configuration(self):
-        for arguments in (['--help'], ['run', '--help'], ['record', '--help'],
+        for arguments in (['--help'], ['run', '--help'], ['distributed', '--help'], ['record', '--help'],
                           ['record', 'inspect', '--help'], ['parameter', 'get', '--help']):
             with self.subTest(arguments=arguments), contextlib.redirect_stdout(io.StringIO()), \
                     patch('ose.app.subprocess.run') as process, self.assertRaises(SystemExit) as stopped:
@@ -229,3 +229,39 @@ class ApplicationTests(unittest.TestCase):
         self.assertFalse(raw.export)
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             parser.parse_args(['parameter', 'get'])
+
+    def test_managed_sync_is_rejected_in_simulation_before_building(self):
+        with patch('ose.app.Application.make') as build, contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.command('run', '--mode', 'simulated', '--duration', '1', '--params-sync'), 1)
+        build.assert_not_called()
+
+    def test_missing_sync_extra_is_reported_before_building(self):
+        for action in ('run', 'distributed'):
+            with self.subTest(action=action), patch('ose.execution.launch.importlib.util.find_spec', return_value=None), \
+                    patch('ose.app.Application.make') as build, contextlib.redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(self.command(action, '--params-sync'), 1)
+                self.assertIn('optional watcher', errors.getvalue())
+            build.assert_not_called()
+
+    def test_distributed_builds_then_uses_generic_cluster_instead_of_demo_target(self):
+        self.configuration({'execution': 'distributed'})
+        caller = Path.cwd()
+        for options, duration in (([], 300), (['DURATION=2'], 2), (['--duration', '3'], 3)):
+            with self.subTest(options=options), patch('ose.app.Application.make') as build, \
+                    patch('ose.execution.local_cluster.run', new=AsyncMock()) as launch:
+                self.assertEqual(self.command('distributed', *options, 'PROFILE=cluster'), 0)
+            build.assert_called_once_with(['build'], ['PROFILE=cluster'])
+            launch.assert_awaited_once_with(str(self.root / 'build/plan.json'), duration,
+                port=0, logs=None, lease_seconds=2, params_sync=None)
+            self.assertEqual(Path.cwd(), caller)
+
+    def test_managed_sync_storage_follows_caller(self):
+        self.configuration({'execution': 'local'})
+        caller = Path.cwd()
+        with patch('ose.app.Application.make'), patch('ose.execution.launch.require_sync'), \
+                patch('ose.execution.supervisor.run', new=AsyncMock()) as launch:
+            self.assertEqual(self.command('run', '--params-sync', 'parameter files', '--params-client', 'maintenance',
+                                         '--params-initial', 'app'), 0)
+        self.assertEqual(launch.call_args.kwargs['params_sync'],
+                         dict(directory=str(caller / 'parameter files'), client='maintenance',
+                              initial='app', token_env='OSE_PARAMETER_TOKEN'))

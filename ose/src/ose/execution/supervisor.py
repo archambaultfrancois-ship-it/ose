@@ -11,7 +11,7 @@ from ose.execution.broker import Broker
 
 
 async def run(plan_path, duration=None, port=0, *, working_directory=None, record=None, record_file=None,
-              record_from=None, record_until=None):
+              record_from=None, record_until=None, params_sync=None):
     plan_path = Path(plan_path).resolve()
     plan = read_plan(plan_path)
     activation_order(plan)
@@ -26,6 +26,9 @@ async def run(plan_path, duration=None, port=0, *, working_directory=None, recor
     waiting = []
     capture = None
     capture_task = None
+    from ose.execution.launch import Processes, start_sync
+    sidecars = Processes()
+    sync_task = None
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -57,12 +60,17 @@ async def run(plan_path, duration=None, port=0, *, working_directory=None, recor
         waiting.extend((startup, stopped))
         done, _ = await asyncio.wait(waiting, timeout=20, return_when=asyncio.FIRST_COMPLETED)
         if stopped in done:
+            if params_sync:
+                raise KeyboardInterrupt
             return
         if any(task in done for task in waiting[:-2]):
             raise RuntimeError("component failed during startup")
         if startup not in done:
             raise RuntimeError("component readiness timeout")
         startup.result()
+        if params_sync:
+            await start_sync(sidecars, plan_path=plan_path, port=broker.port, **params_sync)
+            sync_task = asyncio.create_task(sidecars.monitor())
         broker.recording_ready = True
         capture = LiveCapture(record, record_file, host='127.0.0.1', port=broker.port, sdl_root=plan['sdl_root'],
                               record_from=record_from, record_until=record_until)
@@ -73,15 +81,24 @@ async def run(plan_path, duration=None, port=0, *, working_directory=None, recor
         broker.enabled = True
         broker.recording_ready = False
         print(json.dumps({"running": True, **endpoint}), flush=True)
-        done, _ = await asyncio.wait([stopped, *waiting[:-2], *([capture_task] if capture_task else [])], timeout=duration,
+        done, _ = await asyncio.wait([stopped, *waiting[:-2], *([capture_task] if capture_task else []),
+                                     *([sync_task] if sync_task else [])], timeout=duration,
                                      return_when=asyncio.FIRST_COMPLETED)
+        if sync_task is not None and sync_task in done:
+            sync_task.result()
         if capture_task is not None and capture_task in done:
             raise ValueError(f"batch recording stopped: {capture.recorder.capture.error or 'unexpected end'}")
         if stopped not in done and done:
             raise RuntimeError("component failed; stopping OSE")
+        if stopped in done and params_sync:
+            raise KeyboardInterrupt
     finally:
         broker.enabled = False
         broker.recording_ready = False
+        if sync_task is not None:
+            sync_task.cancel()
+            await asyncio.gather(sync_task, return_exceptions=True)
+        await sidecars.close()
         capture_error = None
         if capture is not None:
             try:

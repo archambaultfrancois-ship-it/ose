@@ -2,17 +2,14 @@
 """Application workflow using the public ose CLI and reproducible inputs."""
 import argparse
 import base64
-from contextlib import contextmanager, nullcontext
+import asyncio
 import json
 import math
 import os
 from pathlib import Path
-import signal
-import socket
 import subprocess
 import sys
 import tempfile
-import time
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -163,170 +160,35 @@ def compile_app(args, *, validate=False):
     cli(args, *options)
 
 
-def terminate(process):
-    if process.poll() is None:
-        process.terminate()
-    try:
-        process.wait(timeout=6)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=3)
-
-
-@contextmanager
-def launch_signals():
-    def interrupt(signum, frame):
-        raise KeyboardInterrupt
-    previous = {sig: signal.signal(sig, interrupt) for sig in (signal.SIGINT, signal.SIGTERM)}
-    try:
-        yield
-    finally:
-        for sig, handler in previous.items():
-            signal.signal(sig, handler)
-
-
-def require_params_sync(args):
-    if not (framework(args) / "ose/src/ose/parameters/sync.py").is_file():
-        raise ValueError("--params-sync requires an OSE framework with parameters sync support")
-    result = subprocess.run([sys.executable, "-c", "import inotify_simple"],
-                            env=environment(args), capture_output=True)
-    if result.returncode:
-        raise ValueError('install the optional watcher with make setup from the framework checkout')
-
-
-def available_port():
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
-
-
-def wait_for_listener(process, port):
-    deadline = time.monotonic() + 20
-    while True:
-        if process.poll() is not None:
-            raise RuntimeError("application exited before its parameter endpoint became available")
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=.1):
-                return
-        except OSError:
-            if time.monotonic() >= deadline:
-                raise RuntimeError("application parameter endpoint startup timeout")
-            time.sleep(.05)
-
-
-def start_params_sync(args, port, *, distributed=False, stream=None):
-    plan = ROOT / "build/plan.json"
-    token = read(plan)["parameter_clients"]["operator"].get("token")
-    if not token:
-        raise ValueError("local parameter synchronization requires the operator token in the plan")
-    options = [sys.executable, "-m", "ose.cli", "parameter", "sync", "--dir", args.params_sync,
-               "--client", "operator", "--plan", str(plan), "--host", "127.0.0.1", "--port", str(port)]
-    if distributed:
-        options += ["--distributed", "--insecure"]
-    return subprocess.Popen(options, cwd=ROOT, env=dict(environment(args), OSE_PARAMETER_TOKEN=token),
-                            stdout=stream, stderr=stream, start_new_session=True)
-
-
-def run_with_params_sync(args):
-    port = args.port or available_port()
-    processes = []
-    try:
-        application = subprocess.Popen([sys.executable, "-m", "ose.cli", "run", "--plan", "build/plan.json",
-            "--duration", str(args.duration), "--port", str(port), *recording_options(args)], cwd=ROOT,
-            env=environment(args), start_new_session=True)
-        processes.append(application)
-        wait_for_listener(application, port)
-        synchronizer = start_params_sync(args, port)
-        processes.append(synchronizer)
-        while application.poll() is None:
-            if synchronizer.poll() is not None:
-                raise RuntimeError("params-sync exited; stopping the application")
-            time.sleep(.05)
-        if application.returncode:
-            raise RuntimeError(f"application exited with status {application.returncode}")
-    finally:
-        for process in reversed(processes):
-            terminate(process)
-
-
 def distributed_local(args):
+    """Prepare the application; OSE owns cluster startup, supervision and shutdown."""
     args.profile = "cluster"
     compile_app(args)
-    logs = ROOT / "build/distributed-logs"
-    logs.mkdir(exist_ok=True)
-    port = args.port or available_port()
-    processes, streams = {}, []
-    command = [sys.executable, "-m", "ose.cli"]
-    def launch(name, options):
-        stream = (logs / (name + ".log")).open("ab")
-        streams.append(stream)
-        process = subprocess.Popen(command + options, cwd=ROOT, env=environment(args),
-                                   stdout=stream, stderr=stream, start_new_session=True)
-        processes[name] = process
-        return process
-    try:
-        # Fresh logs keep observations from previous runs out of the demonstration.
-        for path in logs.glob("*.log"):
-            path.write_bytes(b"")
-        launch("coordinator", ["serve", "--plan", "build/plan.json", "--port", str(port), "--insecure", "--lease-seconds", "2"])
-        deadline = time.monotonic() + 10
-        while True:
-            if processes["coordinator"].poll() is not None:
-                raise RuntimeError((logs / "coordinator.log").read_text())
-            try:
-                with socket.create_connection(("127.0.0.1", port), timeout=.1):
-                    break
-            except OSError:
-                if time.monotonic() >= deadline:
-                    raise RuntimeError("coordinator startup timeout")
-                time.sleep(.05)
-        if args.params_sync is not None:
-            stream = (logs / "params-sync.log").open("ab")
-            streams.append(stream)
-            processes["params-sync"] = start_params_sync(args, port, distributed=True, stream=stream)
-        nodes = read(ROOT / "model.json")["components"]
-        def start(name):
-            return launch(name, ["worker", "--plan", "build/plan.json", "--node", name,
-                                 "--port", str(port), "--insecure"])
-        for name in nodes:
-            start(name)
-        initial_pids = {name: p.pid for name, p in processes.items()}
-        status = None
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            if any(p.poll() is not None for p in processes.values()):
-                raise RuntimeError("a distributed process exited; inspect build/distributed-logs")
-            result = cli(args, "cluster-status", "--port", port, "--insecure", capture_output=True, text=True)
-            status = json.loads(result.stdout)
-            if status["enabled"]:
-                break
-            time.sleep(.1)
+    from ose.execution.local_cluster import run
+    plan = ROOT / "build/plan.json"
+    sync = None
+    if args.params_sync is not None:
+        sync = dict(directory=str(Path(args.params_sync).resolve()),
+                    token=read(plan)["parameter_clients"]["operator"].get("token"))
+
+    async def demonstration(cluster):
+        if args.fail_node:
+            if args.fail_node not in cluster.plan["components"]:
+                raise ValueError("unknown fail-node")
+            await asyncio.sleep(args.duration / 2)
+            await cluster.restart(args.fail_node)
+            await asyncio.sleep(args.duration / 2)
         else:
-            raise RuntimeError("workers did not become ready; inspect build/distributed-logs")
-        started = time.monotonic()
-        replaced = False
-        while time.monotonic() - started < args.duration:
-            if any(p.poll() is not None for p in processes.values()):
-                raise RuntimeError("a distributed process exited; inspect build/distributed-logs")
-            if args.fail_node and not replaced and time.monotonic() - started > args.duration / 2:
-                if args.fail_node not in nodes:
-                    raise ValueError("unknown fail-node")
-                terminate(processes[args.fail_node])
-                start(args.fail_node)
-                replaced = True
-            time.sleep(.05)
-        result = cli(args, "cluster-status", "--port", port, "--insecure", capture_output=True, text=True)
-        status = json.loads(result.stdout)
-        write(ROOT / "build/distributed-status.json", status)
-        write(ROOT / "build/distributed-processes.json", {"initial": initial_pids,
-              "final": {name: p.pid for name, p in processes.items()}})
-        print(json.dumps(status, indent=2))
+            await asyncio.sleep(args.duration)
+    previous = dict(os.environ)
+    try:
+        os.environ.update(environment(args))
+        asyncio.run(run(plan, args.duration, port=args.port or 0, params_sync=sync,
+                        exercise=demonstration))
     finally:
-        for name, process in reversed(list(processes.items())):
-            terminate(process)
-        for stream in streams:
-            stream.close()
-        observer = logs / "observer.log"
+        os.environ.clear()
+        os.environ.update(previous)
+        observer = ROOT / "build/distributed-logs/observer.log"
         if observer.exists():
             print(observer.read_text(), file=sys.stderr, end="")
 
@@ -480,7 +342,7 @@ def main():
         if recording_options(args) and args.task not in ("run", "simulate", "replay"):
             raise ValueError("recording options are supported for run, simulate and replay only")
         if args.task in ('run', 'distributed-local', 'simulate', 'replay'):
-            sys.path.insert(0, str(framework(args) / 'ose/src'))
+            sys.path[:0] = [str(framework(args) / 'ose/src'), str(framework(args) / 'build/python-deps')]
             from ose.execution.identity import identify
             identify('launch', {'process_names': {'prefix': 'vw'}})
         finite(args.workers, 1, 256, "workers", True)
@@ -491,7 +353,8 @@ def main():
                 raise ValueError("--params-sync is supported for run and distributed-local only")
             if not args.params_sync:
                 raise ValueError("--params-sync directory must not be empty")
-            require_params_sync(args)
+            from ose.execution.launch import require_sync
+            require_sync(args.params_sync)
         if args.task == "recording-deps":
             subprocess.run(["make", "-C", str(framework(args) / "sdl"),
                             "PYTHON=" + sys.executable, "recording-deps"], check=True)
@@ -506,8 +369,14 @@ def main():
             if args.task == "simulate":
                 options += ["--mode", "simulated", "--workers", args.workers, "--trace", ROOT / "build/simulation.jsonl"]
             if args.params_sync is not None:
-                with launch_signals():
-                    run_with_params_sync(args)
+                options += ["--params-sync", args.params_sync, "--params-client", "operator"]
+                if args.port is not None:
+                    options += ["--port", args.port]
+                # Replace the launcher so terminal signals reach the OSE supervisor.
+                env = environment(args)
+                env["OSE_PARAMETER_TOKEN"] = read(ROOT / "build/plan.json")["parameter_clients"]["operator"]["token"]
+                os.chdir(ROOT)
+                os.execve(sys.executable, [sys.executable, "-m", "ose.cli", *map(str, options)], env)
             else:
                 cli(args, *options)
         elif args.task == "replay":
@@ -526,8 +395,7 @@ def main():
             options += recording_options(args)
             cli(args, *options)
         elif args.task == "distributed-local":
-            with launch_signals() if args.params_sync is not None else nullcontext():
-                distributed_local(args)
+            distributed_local(args)
         elif args.task in ("set-threshold", "set-sensor"):
             set_parameters(args)
         elif args.task == "certs":

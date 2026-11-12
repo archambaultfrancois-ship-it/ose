@@ -71,7 +71,8 @@ From another terminal while the application runs:
 Use ose COMMAND --help for options and examples.
 Use ose parameter ACTION --help for parameter operations.
 Local observation commands use build/endpoint.json by default.
-For distributed execution, start serve and worker instead of run.""")
+For a loopback development cluster, use distributed-local.
+For remote distributed execution, start serve and worker instead of run.""")
     commands = parser.add_subparsers(dest="action", required=True, title="commands", metavar="COMMAND")
     from ose.logs import add_parser as log_parser
     log_parser(commands)
@@ -129,6 +130,17 @@ For distributed execution, start serve and worker instead of run.""")
     command.add_argument("--namespace", default="ose-app", help="generated application namespace (default: ose-app)")
     command.add_argument("--image-pull-secret", action="append", default=[], help="existing image pull secret name; repeat for multiple secrets")
     command.add_argument("--output", required=True, help="output Kubernetes manifest JSON file")
+    from ose.execution.launch import add_sync_options
+    command = _command(commands, 'distributed-local', 'manage a loopback development cluster',
+        'Start one coordinator and one worker per component of a compiled distributed plan.\n'
+        'Loopback-only development mode; stop all children on interruption or child failure.',
+        ['ose distributed-local --duration 30', 'ose distributed-local --params-sync parameters'])
+    command.add_argument('--plan', default='build/plan.json', help='compiled distributed plan')
+    command.add_argument('--duration', type=float, default=300, help='execution seconds after readiness (default: 300)')
+    command.add_argument('--port', type=int, default=0, help='coordinator port (default: automatically assigned)')
+    command.add_argument('--logs', help='log directory (default: plan build directory/distributed-logs)')
+    command.add_argument('--lease-seconds', type=float, default=2, help='worker lease duration (default: 2 seconds)')
+    add_sync_options(command)
     command = _command(commands, "run", "run a local application in real time or simulated time",
         "Execute a compiled plan; real-time mode starts the local broker and component processes.\n"
         "Real-time execution runs until interrupted unless --duration is provided.\n"
@@ -151,6 +163,7 @@ For distributed execution, start serve and worker instead of run.""")
     command.add_argument("--max-tick-output-bytes", type=int, help="output byte limit per component tick (default: 16777216; simulated mode only)")
     _execution_controls(command)
     _batch_recording(command)
+    add_sync_options(command)
     command = _command(commands, "replay", "replay a recording into simulated or live external inputs",
         "Replay matching external input topic names; use --map to select or rename topics.\n"
         "Real-time replay is the default and publishes into an already running application.\n"
@@ -345,11 +358,27 @@ def execute(args, parser=None):
                     finally:
                         await client.close()
                 asyncio.run(status())
+        elif args.action == 'distributed-local':
+            from ose.execution.launch import sync_options
+            from ose.execution.local_cluster import run
+            if not math.isfinite(args.duration) or args.duration <= 0:
+                raise ValueError('duration must be finite and positive')
+            if not math.isfinite(args.lease_seconds) or args.lease_seconds < .3:
+                raise ValueError('lease must be finite and at least 0.3 seconds')
+            if not 0 <= args.port < 65536:
+                raise ValueError('port must be between 0 and 65535')
+            asyncio.run(run(args.plan, args.duration, port=args.port, logs=args.logs,
+                            lease_seconds=args.lease_seconds, params_sync=sync_options(args) or None))
         elif args.action == "run":
             controlled = args.interactive or args.command is not None or args.command_file is not None
             if controlled and args.mode != "simulated":
                 raise ValueError("execution controls (--interactive, --command, --command-file) require simulated mode for run")
             execution_options = {}
+            if args.params_sync is not None:
+                from ose.execution.launch import sync_options
+                if args.mode != 'realtime':
+                    raise ValueError('--params-sync requires real-time mode')
+                execution_options['params_sync'] = sync_options(args)
             if any(value is not None for value in (args.record, args.record_file, args.record_from, args.record_until)):
                 execution_options.update(record=args.record, record_file=args.record_file,
                                          record_from=args.record_from, record_until=args.record_until)

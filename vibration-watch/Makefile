@@ -13,7 +13,7 @@ SYNC_OPTIONS = $(if $(filter 1 yes true,$(PARAMS_SYNC)),--params-sync "$(PARAMS_
 
 .PHONY: validate build run simulate replay replay-build demo-local demo-distributed test test-unit test-integration test-replay test-cluster certs images push-images render deploy help
 validate build simulate:
-	"$(PYTHON)" tools/vibration.py $@ $(OPTIONS)
+	"$(PYTHON)" tools/vibration.py $@ --profile "$(PROFILE)" $(OPTIONS)
 run:
 	"$(PYTHON)" tools/vibration.py run $(OPTIONS) $(SYNC_OPTIONS)
 replay:

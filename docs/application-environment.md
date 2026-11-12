@@ -137,8 +137,9 @@ when the `ose` package is installed:
 ose app validate
 ose app build SCENARIO=normal
 ose app run --duration 60 SCENARIO=normal
+ose app run --params-sync parameters --duration 60
 ose app simulate DURATION=10
-ose app distributed --duration 300
+ose app distributed --duration 300 PROFILE=cluster
 ose app make -- -j4 build
 ose app --root /path/to/application env
 ```
@@ -150,9 +151,19 @@ checkout, see the [framework release guide](release.md). `make release`
 builds a platform-specific archive with all five SDK languages and all features
 selected by default; missing target compilers produce installation warnings.
 
-Build, validate, simulate and distributed use the application's Makefile targets.
+Build, validate and simulate use the application's Makefile targets.
+`ose app distributed` builds first, then OSE supervises a loopback coordinator
+and the workers declared in the compiled distributed plan. Make variables such
+as `PROFILE=cluster` select the application's distributed configuration; use
+`--build-target TARGET` if it has a dedicated build target. The duration defaults
+to 300 seconds after readiness. Application demonstrations remain available
+through `ose app make demo-distributed`.
 `ose app run` builds first, then executes `build/plan.json` until Ctrl+C by default;
-`app-run DURATION=60` remains accepted. The distributed demo defaults to 300 seconds.
+`app-run DURATION=60` remains accepted. Both real-time launchers accept
+`--params-sync [DIR]` to own a parameter synchronizer (default: `parameters`),
+using the current execution's endpoint. Its unexpected exit stops the
+application; duration, Ctrl+C and SIGTERM stop the synchronizer too. Sync storage
+follows the launch directory. See [parameter synchronization](../ose/docs/parameters.md#synchronize-a-tree-of-unit-parameter-files).
 Components run in the directory where you launch `ose app run` (or `app-run`), so
 relative file reads and writes in callbacks use that directory. Use
 `--working-directory PATH` to select another component directory, relative to the

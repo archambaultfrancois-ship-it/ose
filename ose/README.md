@@ -37,6 +37,8 @@ Use `ose app` as the application control point:
 
 ```sh
 ose app --root /path/to/application run --duration 60
+ose app run --params-sync parameters --duration 60
+ose app distributed --duration 60 PROFILE=cluster
 ose app record
 ose app record inspect capture.mcap --check
 ose app parameter get > parameters.json
@@ -56,6 +58,20 @@ Record prepares only missing services; parameter commands resolve client
 credentials on each invocation. Get exports `{path: block}`. Parameter JSON and
 capture paths are relative to the application, except sync storage, which follows
 the terminal directory.
+`run --params-sync [DIR]` owns a parameter synchronizer as part of the real-time
+execution; a synchronizer exit stops the application. `--params-client`,
+`--params-initial files|app` and `--params-token-env` select its identity and
+initialization policy. The default directory is `parameters`; simulated mode
+rejects synchronization.
+`distributed` builds the application, then starts a loopback development
+coordinator and one worker per component in its compiled distributed plan.
+It no longer invokes the application's `demo-distributed` target; use `app make
+demo-distributed` for an application-specific exercise. Make assignments such as
+`PROFILE=cluster` select the application's distributed build recipe; OSE does not
+interpret their names. `--build-target` selects another build target if needed.
+The default cluster duration is 300 seconds. Its workers retain the plan's
+component working directories; relative `--logs` follows the launch directory.
+See [local clusters](docs/distributed.md#managed-local-development-cluster).
 The shell keeps only `app-cd`, `app-build` and `app-run`, plus the `ose` checkout
 entry point. All workflow behavior also works from the installed package.
 

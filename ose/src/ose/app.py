@@ -40,17 +40,22 @@ def add_parser(commands):
     actions = app.add_subparsers(dest='app_action', required=True, metavar='ACTION')
     actions.add_parser('env', help='show application, framework and Python paths; never show credentials')
     _inherit(actions, 'logs', core['logs'], 'read or follow application component logs')
-    for name, target in (('build', 'build'), ('validate', 'validate'),
-                         ('simulate', 'simulate'), ('distributed', 'demo-distributed')):
+    for name, target in (('build', 'build'), ('validate', 'validate'), ('simulate', 'simulate')):
         command = actions.add_parser(name, help=f'run the application Makefile target {target}')
-        if name in ('simulate', 'distributed'):
-            command.add_argument('--duration', type=float, help='execution duration; distributed defaults to 300 seconds')
+        if name == 'simulate':
+            command.add_argument('--duration', type=float, help='execution duration')
         command.add_argument('variables', nargs='*', metavar='NAME=VALUE', help='application Makefile assignments')
     command = actions.add_parser('make', help='invoke the application Makefile')
     command.add_argument('arguments', nargs=argparse.REMAINDER, help='make arguments; use -- before flags')
     command = _inherit(actions, 'run', core['run'], 'build and run locally; Ctrl+C stops by default')
     command.description = 'Build with the application Makefile, then execute its plan from the launch directory. Unlimited by default.'
     command.add_argument('variables', nargs='*', metavar='NAME=VALUE', help='build Makefile assignments; DURATION=SECONDS is also accepted')
+    command = _inherit(actions, 'distributed', core['distributed-local'], 'build and manage a loopback development cluster')
+    command.set_defaults(duration=None)
+    command.description = core['distributed-local'].description
+    command.epilog = core['distributed-local'].epilog.replace('ose distributed-local', 'ose app distributed')
+    command.add_argument('--build-target', default='build', help='application Makefile build target (default: build)')
+    command.add_argument('variables', nargs='*', metavar='NAME=VALUE', help='Makefile assignments selecting the distributed deployment')
     parameter = _inherit(actions, 'parameter', core['parameter'], 'read, export, write, watch or synchronize application parameters')
     parameter.description = 'Use the application endpoint and selected client; get exports path-keyed blocks.'
     for action in parameter._actions:
@@ -178,6 +183,11 @@ class Application:
 def run(args):
     from ose.cli import execute
     context = Application(args)
+    if args.app_action in ('run', 'distributed') and args.params_sync is not None:
+        from ose.execution.launch import sync_options
+        if args.app_action == 'run' and args.mode != 'realtime':
+            raise ValueError('--params-sync requires real-time mode')
+        args.params_sync = sync_options(args)['directory']
     if args.app_action == 'run':
         directory = (context.caller / (args.working_directory or '.')).resolve()
         if not directory.is_dir():
@@ -238,12 +248,13 @@ def run(args):
                     raise ValueError('duration must be a positive finite number') from error
         if duration is not None and (not math.isfinite(duration) or duration <= 0):
             raise ValueError('duration must be a positive finite number')
-        if action == 'run':
+        if action in ('run', 'distributed'):
             variables = [value for value in variables if not value.startswith('DURATION=')]
-            context.make(['build'], variables)
-            args.action, args.duration = 'run', duration
+            context.make([args.build_target if action == 'distributed' else 'build'], variables)
+            args.action = 'distributed-local' if action == 'distributed' else 'run'
+            args.duration = 300 if action == 'distributed' and duration is None else duration
             args.plan = str(context.plan)
-            if args.scenario is not None:
+            if action == 'run' and args.scenario is not None:
                 args.scenario = str((context.root / args.scenario).resolve())
             # Build/configuration paths belong to the application; runtime
             # outputs and component relative paths belong to the caller.
@@ -251,7 +262,5 @@ def run(args):
             return execute(args)
         if duration is not None:
             variables.append(f'DURATION={duration:g}')
-        elif action == 'distributed':
-            variables.append('DURATION=300')
-        context.make([{'distributed': 'demo-distributed'}.get(action, action)], variables)
+        context.make([action], variables)
         return 0
