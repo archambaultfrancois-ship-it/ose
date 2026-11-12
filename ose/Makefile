@@ -57,6 +57,11 @@ test-sdk:
 	CARGO_TARGET_DIR=$(CURDIR)/build/client-rust cargo test --offline --manifest-path sdk/client/rust/Cargo.toml
 test-integration:
 	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest discover -s tests/integration -v
+.PHONY: test-integration-runtime test-integration-transport
+test-integration-runtime:
+	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" tests/run_integration.py runtime
+test-integration-transport:
+	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" tests/run_integration.py transport
 test-distributed:
 	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest discover -s tests/integration -p 'test_distributed.py' -v
 .PHONY: test-parameters
@@ -98,4 +103,4 @@ test-mixed:
 	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest discover -s tests/managed -p 'test_mixed.py' -v
 
 include ../tools/sdl-services.mk
-build check test-unit test-integration test-distributed test-parameters test-simulated test-recording test-java test-ada test-mixed: sdl-services
+build check test-unit test-integration test-integration-runtime test-integration-transport test-distributed test-parameters test-simulated test-recording test-java test-ada test-mixed: sdl-services

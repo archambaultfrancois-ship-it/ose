@@ -230,6 +230,17 @@ entire project into a temporary standalone directory before building and running
 the C → Rust → Python OSE example. Integration tests require SDL_ROOT; invoking them
 directly without it skips SDL-dependent tests.
 
+SDK CI runs six independent groups on both Python 3.10 and 3.13: unit/Rust SDK,
+runtime integration, transport integration, simulation/recording, Java/Ada/mixed,
+and installed-package checks. Java 7 has a separate compatibility job. Both the
+monorepo and standalone workflows use this partition; each job builds its own SDL
+services, and only jobs requiring Java or Ada install those toolchains.
+`make test-integration-runtime` and `make test-integration-transport` run the two
+integration groups locally. Their explicit module lists live in
+`tests/run_integration.py`; validation fails if a module is unassigned, missing or
+listed more than once. Update the lists when adding or renaming integration tests.
+`make test-integration` continues to run the complete integration suite.
+
 Backpressure regressions also cover 1100 queued TCP messages with a delayed
 catalogue reply, independent input admission and sender retries, per-port schema
 checks, callback-scoped inbox access and bounded shutdown of a non-reading child.
