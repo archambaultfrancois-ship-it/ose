@@ -53,7 +53,9 @@ and rotation procedures. OSE matches exact certificate common names to component
 identities, independent of changing pod addresses. The coordinator's identity is
 `coordinator`; worker identities are the model names such as `analyzer_1`.
 The external parameter client uses a separate `operator` identity, declared in
-`deployment.cluster.json`. `make certs` also creates its credentials under
+`deployment.json`. Cluster preparation removes the development token from the
+generated deployment; cluster clients authenticate using certificates.
+`make certs` also creates its credentials under
 `build/pki/` and a corresponding Secret. Keep its private key with the operator;
 application workers do not need it. From a host that can reach the coordinator,
 use the parameter commands in the [application guide](../README.md) with

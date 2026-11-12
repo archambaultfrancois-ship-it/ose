@@ -8,6 +8,7 @@ import unittest
 
 from ose_editor.json_source import loads
 from ose_editor.project import Project, Conflict, atomic_write
+from deployment_fixture import split_deployments
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +20,7 @@ class ProjectTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name) / 'application'
         shutil.copytree(ROOT / 'vibration-watch', self.root, ignore=shutil.ignore_patterns('build', '.ose-ws', '.ose-editor', '__pycache__'))
+        split_deployments(self.root)
         self.project = Project(self.root)
         self.addCleanup(self.project.close)
 

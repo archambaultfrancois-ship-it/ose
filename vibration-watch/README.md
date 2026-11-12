@@ -124,7 +124,7 @@ Open **http://127.0.0.1:8080** and enter the token from
 `ose-ws.json` and that owner-only token in the application directory. These local
 files and the capture/database state are ignored by Git. `ose-ws` discovers the
 current `build/endpoint.json` and loads the `operator` parameter token from the
-current `build/plan.json`, falling back to the local deployment before a build.
+current `build/plan.json`, falling back to `deployment.json` before a build.
 An explicit `OSE_PARAMETER_TOKEN` takes precedence. Sourcing the environment
 does not read or export credentials. The web login token and OSE parameter
 client token are separate credentials.
@@ -335,8 +335,12 @@ uses the generic OSE synchronizer.
 - `components/`: reusable business implementations plus thin OSE handlers.
 - `config/`: machine definitions, block sizes, seeds and thresholds.
 - `model.json`: ports, timers, activation links and bounded QoS.
-- `deployment.local.json`: ordinary OSE execution through the broker.
-- `deployment.cluster.json`: distributed execution, direct signal routes, broker results and placement resources.
+- `deployment.json`: the single deployment source, describing component implementations,
+  distributed routes and cluster placement resources. The launcher derives the local
+  profile by removing distributed execution, route overrides and placements; local
+  communication then uses the broker. Both profiles keep the same components and
+  parameter permissions. The development operator token supports local tools before
+  the first build; cluster preparation removes it, except for the loopback sync demo.
 - `scenarios/`: deterministic profiles; `tests/`: business, end-to-end and opt-in cluster tests.
 - `packaging/` and `deploy/`: image construction and cluster deployment instructions.
 
@@ -459,7 +463,7 @@ observations in the first terminal; stop a run or a watch with Ctrl+C.
 
 The `operator` client has read/write rights on all five blocks; application
 components have read access only. `ose app parameter` resolves the selected
-client's token from `build/plan.json`, or from `deployment.local.json` before a
+client's token from `build/plan.json`, or from `deployment.json` before a
 build. Explicit environment tokens take precedence. Use `OSE_PARAMETER_CLIENT`
 or `--client NAME` to select another configured client; no new source is needed.
 

@@ -392,7 +392,7 @@ the network settings and TLS authentication described in the
 | --- | --- |
 | `schemas/*.sdl` | Structure of exchanged messages and parameters |
 | `model.json` | Components, connections, triggers, and message queues |
-| `deployment.local.json` | Language and implementation of each local component |
+| `deployment.json` | Component implementations and cluster deployment; the launcher derives the local profile |
 | `components/` | Application logic: acquisition, calculation, alarm, and display |
 | `config/` and `scenarios/` | Initial values and signal profiles |
 | `build/plan.json` | Generated plan using your machine's paths and tools |

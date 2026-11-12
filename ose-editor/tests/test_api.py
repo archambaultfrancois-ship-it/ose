@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from ose_editor.api import create_app
 from ose_editor.project import Project
+from deployment_fixture import split_deployments
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,6 +22,7 @@ class ApiTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name) / 'app'
         shutil.copytree(ROOT / 'vibration-watch', self.root, ignore=shutil.ignore_patterns('build', '__pycache__', '.ose-ws', '.ose-editor'))
+        split_deployments(self.root)
         self.project = Project(self.root)
         self.app = create_app(self.project, ROOT / 'sdl', token='test-editor-token-that-is-never-a-project-secret')
         contexts = ExitStack()

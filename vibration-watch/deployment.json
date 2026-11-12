@@ -1,6 +1,8 @@
 {
   "version": 1,
-  "process_names": {"prefix": "vw"},
+  "process_names": {
+    "prefix": "vw"
+  },
   "components": {
     "sensor_1": {
       "container": {
@@ -149,7 +151,8 @@
         "machines/2/detection",
         "machines/1/sensor",
         "machines/2/sensor"
-      ]
+      ],
+      "token": "vibration-watch-local-operator"
     }
   }
 }

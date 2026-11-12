@@ -88,7 +88,16 @@ def prepare(args):
     if not args.scenario.replace("-", "").isalnum():
         raise ValueError("invalid scenario name")
     model = read(ROOT / "model.json")
-    deployment = read(ROOT / f"deployment.{args.profile}.json")
+    deployment = read(ROOT / "deployment.json")
+    if args.profile == "local":
+        deployment.pop("execution", None)
+        deployment.pop("subscriptions", None)
+        for component in deployment["components"].values():
+            component.pop("placement", None)
+    elif not (args.task == "distributed-local" and args.params_sync is not None):
+        # Development tokens are only used locally and in the loopback sync demo.
+        for client in deployment.get("parameter_clients", {}).values():
+            client.pop("token", None)
     machines = read(ROOT / "config/machines.json")
     thresholds = read(ROOT / "config/thresholds.json")
     scenario = read(ROOT / "scenarios" / (args.scenario + ".json"))
@@ -120,10 +129,6 @@ def prepare(args):
     if args.profile == "cluster" and args.routing == "broker":
         deployment["subscriptions"] = {key: {"routing": "broker", "transport": "tcp"}
                                        for key in deployment.get("subscriptions", {})}
-    if args.task == "distributed-local" and args.params_sync is not None:
-        # Only the loopback demonstration uses token authentication without TLS.
-        deployment["parameter_clients"]["operator"]["token"] = read(
-            ROOT / "deployment.local.json")["parameter_clients"]["operator"]["token"]
     destination = ROOT / "build/prepared"
     write(destination / "model.json", model)
     write(destination / "deployment.json", deployment)
@@ -189,7 +194,7 @@ def certs(args):
     extensions.write_text("basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth,clientAuth\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\n")
     items = []
     for name in ["coordinator", *read(ROOT / "model.json")["components"],
-                 *read(ROOT / "deployment.cluster.json").get("parameter_clients", {})]:
+                 *read(ROOT / "deployment.json").get("parameter_clients", {})]:
         key, csr, cert = (directory / (name + suffix) for suffix in (".key", ".csr", ".crt"))
         if not cert.exists():
             openssl("req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=" + name, "-keyout", key, "-out", csr)
