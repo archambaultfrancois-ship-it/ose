@@ -1,6 +1,8 @@
 """Ensure CI partitioning cannot silently drop or repeat integration modules."""
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -12,6 +14,21 @@ spec.loader.exec_module(runner)
 
 
 class IntegrationGroupTests(unittest.TestCase):
+    def test_groups_collect_in_a_fresh_process(self):
+        root = Path(__file__).resolve().parents[2]
+        for group in runner.GROUPS:
+            with self.subTest(group=group):
+                result = subprocess.run([
+                    sys.executable, "-c",
+                    "import sys, unittest; from tests.run_integration import GROUPS; "
+                    "loader = unittest.TestLoader(); "
+                    "suite = loader.loadTestsFromNames(['tests.integration.' + name "
+                    "for name in GROUPS[sys.argv[1]]]); "
+                    "assert not loader.errors, '\\n'.join(loader.errors); "
+                    "assert suite.countTestCases() > 0", group,
+                ], cwd=root, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_repository_partition_is_complete(self):
         runner.validate_groups(Path(__file__).resolve().parents[1] / "integration")
 

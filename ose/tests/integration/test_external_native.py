@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import threading
 import unittest
-import test_external_client as external
+from tests.integration import test_external_client as external
 from ose.client import Latest
 
 ROOT = Path(__file__).resolve().parents[2]
