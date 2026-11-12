@@ -40,11 +40,18 @@ PYTHONPATH=src python3 -m ose.cli run --plan build/plan.json \
 PYTHONPATH=src python3 -m ose.cli inspect --last
 ```
 
-`--duration` is required and specifies a finite positive virtual horizon in
+`--duration` is required for `ose run --mode simulated` and specifies a finite positive virtual horizon in
 seconds. Events at the horizon are excluded: a duration of `1` executes events
 in `[0, 1)`. When no immediate work or future event remains, execution ends
 early with `stop_reason: "quiescent"`, listing empty activating message inputs.
 An empty input without a timeout does not make the engine wait in real time.
+
+For `ose replay --mode simulated`, duration is optional. Without it the engine
+has no configured horizon, continues after the last recorded input to process
+future events, and stops at quiescence or an explicit stop/interruption.
+Periodic timers and feedback may keep it running indefinitely. `--loops 0` can
+also be used without a duration. An explicit replay duration retains the same
+exclusive boundary semantics.
 
 `--workers` defaults to `1` and must be a positive integer. It limits concurrent
 component calculations, using the separate Python, C, Rust, Java and Ada processes already
@@ -292,3 +299,19 @@ its offset through Pull. See [migration details](model-v2-migration.md#explicit-
 
 `make test-simulated` runs the simulation regressions. `make check` includes this
 suite after unit, Rust SDK and real-time integration checks.
+
+## Batch recording
+
+Both simulated `run` and `replay` support `--record 'TOPIC_GLOB[, FILTER]'`,
+repeatable with OR semantics, and `--record-file FILE` (default:
+`capture.pcapng`, overwritten if present). Capture external publications,
+component outputs, observed message inputs or declared diagnostic points without
+a separate recorder process. Filters only affect the capture.
+`--record-from 10s --record-until 20s` restricts capture to virtual `[10s, 20s)`
+without changing execution or shifting the timestamps saved in the file.
+
+Captures embed their schemas and payloads and use virtual deposit timestamps.
+They can be replayed in either execution mode. `--microsteps` also records the
+logical stage as `ose.microstep` metadata; replay does not reconstruct those
+stage boundaries. See [batch recording](recording.md#batch-capture-with-run-and-replay)
+for full syntax and lifecycle details. `--trace` remains the logical event trace.

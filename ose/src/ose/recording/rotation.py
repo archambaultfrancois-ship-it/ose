@@ -30,9 +30,10 @@ def parse_size(value):
 
 
 class OutputFiles:
-    def __init__(self, path, *, numbered=False, cycle=None):
+    def __init__(self, path, *, numbered=False, cycle=None, overwrite=False):
         requested = Path(path).absolute()
         self.base = requested.parent.resolve() / requested.name
+        self.overwrite = overwrite and not numbered
         self.numbered, self.cycle = numbered, cycle
         self.index = 0
         self.path = self.name(1)
@@ -45,7 +46,7 @@ class OutputFiles:
         return self.base.with_name(f"{self.base.stem}_{index:03d}{self.base.suffix}")
 
     def preflight(self):
-        if self.base.exists() or self.base.is_symlink():
+        if not self.overwrite and (self.base.exists() or self.base.is_symlink()):
             raise FileExistsError(self.base)
         if self.numbered:
             pattern = re.compile(re.escape(self.base.stem) + r"_\d{3,}" + re.escape(self.base.suffix))
@@ -64,7 +65,7 @@ class OutputFiles:
 
     def check_next(self):
         path = self.name(self.index + 1)
-        if path.exists() or path.is_symlink():
+        if not self.overwrite and (path.exists() or path.is_symlink()):
             raise FileExistsError(path)
         if self.cycle is not None and len(self.retained) == self.cycle:
             self.check_owned(*self.retained[0])
@@ -109,7 +110,7 @@ class OutputFiles:
                 raise
             self.retained.popleft()
         else:
-            stream = path.open("xb")
+            stream = path.open("wb" if self.overwrite else "xb")
         self.stream, self.path = stream, path
         self.index += 1
         if self.cycle is not None:

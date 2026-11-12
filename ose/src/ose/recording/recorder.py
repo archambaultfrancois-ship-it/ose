@@ -16,7 +16,8 @@ from ose.transport.secure import connect, loopback, finish_cleanup
 class Recorder:
     def __init__(self, host, port, *, context=None, distributed=False, capacity=256,
                  byte_budget=8 * 1024 * 1024, max_frame=1024 * 1024, label=DEFAULT_LABEL,
-                 max_size=None, cycle=None):
+                 max_size=None, cycle=None, overwrite=False):
+        self.overwrite = overwrite
         self.host, self.port, self.context = host, port, context
         self.distributed, self.capacity, self.byte_budget = distributed, capacity, byte_budget
         self.max_frame = max_frame
@@ -83,7 +84,7 @@ class Recorder:
         self.editable()
         self.cycle = positive_setting(count, "cycle")
 
-    async def start(self, path, *, format="pcapng", finished=None):
+    async def start(self, path, *, format="pcapng", finished=None, accept=None):
         self.editable()
         if not self.selected:
             raise ValueError("select at least one point")
@@ -91,6 +92,7 @@ class Recorder:
             raise ValueError("cycle requires an active max-size")
         descriptions = {topic: await self.describe(topic) for topic in self.selected}
         capture = Capture(self, descriptions, path, format, finished)
+        capture.accept = accept
         await capture.open()
         self.capture = capture
         capture.task = asyncio.create_task(capture.run())
@@ -119,11 +121,12 @@ class Capture:
     def __init__(self, recorder, descriptions, path, format, finished):
         self.recorder, self.descriptions = recorder, descriptions
         self.max_size, self.cycle = recorder.max_size, recorder.cycle
-        self.files = OutputFiles(path, numbered=self.max_size is not None, cycle=self.cycle)
+        self.files = OutputFiles(path, numbered=self.max_size is not None, cycle=self.cycle, overwrite=recorder.overwrite)
         self.path, self.format = str(self.files.path), format
         self.label = recorder.label
         self.filters = dict(recorder.selected)
         self.finished = finished
+        self.accept = None
         self.feeds, self.pumps = [], []
         self.counts = Counter()
         self.topic_counts = Counter()
@@ -189,7 +192,7 @@ class Capture:
                 groups.setdefault(key, {})[topic] = desc["generation"]
             if len(groups) > 32:
                 raise ValueError("at most 32 recording endpoints per session")
-            # Refuse an existing path before opening remote taps; never overwrite.
+            # Check the destination before opening remote taps; batch mode permits overwrite.
             self.files.preflight()
             await self.disk(self.prepare)
             for (host, port, expected), points in groups.items():
@@ -258,7 +261,8 @@ class Capture:
                     return
             else:
                 record = dict(result["record"], log_time_ns=time.time_ns())
-                await self.disk(self.write, record, body)
+                if self.accept is None or self.accept(record):
+                    await self.disk(self.write, record, body)
 
     async def run(self):
         self.pumps = [asyncio.create_task(self.pump(feed)) for feed in self.feeds]

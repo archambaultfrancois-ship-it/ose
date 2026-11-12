@@ -5,14 +5,118 @@ the inputs, outputs and declared internal points of a running application and re
 selected samples through SDL's recording service. It needs no model, generated application classes or
 recorder component in the graph. Start and stop files repeatedly in one session.
 It supports the local broker and distributed workers, including direct routes.
-Simulation has no live network endpoint; use [recording replay](replay.md) to
-feed captured messages into a model's external inputs in virtual time.
+Simulation has no live network endpoint for this separate console. Use the
+[batch options](#batch-capture-with-run-and-replay) to capture a simulated run,
+and [recording replay](replay.md) to feed captured messages into external inputs.
 The running broker/workers must also use an OSE version providing recording taps;
 an older application runtime cannot gain them by upgrading only the console.
 Rebuild/restart the application with the updated framework. Vibration Watch in
 `ose/vibration-watch` uses its parent OSE repository by default. To select another
 checkout, run `FRAMEWORK_ROOT=/path/to/ose make run DURATION=60` from the
 application directory. Cluster deployments need updated worker images.
+
+## Batch capture with run and replay
+
+`run` and `replay` accept the same capture options in `realtime` and `simulated`
+modes. No separate `ose record` process is needed:
+
+```sh
+ose run --duration 60 --record 'sensor_*.signal, machine_id == 1'
+ose run --mode simulated --duration 60 --microsteps \
+  --record 'sensor_*.signal, machine_id == 1' \
+  --record 'analyzer_*.vibration' --record-file results.mcap
+ose replay inputs.mcap --mode simulated --duration 60 \
+  --record 'analyzer_*.vibration' --record-file results.pcapng
+```
+
+- `--record 'TOPIC_GLOB[, FILTER]'` selects recording points by their complete,
+  case-sensitive topic name. Quote clauses to protect them from shell expansion.
+  Globs support `*` (including dots), `?` and character classes such as `[12]`;
+  these are not regular expressions. All discovered point kinds are eligible:
+  outputs, external publications, observed inputs and declared diagnostics.
+  Use `input:TOPIC` to select an observed input whose name collides with an output.
+- The first comma separates the pattern from the optional SDL predicate. All
+  remaining commas belong to the predicate. Whitespace around both parts is
+  ignored. An empty pattern or an explicitly empty predicate is an error.
+- Repeat `--record` to union clauses. A message is captured once per selected
+  point if **any** matching clause accepts it. An unfiltered clause accepts all
+  messages of its matching points. Distinct input/output observations remain
+  distinct points even if they have the same public topic name.
+- Each pattern must match at least one point; every predicate is validated
+  against every matched schema before execution/injections start. Simulation
+  initializes components first to discover diagnostic declarations. A live
+  replay's target application is already running during discovery.
+- `--record-file FILE` defaults to `capture.pcapng`; `.pcapng` or `.mcap` selects
+  the format. **An existing output is overwritten.** Execution inputs, the plan,
+  trace and runtime diagnostic files are protected from overwrite.
+- Without `--record`, capture is disabled. `--record-file` alone is an error.
+
+### Temporal capture window
+
+Use `--record-from TIME` and/or `--record-until TIME` to capture only a
+**half-open interval `[from, until)`**:
+
+```sh
+ose run --mode simulated --duration 60 --record 'sensor_*.signal' \
+  --record-from 10s --record-until 20s --record-file phase.mcap
+ose replay inputs.mcap --speed 2 --record 'analyzer_*.vibration' \
+  --record-from 10s --record-until 20s
+```
+
+Times accept bare seconds or `ns`, `us`, `ms`, `s`, `min`. The default start is
+zero and the default end is the command's end. Both options require `--record`;
+values must be finite, nonnegative, within uint64 nanoseconds, and `until` must
+be strictly greater than `from`. A window outside the execution interval
+produces a valid empty capture and does not extend execution.
+
+| Mode | Position used for the window |
+| --- | --- |
+| Simulated `run` or `replay` | Virtual time from position zero |
+| Real-time `run` | Elapsed time from application activation, excluding startup |
+| Real-time `replay` | Global playback position from the first selected message, across all loops |
+
+Replay windows follow `speed`, pauses, breakpoints and steps, including speed
+zero. During a live replay pause inside the window, selected application traffic
+can still be recorded: the target application keeps running and playback
+position remains inside the window. A step can jump over a window without
+capturing anything. In simulation, all microsteps at the inclusive start are
+eligible, and all microsteps at the exclusive end are excluded.
+
+Windowing does not alter execution or reset message timestamps. A simulated
+capture of `[10s, 20s)` retains virtual source timestamps in that interval; a
+subsequent replay normalizes its first selected message to position zero as
+usual. `--record-from` and `--record-until` are relative capture positions;
+replay's `--start-ns` and `--end-ns` instead select absolute source timestamps
+from the input file.
+
+Live window decisions use the source publication timestamp, with the cluster
+clock synchronization assumption. The recorder retains window crossings when
+playback speed or state changes, so delayed delivery does not move a message
+across a window boundary. Temporal admission is performed at the recorder;
+source payload filters and their bounded capture queues remain active for the
+command's lifetime. The file is finalized when the command ends, not when the
+window ends.
+
+For `run`, capture is armed before the application is activated. For `replay`,
+its external publishers are opened first, then capture is armed before the first
+injection. Capture closes automatically when the command ends, including an
+interactive `stop` or interruption, and drains records already queued. In live
+replay this does not wait for all downstream callbacks to finish and does not
+stop the target application. Other traffic on selected topics is also captured.
+
+In simulated mode, both file timestamps use virtual deposit time, beginning at
+zero; file/channel metadata declares `ose.clock=virtual`. Recording writes can
+slow wall-clock computation without advancing virtual time, and there is no
+lossy capture queue. With `--microsteps`, each message also stores
+`ose.microstep`. Replay uses source times and file order for ties; it does not
+restore recorded microstep boundaries. Payloads and optional `ose.app_id` values
+are preserved.
+
+In real-time mode, batch capture uses the live recording service described
+below, including its bounded queues and source filters. Capture errors or
+reported queue drops fail the batch command. Ensure the recorder can keep up.
+Real-time distributed replay uses the same coordinator, TLS settings and worker
+endpoints as its existing connection options. `run` remains local.
 
 ## Services and installation
 

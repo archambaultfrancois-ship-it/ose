@@ -31,6 +31,17 @@ def _execution_controls(command, *, replay=False):
     command.epilog += "\n\n" + control_help(replay=replay, mode=None if replay else "simulated")
 
 
+def _batch_recording(command):
+    command.add_argument('--record', action='append', metavar='TOPIC_GLOB[, FILTER]',
+                         help='capture matching topics, optionally filtered; repeat to union clauses; overwrites output')
+    command.add_argument('--record-file', metavar='FILE',
+                         help='capture destination .pcapng or .mcap (default with --record: capture.pcapng)')
+    command.add_argument('--record-from', metavar='TIME',
+                         help='inclusive capture start position (default: 0; seconds or ns/us/ms/s/min)')
+    command.add_argument('--record-until', metavar='TIME',
+                         help='exclusive capture end position (default: command end); requires --record')
+
+
 def _control_commands(args):
     return (Path(args.command_file).read_text(encoding="utf-8").splitlines()
             if args.command_file is not None else args.command)
@@ -125,7 +136,8 @@ For distributed execution, start serve and worker instead of run.""")
         "Simulation controls (--interactive, --command, --command-file) start paused.",
         ["ose run", "ose run --duration 30",
          "ose run --mode simulated --duration 60 --workers 4 --trace trace.jsonl",
-         "ose run --mode simulated --duration 60 --microsteps --interactive"])
+         "ose run --mode simulated --duration 60 --microsteps --interactive",
+         "ose run --duration 60 --record 'sensor_*.signal, machine_id == 1'"])
     command.add_argument("--plan", default="build/plan.json", help="compiled deployment plan (default: build/plan.json)")
     command.add_argument("--duration", type=float, help="positive execution duration in seconds; required in simulated mode")
     command.add_argument("--working-directory", help="component working directory (default: plan settings; app run: launch directory)")
@@ -138,13 +150,15 @@ For distributed execution, start serve and worker instead of run.""")
     command.add_argument("--trace", help="output deterministic trace file (simulated mode only)")
     command.add_argument("--max-tick-output-bytes", type=int, help="output byte limit per component tick (default: 16777216; simulated mode only)")
     _execution_controls(command)
+    _batch_recording(command)
     command = _command(commands, "replay", "replay a recording into simulated or live external inputs",
         "Replay matching external input topic names; use --map to select or rename topics.\n"
         "Real-time replay is the default and publishes into an already running application.\n"
-        "Simulation starts an application and requires --mode simulated and --duration.\n"
+        "Simulation starts an application with --mode simulated; no time limit by default.\n"
         "Interactive and scripted controls start paused in both modes.\n"
         "Connection options and --speed require --mode realtime.",
         ["ose replay capture.mcap --interactive",
+         "ose replay inputs.mcap --record 'analyzer_*.vibration' --record-file results.mcap",
          "ose replay capture.mcap --map recorded.topic=external.topic --interactive",
          "ose replay capture.mcap --map recorded.topic=external.topic --mode simulated --duration 30",
          "ose replay capture.mcap --map recorded.topic=external.topic --command 'step 100ms' --command status"])
@@ -156,7 +170,7 @@ For distributed execution, start serve and worker instead of run.""")
     command.add_argument("--schema-policy", choices=("exact", "compatible"), default="exact",
                          help="recorded schema policy (default: exact; compatible adapts messages to the target contract)")
     command.add_argument("--loops", type=int, default=1, help="total playback passes (default: 1; 0: infinite)")
-    command.add_argument("--duration", type=float, help="recorded-time horizon in seconds; required for simulation")
+    command.add_argument("--duration", type=float, help="exclusive replay time limit in seconds (default: no time limit in either mode)")
     command.add_argument("--workers", type=int, help="simulation worker count (default: 1; simulated mode only)")
     command.add_argument("--microsteps", action="store_true", help="use logical publication stages (simulated replay only)")
     command.add_argument("--max-microsteps", type=int, help="activation-stage limit per timestamp (default: 10000; requires --microsteps)")
@@ -165,6 +179,7 @@ For distributed execution, start serve and worker instead of run.""")
     command.add_argument("--trace", help="output deterministic trace file (simulated mode only)")
     command.add_argument("--speed", type=float, help="real-time playback rate (default: 1; 0: maximum speed)")
     _execution_controls(command, replay=True)
+    _batch_recording(command)
     command.add_argument("--endpoint", help="live endpoint JSON (default: local plan's endpoint.json); exclusive with --host/--port")
     command.add_argument("--host", help="target broker or coordinator host")
     command.add_argument("--port", type=int, help="target broker or coordinator TCP port")
@@ -335,6 +350,9 @@ def execute(args, parser=None):
             if controlled and args.mode != "simulated":
                 raise ValueError("execution controls (--interactive, --command, --command-file) require simulated mode for run")
             execution_options = {}
+            if any(value is not None for value in (args.record, args.record_file, args.record_from, args.record_until)):
+                execution_options.update(record=args.record, record_file=args.record_file,
+                                         record_from=args.record_from, record_until=args.record_until)
             from ose.execution.simulation.options import microstep_limit
             microstep_limit(args.microsteps, args.max_microsteps)
             if args.microsteps and args.mode != "simulated":
@@ -377,8 +395,6 @@ def execute(args, parser=None):
             microstep_limit(args.microsteps, args.max_microsteps)
             if args.mode == "simulated":
                 from ose.recording.replay import run
-                if args.duration is None:
-                    raise ValueError("simulated replay requires --duration")
                 if (args.distributed or args.insecure or any(value is not None for value in
                         (args.speed, args.endpoint, args.host, args.port, args.tls_ca, args.tls_cert, args.tls_key))):
                     raise ValueError("speed and connection options require --mode realtime")
@@ -386,6 +402,8 @@ def execute(args, parser=None):
                     start_ns=args.start_ns, end_ns=args.end_ns,
                     workers=1 if args.workers is None else args.workers, trace=args.trace, loops=args.loops,
                     schema_policy=args.schema_policy, interactive=args.interactive, commands=commands,
+                    record=args.record, record_file=args.record_file,
+                    record_from=args.record_from, record_until=args.record_until,
                     **({"microsteps": True, "max_microsteps": args.max_microsteps} if args.microsteps else {})))
             else:
                 from ose.recording.live_replay import run
@@ -397,7 +415,8 @@ def execute(args, parser=None):
                         endpoint=args.endpoint, host=args.host, port=args.port, distributed=args.distributed,
                         tls_ca=args.tls_ca, tls_cert=args.tls_cert, tls_key=args.tls_key,
                         insecure=args.insecure, interactive=args.interactive, commands=commands, loops=args.loops,
-                        schema_policy=args.schema_policy))
+                        schema_policy=args.schema_policy, record=args.record, record_file=args.record_file,
+                        record_from=args.record_from, record_until=args.record_until))
                     loop = asyncio.get_running_loop()
                     for sig in (signal.SIGINT, signal.SIGTERM):
                         loop.add_signal_handler(sig, task.cancel)

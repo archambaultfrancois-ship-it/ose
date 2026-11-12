@@ -22,6 +22,7 @@ class Router:
         self.buffers = {name: {} for name in plan["components"]}
         self.by_topic, self.by_id = {}, {}
         self.topics = dict(plan.get("external_topics", {}))
+        self.capture = None
         self.sequence = 0
         self.external_deliveries = Counter()
         self.schedulers = {}
@@ -45,6 +46,8 @@ class Router:
             validate_app_id(app_id)
         desc = self.topics[topic]
         self.codec.validate_only(desc["catalogue"], desc["root"], body)
+        if self.capture is not None:
+            self.capture.emit(topic, body, app_id=app_id)
         self.sequence += 1
         record = dict(id=identity, epoch="simulated", sequence=self.sequence, topic=topic,
                       body=body, payload=memoryview(body)[self.codec.api.ENVELOPE_HEADER_SIZE:], catalogue=desc["catalogue"])

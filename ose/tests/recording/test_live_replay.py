@@ -106,6 +106,35 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
                 await run(self.capture(), self.plan_path)
             publisher.assert_not_called()
 
+    async def test_batch_capture_windows_follow_replay_speed_and_message_steps(self):
+        from sdl_recording import RecordingReader
+        coordinator, _ = await self.cluster()
+        for index, (speed, commands) in enumerate(((0, None), (.5, None), (2, None),
+                (1, ['step-messages', 'wait .03', 'step-messages', 'wait .03', 'step-messages']))):
+            output = self.root / f'window-{index}.mcap'
+            result = await run(self.capture(), self.plan_path,
+                mappings=['source.value=external.signal'], host='127.0.0.1', port=coordinator.port,
+                speed=speed, insecure=True, commands=commands, record=['external.signal'],
+                record_file=output, record_from='40ms', record_until='80ms')
+            self.assertEqual(result['published'], 3)
+            records = list(RecordingReader(output).iter_records())
+            self.assertEqual([r.decode().fields['sequence'] for r in records], [2])
+
+    async def test_batch_capture_of_distributed_replay_unions_filters_and_overwrites(self):
+        from sdl_recording import RecordingReader
+        coordinator, _ = await self.cluster()
+        for format in ('pcapng', 'mcap'):
+            output = self.root / ('batch.' + format)
+            output.write_bytes(b'old capture')
+            result = await run(self.capture(format), self.plan_path,
+                mappings=['source.value=external.signal'], host='127.0.0.1', port=coordinator.port,
+                speed=1, insecure=True, record=['external.*, sequence == 1', 'external.signal, sequence == 3'],
+                record_file=output)
+            self.assertEqual(result['published'], 3)
+            records = list(RecordingReader(output).iter_records())
+            self.assertEqual([r.decode().fields['sequence'] for r in records], [1, 3])
+            self.assertTrue(all(r.channel.topic == 'external.signal' for r in records))
+
     async def test_compatible_distributed_replay_and_preflight_rejection(self):
         coordinator, _ = await self.cluster()
         source = CAT[:-1] + '3?:string:extra;}'

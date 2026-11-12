@@ -6,12 +6,17 @@ broker or distributed coordinator. Use it to reproduce an incident or test a
 component change with captured inputs. Real-time replay is the default mode and
 publishes into an already running application.
 Use `--mode simulated` to start the application with a virtual clock.
+`--duration` is optional in both replay modes. Without it, simulation has no
+virtual time limit: EOF ends injections for the requested passes, then callbacks
+and timers continue until no event remains. Periodic timers or feedback can keep
+it running indefinitely; use `stop`, Ctrl+C, or an explicit `--duration` to bound it.
 
-Replay timing and range selection use `publish_time_ns`, the Unix time of the
-source deposit, rather than `log_time_ns`, the recorder arrival time. The first
+Replay timing and range selection use `publish_time_ns`, the source deposit
+time, rather than `log_time_ns`, the recorder arrival time. Real captures use
+Unix time; simulated captures use virtual nanoseconds. The first
 selected source timestamp is position zero (`origin_publish_time_ns` in the
-summary). Source system clocks must be synchronized across the cluster; residual
-uncertainty is accepted. Timestamp ties retain file order for deterministic
+summary). For real captures, source system clocks must be synchronized across
+the cluster; residual uncertainty is accepted. Timestamp ties retain file order for deterministic
 replay. Payload timestamps are unchanged. There is no fallback to recorder
 arrival timestamps.
 
@@ -51,6 +56,28 @@ are never transport duplicates. Old recordings without this metadata remain
 readable and publish without an application ID; none is inferred from the
 container sequence or payload. A malformed selected application ID fails
 preflight before components or live publishers start.
+
+## Record during replay
+
+Use `--record 'TOPIC_GLOB[, FILTER]'` and optionally `--record-file FILE` to
+capture selected points while replaying, in either mode:
+
+```sh
+ose replay inputs.mcap --mode simulated --duration 60 \
+  --record 'analyzer_*.vibration, rms > 0.5' --record-file results.mcap
+```
+
+Use `--record-from 10s --record-until 20s` for the relative playback window
+`[10s, 20s)`, in either mode. In live replay it follows speed, pauses and steps;
+it is independent of the absolute input selection `--start-ns` / `--end-ns`.
+Recorded timestamps keep their original clock reference.
+
+The default output is `capture.pcapng`; existing output is overwritten. The
+source capture cannot also be the output file. Repeated clauses are combined
+by OR without duplicate capture of one point. See [batch capture](recording.md#batch-capture-with-run-and-replay)
+for selection rules, startup/finalization and clock semantics. This also enables
+replaying a simulated capture in real time or another simulation; recorded
+microstep indices are descriptive metadata and are not replay scheduling inputs.
 
 ## Live replay and speed control
 
@@ -235,10 +262,10 @@ when no step command is awaiting completion.
 
 ### Limits, console and scripts
 
-`--duration` remains an exclusive global limit. Live replay also ends after its
+`--duration`, when supplied, remains an exclusive global limit. Live replay also ends after its
 last selected publication; for a temporal step its final boundary is one
 nanosecond after the last publication of the last pass. Simulation can continue
-processing timers after the recording ends and terminates at its horizon or when
+processing timers after the recording ends and terminates at an explicit horizon or when
 no immediate or future event (including an armed breakpoint) remains. A command
 reaching a terminal condition reports its actual position and completed budget.
 
@@ -374,10 +401,12 @@ diagnostics and do not determine replay timing.
 `[start, end)`. The origin is recalculated from the earliest remaining message.
 `--duration` is the global recorded-time horizon in seconds, starting at that origin
 and applying across all passes.
-It is required in simulation and optional in real time, where omission replays
-all requested passes. Events at or after the horizon are excluded. Simulation
-with `--loops 0` repeats inputs until this finite horizon; it does not start an
-unbounded simulation.
+It is optional in both modes. Events at or after an explicit horizon are
+excluded. Without it, all requested passes are injected, and simulation continues
+until quiescence or an explicit stop; the last message is not an implicit horizon.
+`--loops 0` is also allowed without a duration and repeats until interrupted or
+stopped. The virtual clock remains an unsigned 64-bit nanosecond clock: unlimited
+means no configured time horizon, not an extension of its numeric range.
 Choose a horizon long enough to include all intended passes and any input
 timeouts you want to exercise in simulation. Finite live playback finishes after
 the final pass's last selected publication; its wall-clock duration depends on

@@ -91,6 +91,11 @@ class ReplayControl:
         self.busy = asyncio.Lock()
         self.error = None
         self.units = 0
+        self.clock_observer = None
+
+    def clock_changed(self):
+        if self.clock_observer is not None:
+            self.clock_observer()
 
     @property
     def counting(self):
@@ -99,6 +104,7 @@ class ReplayControl:
     def seek(self, at):
         self.clock.anchor_ns = self.clock.last_ns = at
         self.clock.anchor_wall = self.clock.now()
+        self.clock_changed()
 
     def status(self):
         return {**self.snapshot(), 'mode': self.mode, 'position_ns': self.position(),
@@ -113,17 +119,20 @@ class ReplayControl:
         else:
             self.clock.pause()
         self.paused = True
+        self.clock_changed()
         self.changed.set()
 
     def resume(self):
         self.clock.resume()
         self.paused = False
         self.pause_reason = None
+        self.clock_changed()
         self.changed.set()
 
     def stop(self):
         self.stopped = True
         self.clock.stop()
+        self.clock_changed()
         self.changed.set()
 
     def start(self):
@@ -195,6 +204,7 @@ class ReplayControl:
             if self.mode != 'realtime':
                 raise ValueError('speed requires realtime mode')
             self.clock.set_speed(float(parts[1]))
+            self.clock_changed()
             self.changed.set()
         elif parts == ['pause']:
             self.pause()
@@ -333,6 +343,8 @@ class ReplayControl:
                 self.seek(max(self.position(), at))
             else:
                 self.clock.last_ns = at
+                if self.clock.speed == 0:
+                    self.clock_changed()
             return max(0, -delay)
         if self.error is not None:
             raise self.error

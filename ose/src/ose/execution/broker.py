@@ -53,6 +53,7 @@ class Broker(Sessions):
         for identity, sub in self.subscriptions.items():
             self.subscriptions_by_topic.setdefault(sub["from"], {})[identity] = sub
         self.init_sessions()
+        self.recording_ready = False
         self.recording = TapHub(self.recording_points, plan["max_frame"], codec=self.codec)
         self.internal_points = {}
         self.recording_sequence = 0
@@ -72,17 +73,18 @@ class Broker(Sessions):
             engine.store.notify()
 
     def recording_points(self):
+        available = self.enabled or self.recording_ready
         outputs = {topic: dict(topic=topic, root=port["root"], catalogue=port["catalogue"], kind="output",
                     generation=self.publisher_owners.get(topic, self.epoch),
-                    available=self.enabled and (topic in self.publisher_owners or topic.split(".")[0] in self.peers), endpoint=None)
+                    available=available and (topic in self.publisher_owners or topic.split(".")[0] in self.peers), endpoint=None)
                 for topic, port in self.topics.items()}
         outputs.update({topic: dict(desc, topic=topic, kind="internal", endpoint=None,
             generation=self.generations.get(desc["component"]),
-            available=self.enabled and desc["component"] in self.ready)
+            available=available and desc["component"] in self.ready)
             for topic, desc in self.internal_points.items()})
         for name in self.plan["components"]:
             outputs.update(input_points(self.plan, name, self.generations.get(name),
-                self.enabled and name in self.ready))
+                available and name in self.ready))
         return outputs
 
     def recording_activation(self, node, active):

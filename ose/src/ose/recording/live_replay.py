@@ -74,7 +74,7 @@ async def publisher(plan, topics, *, host, port, distributed=False, context=None
         await finish_cleanup(close())
 
 
-async def play(events, publish, *, speed=1, duration=None, loops=1, interactive=False, commands=None, output=None):
+async def play(events, publish, *, speed=1, duration=None, loops=1, interactive=False, commands=None, output=None, capture=None):
     output = sys.stderr if output is None else output
     session = ReplayControl("realtime", interactive=interactive, commands=commands, speed=speed, output=output)
     horizon = seconds_ns(duration, positive=True) if duration is not None else None
@@ -82,6 +82,8 @@ async def play(events, publish, *, speed=1, duration=None, loops=1, interactive=
     status = dict(published=0, refused=0, loops=loops, current_loop=1, completed_loops=0,
                   last_lag_seconds=0.0, max_lag_seconds=0.0)
     deliveries, started, last_report = Counter(), time.monotonic(), time.monotonic()
+    if capture is not None:
+        capture.follow(session)
     session.snapshot = lambda: {**status, "delivery_results": dict(deliveries)}
     session.start()
     reason = "complete"
@@ -151,7 +153,8 @@ async def play(events, publish, *, speed=1, duration=None, loops=1, interactive=
 
 async def run(path, plan_path, duration=None, *, mappings=None, speed=1, start_ns=None, end_ns=None,
               endpoint=None, host=None, port=None, distributed=False, tls_ca=None, tls_cert=None,
-              tls_key=None, insecure=False, interactive=False, commands=None, loops=1, schema_policy='exact'):
+              tls_key=None, insecure=False, interactive=False, commands=None, loops=1, schema_policy='exact', record=None, record_file=None,
+              record_from=None, record_until=None):
     playback_speed(speed)
     loop_count(loops)
     if duration is not None:
@@ -162,6 +165,10 @@ async def run(path, plan_path, duration=None, *, mappings=None, speed=1, start_n
     identify("replay", plan)
     if path in (plan_path, (Path(plan["build_dir"]) / "last-status.json").resolve()):
         raise ValueError("recording cannot use the compiled plan or last-status.json path")
+    from ose.recording.batch import destination, LiveCapture, CaptureWindow
+    CaptureWindow(record, record_from, record_until)
+    destination(record, record_file, protected=[path, plan_path, Path(plan['build_dir']) / 'last-status.json',
+                                                Path(plan['build_dir']) / 'endpoint.json'])
     topics = plan.get("external_topics", {})
     mapping = topic_mapping(mappings, topics)
     codec = SDL2(plan["sdl_root"])
@@ -180,8 +187,11 @@ async def run(path, plan_path, duration=None, *, mappings=None, speed=1, start_n
                           schema_policy=schema_policy) as (events, selection):
         async with publisher(plan, selection["mapping"].values(), host=host, port=port,
                              distributed=distributed, context=context) as publish:
-            result = await play(events, publish, speed=speed, duration=duration, loops=loops,
-                                interactive=interactive, commands=commands)
+            async with LiveCapture(record, record_file, host=host, port=port, context=context,
+                                   distributed=distributed, sdl_root=plan['sdl_root'],
+                                   record_from=record_from, record_until=record_until) as capture:
+                result = await capture.watch(play(events, publish, speed=speed, duration=duration, loops=loops,
+                                                  interactive=interactive, commands=commands, capture=capture))
         selection.update(loops=loops, loop_period_ns=events[-1].at + 1)
     result["replay"] = selection
     return result

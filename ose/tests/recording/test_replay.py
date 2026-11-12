@@ -262,6 +262,59 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
                               start_ns=base + 7) as (events, _):
             self.assertEqual([event.at for event in events], [0, 0])
 
+    async def test_simulated_replay_without_duration_reaches_quiescence_and_cli_accepts_it(self):
+        for format in ('pcapng', 'mcap'):
+            path, _ = self.capture(format)
+            trace = self.root / 'unbounded.jsonl'
+            result = await asyncio.wait_for(run(path, self.plan_path, loops=2,
+                mappings=['source.value=external.signal'], trace=trace), 5)
+            self.assertEqual(result['stop_reason'], 'quiescent')
+            self.assertEqual(result['external_events'], 6)
+            self.assertEqual(result['completed_loops'], 2)
+            self.assertEqual(result['ticks'], 6)
+            start = next(json.loads(line) for line in trace.read_text().splitlines()
+                         if json.loads(line)['event'] == 'start')
+            self.assertIsNone(start['duration_ns'])
+            command = [sys.executable, '-m', 'ose.cli', 'replay', str(path), '--plan', str(self.plan_path),
+                       '--mode', 'simulated', '--map', 'source.value=external.signal']
+            process = await asyncio.to_thread(subprocess.run, command, capture_output=True, text=True, timeout=20)
+            self.assertEqual(process.returncode, 0, process.stderr)
+            self.assertEqual(json.loads(process.stdout)['external_events'], 3)
+
+    async def test_unlimited_simulated_replay_processes_timers_after_eof_and_can_stop(self):
+        import io
+        timer = self.root / 'late_timer.py'
+        timer.write_text('from ose.execution.input_process import InputSession\n'
+                         's = InputSession()\nfor activation in s.activations(): pass\n')
+        self.plan['components']['timer'] = dict(execution_model=2,
+            inputs={'clock': dict(kind='timer', timer=dict(mode='one_shot', delay=100e-9),
+                                  activates={'timeout': []})}, outputs={}, parameters={},
+            cwd=str(self.root), env={}, command=[sys.executable, str(timer)])
+        self.plan_path.write_text(json.dumps(self.plan))
+        path, _ = self.capture()
+        result = await asyncio.wait_for(run(path, self.plan_path, mappings=['source.value=external.signal']), 5)
+        self.assertEqual(result['stop_reason'], 'quiescent')
+        self.assertEqual(result['time_ns'], 100)
+        self.assertEqual(result['ticks'], 4)
+        self.plan['components']['timer']['inputs']['clock']['timer']['mode'] = 'periodic'
+        self.plan_path.write_text(json.dumps(self.plan))
+        result = await asyncio.wait_for(run(path, self.plan_path, mappings=['source.value=external.signal'],
+            commands=['step 1us', 'stop'], output=io.StringIO()), 5)
+        self.assertEqual(result['stop_reason'], 'stopped')
+        self.assertEqual(result['time_ns'], 1000)
+        self.assertEqual(result['external_events'], 3)
+        self.assertGreater(result['ticks'], 4)
+
+    async def test_infinite_simulated_loops_without_duration_stop_by_command(self):
+        import io
+        path, _ = self.capture()
+        result = await asyncio.wait_for(run(path, self.plan_path, loops=0,
+            mappings=['source.value=external.signal'], commands=['step-messages 7', 'stop'], output=io.StringIO()), 5)
+        self.assertEqual(result['stop_reason'], 'stopped')
+        self.assertEqual(result['external_events'], 7)
+        self.assertEqual(result['completed_loops'], 2)
+        self.assertEqual(result['time_ns'], 16)
+
     async def test_execution_horizon_excludes_messages_at_its_boundary(self):
         path, _ = self.capture()
         summary = await run(path, self.plan_path, 7e-9, mappings=["source.value=external.signal"])

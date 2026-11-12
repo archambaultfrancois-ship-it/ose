@@ -1,5 +1,6 @@
 """Canonical logical waves, bounded parallel subprocess calculations and virtual time."""
 import asyncio
+from contextlib import ExitStack
 from collections import deque
 from dataclasses import dataclass, field
 import hashlib
@@ -49,7 +50,8 @@ class PendingTick:
 class Simulation:
     def __init__(self, plan, duration, *, workers=1, scenario=None, events=None, trace=None,
                  max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT, working_directory=None,
-                 microsteps=False, max_microsteps=None, controller=None):
+                 microsteps=False, max_microsteps=None, controller=None, record=None, record_file=None,
+                 record_from=None, record_until=None):
         self.controller = controller
         require_v2(plan)
         self.microstep_limit = microstep_limit(microsteps, max_microsteps)
@@ -65,7 +67,10 @@ class Simulation:
             raise ValueError("max_tick_output_bytes must be a positive integer")
         self.plan, self.workers, self.limit = plan, workers, max_tick_output_bytes
         self.working_directory = working_directory
-        self.horizon, self.clock = seconds_ns(duration, positive=True), VirtualClock()
+        if duration is None and events is None:
+            raise ValueError('simulated run requires a duration; only replay may omit it')
+        self.horizon = seconds_ns(duration, positive=True) if duration is not None else None
+        self.clock = VirtualClock()
         self.order = topology(plan, microsteps=microsteps)
         self.codec = SDL2(plan["sdl_root"])
         self.parameter_service = ParameterService(plan, self.codec)
@@ -77,8 +82,6 @@ class Simulation:
         self.events = (read_scenario(scenario, plan.get("external_topics", {}), self.codec, self.parameter_service)
                        if events is None else events)
         self.event_count = self.events.event_count if hasattr(self.events, "event_count") else len(self.events)
-        if self.event_count is None:
-            raise ValueError("simulation events must be bounded by the execution horizon")
         protected = (self.events.input_paths if hasattr(self.events, "input_paths")
                      else {event.path for event in self.events})
         if scenario is not None:
@@ -98,9 +101,18 @@ class Simulation:
         for sub in plan["subscriptions"]:
             if sub["policy"]["overflow"] == "wait" and sub["policy"]["wait_timeout_ms"] * 1_000_000 > MAX_NS:
                 raise ValueError("simulation admission wait exceeds uint64 nanoseconds")
+        from ose.recording.batch import destination, SimulatedCapture, CaptureWindow
+        CaptureWindow(record, record_from, record_until)
+        destination(record, record_file, protected=[*protected, trace])
+        self.capture = (SimulatedCapture(plan, self.codec, self.clock, record, record_file,
+            protected=[*protected, trace], microsteps=microsteps,
+            record_from=record_from, record_until=record_until) if record else None)
+        self.diagnostics = {name: [] for name in self.order}
+        self.input_recorders = {}
         self.trace = Trace(self.clock, trace, microsteps=self.microstep_limit is not None)
         try:
             self.router = Router(plan, self.codec, self.clock, self.trace)
+            self.router.capture = self.capture
         except BaseException:
             self.trace.close()
             raise
@@ -119,8 +131,22 @@ class Simulation:
         self.parameter_scenario_events = 0
 
     async def _start(self, name):
+        capture = self.capture
+        async def declare(local, desc):
+            capture.declare(name, local, desc)
+        def emit(local, desc, payload):
+            self.diagnostics[name].append((f'{name}.record.{local}', self.codec.wrap(desc['catalogue'], payload)))
+        if capture is not None:
+            from ose.recording.inputs import InputRecording, input_key
+            self.input_recorders[name] = InputRecording(self.codec, self.plan['components'][name],
+                lambda: [port for port in self.plan['components'][name]['inputs']
+                         if input_key(self.plan, name, port) in capture.channels],
+                lambda port, desc, envelope, index, **extra: capture.emit(
+                    input_key(self.plan, name, port), envelope, **extra))
+        recording = (ComponentRecording(self.codec, declare=declare, active=lambda: capture.active(name), emit=emit)
+                     if capture is not None else ComponentRecording(self.codec))
         process = await start_component(self.plan["components"][name], self.parameter_bindings[name],
-            ComponentRecording(self.codec),
+            recording,
             **({"working_directory": self.working_directory} if self.working_directory is not None else {}),
             inputs=self.input_services[name])
         self.processes[name] = process
@@ -162,6 +188,8 @@ class Simulation:
             if self.microstep_limit is not None:
                 self.recent_activations.append(f"{name}.{selected[name].port}:{selected[name].event}")
             snapshot = {selected[name].port: selected[name].record}
+            if self.capture is not None:
+                self.input_recorders[name].observe(snapshot, self.schedules[name].tick_index)
             self.trace.emit("tick", component=name, tick_index=self.schedules[name].tick_index,
                             inputs={port: None if record is None else record["id"] for port, record in snapshot.items()},
                             activation_event=selected[name].event, due_ns=selected[name].due_ns,
@@ -178,6 +206,10 @@ class Simulation:
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
         for name in names:
+            if self.capture is not None:
+                for topic, body in self.diagnostics[name]:
+                    self.capture.emit(topic, body)
+                self.diagnostics[name].clear()
             self._input_operations(name)
             bindings = self.parameter_bindings[name]
             for path, payload in bindings.staged.items():
@@ -225,8 +257,11 @@ class Simulation:
                     break
         return changed
 
+    def _has_events(self):
+        return self.event_count is None or self.cursor < self.event_count
+
     async def _inject(self):
-        while self.cursor < self.event_count and self.events[self.cursor].at == self.clock.time_ns:
+        while self._has_events() and self.events[self.cursor].at == self.clock.time_ns:
             if self.controller is not None and self.controller.quota == 0:
                 break
             event = self.events[self.cursor]
@@ -255,7 +290,7 @@ class Simulation:
 
     def _next_event(self):
         times = []
-        if self.cursor < self.event_count:
+        if self._has_events():
             times.append(self.events[self.cursor].at)
         for name, schedule in self.schedules.items():
             if name not in self.busy and (timestamp := schedule.next_event()) is not None:
@@ -284,7 +319,7 @@ class Simulation:
         snapshot = self._snapshot()
         return {**snapshot, "published": snapshot["external_events"],
                 "delivery_results": dict(self.router.external_deliveries),
-                "pending_timestamp_group": (self.cursor < self.event_count
+                "pending_timestamp_group": (self._has_events()
                     and self.events[self.cursor].at == self.clock.time_ns)}
 
     def _check_microstep_limit(self):
@@ -326,6 +361,8 @@ class Simulation:
             else:
                 starting = [asyncio.create_task(self._start(name)) for name in self.order]
                 await asyncio.wait_for(asyncio.gather(*starting), 20)
+            if self.capture is not None:
+                self.capture.open()
             self.trace.emit("start", duration_ns=self.horizon, functional=True)
             for name in self.order:
                 self._input_operations(name)
@@ -337,7 +374,7 @@ class Simulation:
                 control.snapshot = self._control_snapshot
                 control.start()
                 await asyncio.sleep(0)
-            while self.clock.time_ns < self.horizon:
+            while self.horizon is None or self.clock.time_ns < self.horizon:
                 if control is not None:
                     if not await control.ready():
                         self.reason = "stopped"
@@ -358,7 +395,7 @@ class Simulation:
                             control.time_entered = True
                 # An exact message budget may divide one timestamp's external
                 # group. Do not select callbacks until the group is complete.
-                if (control is not None and control.quota == 0 and self.cursor < self.event_count
+                if (control is not None and control.quota == 0 and self._has_events()
                         and self.events[self.cursor].at == self.clock.time_ns):
                     control.complete(pending_timestamp_group=True)
                     continue
@@ -416,9 +453,13 @@ class Simulation:
                     break
                 if timestamp <= self.clock.time_ns:
                     raise RuntimeError("simulation made no logical progress")
-                self.clock.time_ns = min(timestamp, self.horizon)
+                next_time = timestamp if self.horizon is None else min(timestamp, self.horizon)
+                if next_time > MAX_NS:
+                    raise ValueError('simulation time exceeds uint64 nanoseconds')
+                self.clock.time_ns = next_time
                 if (control is not None and control.instant_quota is not None
-                        and self.clock.time_ns == logical_timestamp and self.clock.time_ns < self.horizon):
+                        and self.clock.time_ns == logical_timestamp
+                        and (self.horizon is None or self.clock.time_ns < self.horizon)):
                     control.instant_quota -= 1
                     control.units += 1
                 self.clock.microstep = 0
@@ -453,9 +494,12 @@ class Simulation:
             try:
                 (Path(self.plan["build_dir"]) / "last-status.json").write_text(json.dumps(self.summary, indent=2) + "\n")
             finally:
-                self.trace.close()
-                self.router.close()
-                self.parameter_service.close()
+                with ExitStack() as closing:
+                    closing.callback(self.parameter_service.close)
+                    closing.callback(self.router.close)
+                    closing.callback(self.trace.close)
+                    if self.capture is not None:
+                        closing.callback(self.capture.close)
                 self.busy.clear()
                 self.external.clear()
                 self.external_bytes = 0
@@ -468,6 +512,8 @@ async def run(plan_path, duration, **options):
     plan_path = Path(plan_path).resolve()
     if options.get("trace") is not None and Path(options["trace"]).resolve() == plan_path:
         raise ValueError("trace cannot overwrite the compiled plan")
+    from ose.recording.batch import destination
+    destination(options.get('record'), options.get('record_file'), protected=[plan_path])
     engine = Simulation(read_plan(plan_path), duration, **options)
     from ose.execution.identity import identify
     identify("sim", engine.plan)

@@ -263,3 +263,14 @@ can also declare `external_topics` and connect a topic to an input using
 
 Java and Ada: see [SDKs, callbacks, external clients and toolchains](docs/java-ada.md).
 The [multilingual example](examples/multilingual/model.json) connects Python, C, Rust, Java and Ada in one graph.
+
+Batch captures can be attached to `run` and `replay` in either clock mode with
+`--record 'TOPIC_GLOB[, FILTER]'` and optional `--record-file capture.mcap`.
+The default output is `capture.pcapng`; existing capture files are overwritten.
+Use `--record-from 10s --record-until 20s` to restrict capture to `[10s, 20s)`;
+replay windows follow playback position, including speed and pauses.
+See [batch recording](docs/recording.md#batch-capture-with-run-and-replay).
+
+Simulated replay does not require `--duration`: after the requested input passes,
+it processes remaining events until quiescence or interruption. Periodic timers
+may keep it running indefinitely; provide `--duration` for a virtual time limit.

@@ -179,13 +179,14 @@ def recording_events(path, topics, mapping, codec, *, start_ns=None, end_ns=None
                                                  catalogues=list(schemas.values()))}
 
 
-async def run(path, plan_path, duration, *, mappings=None, start_ns=None, end_ns=None,
+async def run(path, plan_path, duration=None, *, mappings=None, start_ns=None, end_ns=None,
               workers=1, trace=None, loops=1, schema_policy='exact', microsteps=False, max_microsteps=None,
-              interactive=False, commands=None, output=None):
+              interactive=False, commands=None, output=None, record=None, record_file=None,
+              record_from=None, record_until=None):
     from ose.execution.simulation import run as simulate
     from ose.execution.simulation.options import microstep_limit
     microstep_limit(microsteps, max_microsteps)
-    horizon = seconds_ns(duration, positive=True)
+    horizon = seconds_ns(duration, positive=True) if duration is not None else None
     loop_count(loops)
     if type(workers) is not int or workers <= 0:
         raise ValueError("workers must be a positive integer")
@@ -197,6 +198,9 @@ async def run(path, plan_path, duration, *, mappings=None, start_ns=None, end_ns
         raise ValueError("recording cannot use the compiled plan or last-status.json path")
     if trace is not None and Path(trace).resolve() in (path, plan_path, diagnostic):
         raise ValueError("trace cannot overwrite the recording, compiled plan or last-status.json")
+    from ose.recording.batch import destination, CaptureWindow
+    CaptureWindow(record, record_from, record_until)
+    destination(record, record_file, protected=[path, plan_path, diagnostic, trace])
     topics = plan.get("external_topics", {})
     mapping = topic_mapping(mappings, topics)
     codec = SDL2(plan["sdl_root"])
@@ -208,6 +212,7 @@ async def run(path, plan_path, duration, *, mappings=None, start_ns=None, end_ns
                                  microsteps=microsteps)
                    if interactive or commands is not None else None)
         summary = await simulate(plan_path, duration, workers=workers, events=repeated, trace=trace,
+            record=record, record_file=record_file, record_from=record_from, record_until=record_until,
             **({"controller": control} if control is not None else {}),
             **({"microsteps": microsteps, "max_microsteps": max_microsteps}
                if microsteps or max_microsteps is not None else {}))

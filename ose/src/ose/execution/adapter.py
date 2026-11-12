@@ -254,6 +254,10 @@ class Adapter:
                 if status["enabled"]:
                     break
                 await asyncio.sleep(.02)
+            # Batch capture can be armed while the supervisor holds the READY
+            # barrier. Apply it before the first input observation or callback.
+            if self.component_recording.endpoint.points or self.node['inputs']:
+                await self.component_recording.refresh()
             self.activated_at_ns = time.monotonic_ns()
             tasks = [*(asyncio.create_task(self._receiver(identity)) for identity in self.subscriptions),
                      asyncio.create_task(self._work()), asyncio.create_task(self._report()), self.client.task,

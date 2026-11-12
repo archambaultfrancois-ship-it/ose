@@ -96,10 +96,13 @@ class RemoteRecording:
         self.queue.put_nowait((header, payload))
         self.bytes += len(payload)
 
+    async def refresh(self):
+        result, _ = await self.request('recording_component_state')
+        self.active = set(result['active'])
+        self.active_inputs = set(result.get('inputs', ()))
+
     async def poll(self):
         version = None
-        self.active.clear()
-        self.active_inputs.clear()
         while not self.closed:
             result, _ = await self.request("recording_component_state", watch=True, after=version)
             if self.closed:
