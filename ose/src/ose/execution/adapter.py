@@ -101,7 +101,7 @@ class Adapter(RealtimeRuntime):
             "process": describe("a", self.plan, self.name, getattr(self, 'process', None)),
             "ticks_hz": self.metrics.get("ticks", 0) / elapsed,
             "publications_hz": self.metrics.get("publications", 0) / elapsed,
-            "running": bool(self.activated_at_ns) and self.component_active, **self.metrics, **self.timings.snapshot()}
+            "running": bool(self.activated_at_ns) and self.component_active, **self.metrics, **self.execution_snapshot()}
         if hasattr(self, "component_recording"):
             metrics["recording"] = dict(self.component_recording.counts)
         metrics['measurements'] = self.process.measurements.snapshot() if hasattr(self, 'process') else {}

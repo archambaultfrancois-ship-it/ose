@@ -40,6 +40,8 @@ class Observer:
             counters = {"in": sum(queue.get("accepted", 0) for queue in queues if queue["scope"] == "input"),
                         "out": metrics.get("publications", 0),
                         "ticks": metrics.get("completed_ticks", metrics.get("ticks", 0))}
+            for port, values in metrics.get('timers', {}).items():
+                counters[f'timer:{port}:coalesced'] = values['coalesced']
             for key in ("invalid", "network_refused", "unavailable", "refused", "delivery_refused"):
                 counters[key] = metrics.get(key, 0)
             for queue in queues:
@@ -85,18 +87,28 @@ class Observer:
             p95 = metrics.get("tick_p95_ms") if fresh and not error else None
             busy = metrics.get("busy_ms") if available else None
             waiting = metrics.get("waiting_inputs", []) if available else []
+            control = snapshot.get('component_states', {}).get(name, {})
+            publication = metrics.get('publication_wait', {}) if available else {}
             if error:
                 state, severity = "UNAVAILABLE", "error"
             elif not desc.get("connected"):
                 state, severity = ("UNAVAILABLE", "error") if snapshot.get("enabled") else ("STARTING", "idle")
-            elif not desc.get("ready") or not metrics.get("running"):
-                state, severity = "STARTING", "idle"
+            elif not desc.get('ready') or desc.get('report_age_ms') is None:
+                state, severity = 'STARTING', 'idle'
             elif not fresh:
                 state, severity = "STALE", "error"
+            elif control.get('pending'):
+                state, severity = ('ENABLING' if control.get('enabled') else 'DISABLING'), 'warning'
+            elif control.get('active') is False:
+                state, severity = 'DISABLED', 'idle'
+            elif not desc.get("ready") or not metrics.get("running"):
+                state, severity = "STARTING", "idle"
             elif any(item["severity"] == "error" for item in alerts):
                 state, severity = "LOSS/ERROR", "error"
             elif alerts:
                 state, severity = "ATTENTION", "warning"
+            elif publication.get('current_ms') is not None:
+                state, severity = 'WAIT PUB', 'waiting'
             elif waiting:
                 state, severity = "WAIT INPUT", "waiting"
             elif delta["ticks"] or metrics.get("busy_ms") is not None:
@@ -111,6 +123,12 @@ class Observer:
                          "tick_p95_ms": p95, "busy_ms": busy,
                          "report_age_ms": desc.get("report_age_ms"), "waiting_inputs": waiting,
                          "generation": desc.get("generation"), "inputs": desc.get("inputs", {}),
+                         "supervision": control,
+                         "timers": {port: dict(values, recent_coalesced=delta[f'timer:{port}:coalesced'] if elapsed else None)
+                                    for port, values in metrics.get('timers', {}).items()} if available else {},
+                         "input_wait": metrics.get('input_wait', {}) if available else {},
+                         "publication_wait": publication,
+                         "resources": metrics.get('resources', {}) if available else {},
                          "queues": queues, "alerts": alerts,
                          "counters": {key: value for key, value in counters.items() if ":" not in key}})
         return {"timestamp": datetime.now(timezone.utc).isoformat(), "epoch": self.epoch,

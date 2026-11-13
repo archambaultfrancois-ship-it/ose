@@ -33,7 +33,7 @@ def safe_text(value):
 
 
 
-def render(report, selected=0, details=False, frozen=False, color=False, width=120, height=None, interactive=True):
+def render(report, selected=0, details=False, frozen=False, color=False, width=120, height=None, interactive=True, detail_offset=0):
     def paint(text, severity):
         return f"\033[{COLORS[severity]}m{text}\033[0m" if color else text
     def number(value):
@@ -44,8 +44,8 @@ def render(report, selected=0, details=False, frozen=False, color=False, width=1
     errors = report["broker_errors"]
     if errors["udp_errors"] or errors["errors"]:
         lines.append(paint(f"Broker error counters (since start): {safe_text(errors)}", "error"))
-    name_width = max(12, min(32, width - 64))
-    lines.append(f"  {'COMPONENT':<{name_width}} {'STATE':<12} {'IN/s':>7} {'OUT/s':>7} {'TICK/s':>7} {'FIFO':>9} {'LOSS':>5} {'P95 ms':>8}")
+    name_width = max(12, min(32, width - 84))
+    lines.append(f"  {'COMPONENT':<{name_width}} {'STATE':<12} {'IN/s':>7} {'OUT/s':>7} {'CALL/s':>7} {'FIFO':>9} {'LOSS':>5} {'P95 ms':>8} {'CPU %':>7} {'RSS MiB':>8}")
     rows = report["components"]
     selected = min(selected, max(0, len(rows) - 1))
     # Keep the selected row visible even when the graph exceeds terminal height.
@@ -61,7 +61,11 @@ def render(report, selected=0, details=False, frozen=False, color=False, width=1
         depth = f"{fullest.get('depth', 0)}/{fullest['policy']['capacity']}" if fullest else "-"
         losses = sum(queue["recent"]["dropped_oldest"] + queue["recent"]["failed"] for queue in row["queues"])
         text += f" {depth:>9} {losses:>5} {number(row['tick_p95_ms']):>8}"
+        component = row.get('resources', {}).get('component', {})
+        memory = component.get('rss_bytes')
+        text += f" {number(component.get('cpu_percent')):>7} {number(memory / 2**20 if memory is not None else None):>8}"
         lines.append(paint(text, row["severity"]))
+    detail_start = len(lines)
     if rows:
         row = rows[selected]
         if details:
@@ -69,6 +73,19 @@ def render(report, selected=0, details=False, frozen=False, color=False, width=1
             inputs = ", ".join(f"{name} ({desc.get('kind') if desc.get('kind') == 'timer' else desc.get('mode', 'push')})"
                                for name, desc in row["inputs"].items())
             lines.append("  Inputs: " + safe_text(inputs or "none") + "; waiting inputs: " + safe_text(", ".join(row["waiting_inputs"]) or "none"))
+            control = row.get('supervision', {})
+            if control:
+                lines.append(f"  Supervision: enabled={control.get('enabled')} active={control.get('active')} pending={control.get('pending')}")
+            publication = row.get('publication_wait', {})
+            if publication:
+                lines.append(f"  Publication wait: P95 {number(publication['p95_ms'])} ms | max {number(publication['max_ms'])} ms | current {number(publication['current_ms'])} ms")
+            for port, values in row.get('timers', {}).items():
+                lines.append(f"  Timer {safe_text(port)}: lag P95 {number(values['p95_ms'])} ms | max {number(values['max_ms'])} ms | coalesced {values['coalesced']} (recent {number(values['recent_coalesced'])})")
+            for port, values in row.get('input_wait', {}).items():
+                lines.append(f"  Input {safe_text(port)}: wait P95 {number(values['p95_ms'])} ms | max {number(values['max_ms'])} ms")
+            for role, values in row.get('resources', {}).items():
+                memory = values.get('rss_bytes')
+                lines.append(f"  {safe_text(role)} PID {safe_text(values['pid'])}: CPU {number(values['cpu_percent'])}% | RSS {number(memory / 2**20 if memory is not None else None)} MiB")
             for queue in row["queues"]:
                 policy = queue["policy"]
                 lines.append(f"  {safe_text(queue['scope'] + ' ' + queue['name'])}: {queue.get('depth', 0)}/{policy.get('capacity', '?')} "
@@ -76,7 +93,12 @@ def render(report, selected=0, details=False, frozen=False, color=False, width=1
                 lines.append("    totals " + " ".join(f"{key}={queue.get(key, 0)}" for key in COUNTERS))
         for alert in row["alerts"]:
             lines.append(paint(f"  [{alert['severity'].upper()}] {safe_text(alert['message'])}", alert["severity"]))
-    lines.extend(["Green ACTIVE | amber ATTENTION | red LOSS/ERROR/UNAVAILABLE/STALE | cyan WAIT INPUT",
+    if height and details and len(lines) > detail_start:
+        panel = lines[detail_start:]
+        budget = max(1, height - detail_start - 3)
+        offset = min(detail_offset, max(0, len(panel) - budget))
+        lines[detail_start:] = [f"Details {offset + 1}-{min(offset + budget, len(panel))}/{len(panel)} | [ / ]: scroll"] + panel[offset:offset + budget]
+    lines.extend(["Green ACTIVE | amber ATTENTION/transition | dim DISABLED | red error/stale | cyan waiting",
                   "Up/Down: select | Enter: details | Space: freeze display | q: quit" if interactive else
                   "Ctrl+C: quit | --count N: limit samples | --format jsonl: structured output"])
     def crop(line):
@@ -156,6 +178,7 @@ async def run(args, output=None, stdin=None):
     observer = Observer(args.window)
     client, snapshot, report = None, None, None
     selected, details, frozen, count = 0, False, False, 0
+    detail_offset = 0
     next_sample = 0
     failed = False
     keyboard = Keyboard(stdin, enabled=screen)
@@ -194,7 +217,7 @@ async def run(args, output=None, stdin=None):
                         print(render(report, details=True, color=color, interactive=False), file=output, flush=True)
                 if screen:
                     size = shutil.get_terminal_size((120, 30))
-                    output.write("\033[H\033[2J" + render(report, selected, details, frozen, color, size.columns, size.lines))
+                    output.write("\033[H\033[2J" + render(report, selected, details, frozen, color, size.columns, size.lines, detail_offset=detail_offset))
                     output.flush()
                 if args.count is not None and count >= args.count:
                     return 1 if failed else 0
@@ -206,10 +229,15 @@ async def run(args, output=None, stdin=None):
                     return 0
                 if key in (b"\033[A", b"\033OA", b"k"):
                     selected = max(0, selected - 1)
+                    detail_offset = 0
                 elif key in (b"\033[B", b"\033OB", b"j"):
                     selected = min(max(0, len(report["components"]) - 1), selected + 1)
+                    detail_offset = 0
                 elif key in (b"\r", b"\n"):
                     details = not details
+                    detail_offset = 0
+                elif key in (b"[", b"]"):
+                    detail_offset = max(0, detail_offset + (-3 if key == b"[" else 3))
                 elif key == b" ":
                     frozen = not frozen
                     if not frozen:

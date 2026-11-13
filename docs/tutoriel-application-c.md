@@ -634,13 +634,12 @@ depuis `~/calculatrice-ose` et après la préparation `make setup` ci-dessus :
 
 ```sh
 source ~/ose/setenv.sh
-export PATH="$FRAMEWORK_ROOT/build/python-deps/bin:$PATH"
 ose-ws init --config ose-ws.json
 ose-ws check --config ose-ws.json
 ose-ws --config ose-ws.json
 ```
 
-L'ajout au `PATH` rend accessible la commande installée par `make setup`.
+`setenv.sh` fournit directement la commande `ose-ws` et les chemins nécessaires.
 `init` crée la configuration et le jeton local : ne le relancez pas si ces
 fichiers existent déjà. Aux lancements suivants, seule la dernière commande
 est nécessaire après la préparation de l'environnement. `check` vérifie la

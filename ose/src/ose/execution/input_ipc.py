@@ -200,8 +200,9 @@ def check_record_size(port, record):
 
 class InputServices:
     """Parent-owned inbox access and timer control; removals commit at FINISHED."""
-    def __init__(self, scheduler, clock, *, on_change=None, trace=False):
+    def __init__(self, scheduler, clock, *, on_change=None, trace=False, on_read=None):
         self.scheduler, self.clock, self.on_change, self.trace = scheduler, clock, on_change, trace
+        self.on_read = on_read
         self.begin()
 
     def begin(self):
@@ -230,6 +231,8 @@ class InputServices:
                 frame("A", response)  # Validate size before recording a withdrawal.
                 if operation != "get" and record is not None:
                     view.remove(handle=record["id"])
+                if self.on_read is not None and record is not None and operation in ('get', 'pull'):
+                    self.on_read(port, record, self.clock())
             if self.trace:
                 self.operations.append(dict(operation=operation, port=port,
                     **({"handle": record["id"]} if record is not None else {})))

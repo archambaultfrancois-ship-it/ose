@@ -116,6 +116,7 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         await self.broker.start()
         self.broker.peers["source"] = (None, None)
         self.broker.ready.add("source")
+        self.broker.components.acknowledge('source', 0, True)
         self.broker.enabled = True
         self.broker.generations["source"] = "generation-one"
         self.broker.metrics["source"] = {"running": True, "measurements": {"signal": 42.0}}

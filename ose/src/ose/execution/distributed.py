@@ -833,7 +833,7 @@ class Worker(RealtimeRuntime):
         process = getattr(self, 'process', None)
         metrics = ({**self.metrics, 'running': bool(self.started_at) and self.component_active,
             'process': describe('w', self.plan, self.name, process),
-            **self.timings.snapshot(),
+            **self.execution_snapshot(),
             'inputs': {key: value.snapshot() for key, value in self.buffers.items()},
             'direct': {key: value.snapshot() for key, value in self.engines.items()},
             'measurements': process.measurements.snapshot() if process is not None else {}} if full else

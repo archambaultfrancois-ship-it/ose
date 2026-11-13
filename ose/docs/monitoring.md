@@ -16,10 +16,12 @@ ose top --distributed --insecure --host 127.0.0.1 --port 7000
 Distributed TLS uses a CA-signed client certificate and verifies the server's
 `coordinator` identity. Status access does not require a worker identity.
 `--insecure` is explicitly restricted to loopback, as for other distributed tools.
-The local default endpoint is reread when reconnecting after a connection error.
+The active endpoint, including its local/distributed connection mode, is reread
+when reconnecting after a connection error.
 
 The display refreshes every second. Up/Down selects a component, Enter toggles
-its details, Space freezes/resumes the display, and `q` quits. Collection continues
+its details, `[` / `]` scroll long details, Space freezes/resumes the display,
+and `q` quits. Collection continues
 while the display is frozen. Ctrl+C also exits and restores the terminal.
 Redirecting stdout produces successive plain-text reports without reading stdin;
 `--count N` limits their number and uses persistent reports even on a terminal.
@@ -36,6 +38,9 @@ Redirecting stdout produces successive plain-text reports without reading stdin;
 | Red | `UNAVAILABLE` / `STALE` | Disconnected component in an activated graph, lost status connection, or running worker metrics older than three seconds. |
 | Cyan | `WAIT INPUT` | The runtime explicitly reports pending input waits. V2 callbacks do not wait for a combined input snapshot. |
 | Dim | `STARTING` / `IDLE` | Startup barrier, or no recent processing activity. |
+| Dim | `DISABLED` | Supervision confirms the component is inactive. Its process can remain alive. |
+| Amber | `ENABLING` / `DISABLING` | The requested activation state has not yet been acknowledged at a callback boundary. |
+| Cyan | `WAIT PUB` | A publication call is in progress after callback completion. |
 
 Every state remains readable without color. The default `--color auto` uses ANSI
 colors only on a terminal, respects `NO_COLOR` and avoids `TERM=dumb`.
@@ -58,8 +63,13 @@ queue, timing and measurement snapshots. `presence_age_ms` tracks these lightwei
 reports separately. Logs wake their sender immediately in either mode. Older
 runtimes without demand negotiation retain their original reporting cadence.
 
-The table shows recent input admissions/s, publications/s and completed input callbacks/s (the `ticks` counter),
-the fullest FIFO's depth/capacity, recent delivery losses, and tick p95 in ms.
+The table shows recent input admissions/s, publications/s and completed callback
+cycles/s (`CALL/s`, the `rates.ticks` JSON field), the fullest FIFO's depth/capacity,
+recent delivery losses, callback p95 in ms, and the component process's CPU and RSS.
+`CALL/s` advances after the callback's publications return. A cycle may be
+activated by a Push message or timer and publish zero, one or several messages;
+explicit Pull reads are not additional callbacks. This is neither timer frequency
+nor message throughput.
 Details show each input and outgoing delivery queue, its capacity, FIFO/latest
 policy, age, counters and the evidence for alerts. Direct delivery queues come
 from their producer worker; broker delivery queues come from the broker or
@@ -91,6 +101,47 @@ The aggregate p95 combines different activating inputs, so it is not compared
 with any individual timer period. Periodic timers retain their deadline cadence
 and coalesce missed expirations; they do not restart their delay at callback
 completion.
+
+## Scheduling, publication and process details
+
+Enter opens the following diagnostics for the selected component. All timing
+samples are bounded to the last 256 observations in five seconds, independently
+of `--window`, which controls rates. P95/max are unknown when no recent samples
+remain. Each JSON timing object includes its sample count and window length.
+
+- `supervision`: requested `enabled`, acknowledged `active`, and `pending`.
+  Disabled components are distinguished from startup and connection failures.
+- `timers`: per-timer lag from the scheduled deadline to callback selection,
+  in local monotonic time. `coalesced` counts the extra elapsed expirations
+  grouped into callbacks since runtime startup; `recent_coalesced` counts them
+  over the rate observation window. It is unknown on the first observation or
+  after a generation reset. Timer lag is measured per input, not inferred from
+  the aggregate callback p95. Inactivity timeouts on message inputs are excluded.
+- `publication_wait`: duration of each publication call, including transport and
+  admission waits, after callback computation. `current_ms` exposes an ongoing
+  call; `calls` and `total_ms` accumulate all attempts, including failures.
+  Admission can concern a broker or an outgoing delivery queue. This duration
+  does not include asynchronous delivery/ACK waits after the call returns and
+  does not measure downstream application processing.
+- `input_wait`: per-input time from local queue admission to callback selection
+  for Push, or the first successful get/pull in the callback for Pull. Repeated
+  reads of the same handle in one callback count once; retained values read in
+  another callback count again. Observations also count callbacks that later
+  fail. Empty reads, explicit removes, and messages dropped before observation
+  do not create samples. Network transit before admission is excluded.
+- `resources`: CPU percentage and resident memory for `component` and `runtime`
+  (the adapter or worker), with their PIDs. Each runtime reads its own host's
+  `/proc/PID/stat`, so distributed PIDs are never read on the observer's host.
+  CPU is measured between detailed reports (`cpu_span_seconds`); 100% represents
+  one fully occupied CPU core, and multithreaded processes can exceed 100%.
+  The first sample, PID reuse, an exited process or inaccessible `/proc` leaves
+  the corresponding measurement unknown (`-`), rather than zero. RSS is in
+  bytes in JSON and MiB in the display; shared resident pages can be counted in
+  several processes. Child processes spawned by the component are not included.
+
+Resource reads occur only when detailed reports are requested. The runtime keeps
+bounded duration samples without requiring an active observer. These measurements
+do not change timer cadence, queue admission, or callback transaction semantics.
 
 ## Flow metadata and SDL contracts
 

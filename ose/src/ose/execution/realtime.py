@@ -11,6 +11,7 @@ from ose.execution.input_ipc import InputServices
 from ose.execution.logs import ComponentLogs
 from ose.execution.observation import ReportSchedule, TickTimings
 from ose.execution.process import calculate, start_component
+from ose.execution.telemetry import ExecutionTelemetry
 from ose.parameters.bindings import updates
 
 
@@ -40,7 +41,9 @@ class RealtimeRuntime(ComponentRuntime):
                 self.buffers[port] = buffer
         self.scheduler = InputScheduler(self.node, self.buffers)
         self.scheduler.start()
-        self.input_services = InputServices(self.scheduler, self._input_now, on_change=self._changed)
+        self.telemetry = ExecutionTelemetry(self.node)
+        self.input_services = InputServices(self.scheduler, self._input_now, on_change=self._changed,
+                                            on_read=self.telemetry.read)
         self.timings = TickTimings()
         self.tick_index, self.activated_at_ns = 0, 0
         self.closing = False
@@ -52,6 +55,10 @@ class RealtimeRuntime(ComponentRuntime):
 
     def _input_now(self):
         return time.monotonic_ns() - self.activated_at_ns if self.activated_at_ns else 0
+
+    def execution_snapshot(self):
+        return {**self.timings.snapshot(),
+                **self.telemetry.snapshot(getattr(getattr(self, 'process', None), 'pid', None))}
 
     async def decode_input(self, port, body, request, source=None):
         identity = self.codec.api.unpack_envelope(body)[0]
@@ -125,6 +132,7 @@ class RealtimeRuntime(ComponentRuntime):
                 pass
 
     async def _callback(self, reference):
+        self.telemetry.activate(reference)
         self.tick_index += 1
         self.metrics['ticks'] = self.tick_index
         self.reports.mark()
@@ -135,6 +143,7 @@ class RealtimeRuntime(ComponentRuntime):
         # Successful FINISHED commits withdrawals before outbound admissions.
         # The transport can wait without retaining a consumed inbox slot.
         for port, envelope, app_id in outputs:
-            await self.publish(f'{self.name}.{port}', envelope, app_id=app_id)
+            with self.telemetry.publishing():
+                await self.publish(f'{self.name}.{port}', envelope, app_id=app_id)
         self.metrics['completed_ticks'] = self.metrics.get('completed_ticks', 0) + 1
         self.reports.mark()

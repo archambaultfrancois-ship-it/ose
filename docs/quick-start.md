@@ -349,8 +349,10 @@ Now stop terminal A, then replay the capture in terminal B:
 make replay RECORDING=build/quick-start-signals.pcapng DURATION=3 WORKERS=4
 ```
 
-Vibration Watch builds a replay graph that replaces the sensors with external
-inputs. The analyzers and alarm process the recorded signals. Both motors
+Vibration Watch uses the same application model and disables `sensor_1` and
+`sensor_2` for replay. OSE publishes the recorded signals on their original
+topics, `sensor_1.signal` and `sensor_2.signal`. The analyzers and alarm process
+these signals through the existing subscriptions. Both motors
 should stay normal, as they did during capture. The trace is in
 `build/replay/trace.jsonl`. Original signal timestamps remain in the messages;
 replay controls their order and intervals.

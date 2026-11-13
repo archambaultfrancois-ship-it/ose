@@ -12,7 +12,7 @@ GROUPS = {
         "test_event_control", "test_example_inputs", "test_input_callbacks",
         "test_input_timeouts", "test_logs", "test_managed_launch", "test_measurements",
         "test_native_containers", "test_open_producers", "test_ose", "test_parameter_sync",
-        "test_parameters", "test_process_identity", "test_shutdown",
+        "test_parameters", "test_process_identity", "test_shutdown", "test_telemetry",
     ),
     "transport": (
         "test_backpressure", "test_broker", "test_c_inputs",
