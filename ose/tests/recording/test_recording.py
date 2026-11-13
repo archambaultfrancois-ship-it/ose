@@ -339,14 +339,18 @@ asyncio.run(main())
         self.assertEqual(self.broker.recording.sessions, {})
 
     async def test_explicit_reconnect_after_broker_restart_starts_a_new_file(self):
+        from ose.transport.endpoint import publish, resolve
+        self.recorder.endpoint = lambda: resolve(dict(endpoint=str(self.root / 'endpoint.json')))
+        publish(self.root, self.broker.port)
         capture = await self.recorder.start(self.root / "old.pcapng")
-        port, plan = self.broker.port, self.broker.plan
+        plan = self.broker.plan
         await self.broker.close()
         await asyncio.wait_for(capture.task, 4)
         self.assertEqual(capture.state, "failed")
         self.broker = Broker(plan)
         self.addAsyncCleanup(self.broker.close)
-        await self.broker.start(port)
+        await self.broker.start()
+        publish(self.root, self.broker.port)
         self.broker.peers["source"] = (None, None)
         self.broker.enabled = True
         await self.recorder.reconnect()
@@ -581,7 +585,7 @@ class DistributedRecordingTests(unittest.IsolatedAsyncioTestCase):
         root = Path(self.directory.name)
         await asyncio.to_thread(distributed_fixture.certificates, root, ["coordinator", "source", "middle", "sink", "recorder"])
         await self.coordinator.close()
-        self.coordinator = Coordinator(self.plan, distributed_fixture.tls(root, "coordinator")[0], lease_seconds=1)
+        self.coordinator = Coordinator(self.plan, distributed_fixture.tls(root, "coordinator")[0])
         await self.coordinator.start()
         for name in self.plan["components"]:
             server, client = distributed_fixture.tls(root, name)

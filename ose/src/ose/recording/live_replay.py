@@ -15,7 +15,8 @@ from ose.execution.simulation.clock import seconds_ns
 from ose.recording.control import ReplayControl
 from ose.recording.pacing import playback_speed
 from ose.recording.replay import RepeatedEvents, loop_count, recording_events, topic_mapping
-from ose.transport.secure import connect, contexts, finish_cleanup
+from ose.transport.endpoint import resolve
+from ose.transport.secure import connect, finish_cleanup
 from ose.transport.udp import UDP
 
 
@@ -175,17 +176,14 @@ async def run(path, plan_path, duration=None, *, mappings=None, speed=1, start_n
     topics = topic_contracts(plan)
     mapping = topic_mapping(mappings, topics)
     codec = SDL2(plan["sdl_root"])
-    distributed = distributed or plan.get("execution") == "distributed" or insecure or any((tls_ca, tls_cert, tls_key))
     if endpoint is not None and (host is not None or port is not None):
         raise ValueError("choose --endpoint or --host/--port")
     default_endpoint = Path(plan["build_dir"]) / "endpoint.json"
-    if endpoint is not None or (not distributed and host is None and port is None and default_endpoint.is_file()):
-        address = json.loads(Path(endpoint or default_endpoint).read_text())
-        host, port = address["host"], address["port"]
-    host, port = host or "127.0.0.1", 7000 if port is None else port
-    if type(port) is not int or not 0 < port < 65536:
-        raise ValueError("port must be 1..65535")
-    context = contexts(tls_ca, tls_cert, tls_key, insecure=insecure, hosts=[host])[1] if distributed else None
+    endpoint = endpoint or (str(default_endpoint) if host is None and port is None and default_endpoint.is_file() else None)
+    address = resolve(dict(endpoint=endpoint, host=host, port=port,
+        distributed=distributed or (not endpoint and plan.get("execution") == "distributed"),
+        insecure=insecure, tls_ca=tls_ca, tls_cert=tls_cert, tls_key=tls_key))
+    host, port, distributed, context = address.host, address.port, address.distributed, address.context
     with recording_events(path, topics, mapping, codec, start_ns=start_ns, end_ns=end_ns,
                           schema_policy=schema_policy) as (events, selection):
         async with publisher(plan, selection["mapping"].values(), host=host, port=port,

@@ -7,6 +7,27 @@ This page describes the default `realtime` engine with application model v2.
 The [simulator](simulation.md) runs the same callbacks with virtual time and
 deterministic publication barriers.
 
+Local and distributed execution use the same component engine,
+`execution.realtime.RealtimeRuntime`. Local `Adapter` and distributed `Worker`
+provide its transport connections and readiness barrier. They share input-buffer
+creation, dynamic SDL validation, bounded admission waits, scheduling, component
+initialization, callback execution and supervision at callback boundaries.
+`execution.process.calculate` stages and validates callback outputs and commits
+successful withdrawals; both real-time endpoints and simulation use it.
+
+The local Broker and distributed Coordinator remain separate network services:
+the former supports TCP/UDP and external subscriptions, while the latter provides
+leases, generation fencing, mutual TLS and direct routes. This sharing does not
+convert local plans into distributed plans or remove either protocol. Launchers
+retain process creation, startup, recording barriers and shutdown policies.
+
+Both real-time endpoints report `ticks` as started callbacks and `completed_ticks`
+as callbacks whose output admissions have finished. A failed or still-running
+callback can therefore increase `ticks` without increasing `completed_ticks`.
+Control RPCs share a budget of 15 seconds plus configured outbound admission
+waits, leaving room for the services' 10-second long polls. Distributed leases
+and their suspend-aware expiration checks remain independent of this budget.
+
 A Push receipt, inactivity timeout or timer expiration activates one input
 callback. Other inputs do not gate it. Pull inputs are passive inboxes read
 explicitly during another activation. Each component processes one callback at
@@ -19,12 +40,13 @@ Three actors participate in a message exchange:
 | Actor | Responsibility |
 | --- | --- |
 | Component | Executes application code: acquisition, calculation, filtering, display, and so on. |
-| Component adapter | Handles network reception, input queues, acknowledgements, scheduling and local communication with the component. |
-| Broker | Routes publications to subscriptions and manages an independent delivery queue and policy for each subscription. |
+| Component endpoint | Local Adapter or distributed Worker: handles transport reception, acknowledgements and publication, and hosts the common component engine. |
+| Routing service | Local Broker or distributed Coordinator: manages subscriptions and delivery queues; distributed direct routes bypass its payload path. |
 
-The current implementation runs each component and its Python adapter as two
-separate processes. The supervisor hosts the broker and launches the adapters.
-The component process can use Python, C, Rust, Java or Ada.
+Each component and its Python endpoint run as two separate processes. Locally,
+the supervisor hosts the broker and launches adapters. The loopback distributed
+launcher starts a coordinator process and workers; remote deployments launch
+them separately. The component process can use Python, C, Rust, Java or Ada.
 
 ```mermaid
 flowchart LR

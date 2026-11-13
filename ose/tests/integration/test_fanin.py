@@ -86,7 +86,7 @@ class FaninFixture:
         if distributed:
             self.plan["execution"] = "distributed"
             self.plan["subscriptions"][0]["routing"] = "direct"
-            self.server = Coordinator(self.plan, lease_seconds=2)
+            self.server = Coordinator(self.plan)
             await self.server.start()
             for name in self.plan["components"]:
                 worker = Worker(self.plan, name, "127.0.0.1", self.server.port)

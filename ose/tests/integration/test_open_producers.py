@@ -87,7 +87,9 @@ def on_input(ctx, input):
             self.server = Broker(self.plan, disabled=disabled)
             await self.server.start()
             for name in self.plan['components']:
-                self.tasks.append(asyncio.create_task(Adapter(self.plan, name).run('127.0.0.1', self.server.port)))
+                worker = Adapter(self.plan, name)
+                self.workers.append(worker)
+                self.tasks.append(asyncio.create_task(worker.run('127.0.0.1', self.server.port)))
             await self.until(lambda: self.server.ready == set(self.plan['components']))
             self.server.enabled = True
 
@@ -148,7 +150,13 @@ class OpenProducerTests(OpenProducerFixture):
             self.assertTrue(result.accepted)
             await self.until(lambda: any(row['value'] == 105. for row in self.rows()))
             await control.request('component_set', components=['source'], enabled=False, timeout=25)
-            await asyncio.sleep(.2)  # Drain already admitted publications.
+            source = next(worker for worker in self.workers if worker.name == 'source')
+            # Acknowledging disable stops new callbacks, but already committed
+            # publications may still be in transit. Wait for each of them.
+            committed = set(range(1, source.tick_index + 1))
+            await self.until(lambda: committed <= {row['sequence'] for row in self.rows() if row['value'] == 1})
+            self.assertFalse(source.component_active)
+            self.assertIsNone(source.scheduler.next_event(source._input_now()))
             before = len(self.rows())
             await asyncio.sleep(.2)
             self.assertEqual(len(self.rows()), before)

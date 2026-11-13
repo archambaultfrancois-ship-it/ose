@@ -12,7 +12,7 @@ from ose.recording.recorder import Recorder
 from ose.recording.command_input import CommandInput
 from ose.recording.rotation import parse_size
 from ose.recording.selection import resolve, ordered
-from ose.transport.secure import contexts
+from ose.transport.endpoint import resolve as resolve_endpoint
 
 
 HELP = """list [PATTERN] [--kind input|output|internal|external]  discover recording points
@@ -272,17 +272,10 @@ async def run(args):
         raise ValueError("capacity must be 1..4096 and byte budget 1024..67108864")
     if args.endpoint and (args.host or args.port):
         raise ValueError("choose --endpoint or --host/--port")
-    host, port = args.host or "127.0.0.1", args.port or 7000
-    if args.endpoint or (not args.host and not args.port and Path("build/endpoint.json").is_file()):
-        endpoint = json.loads(Path(args.endpoint or "build/endpoint.json").read_text())
-        host, port = endpoint["host"], endpoint["port"]
-    distributed = args.distributed or args.insecure or any((args.tls_ca, args.tls_cert, args.tls_key))
-    context = None
-    if distributed:
-        _, context = contexts(args.tls_ca, args.tls_cert, args.tls_key, insecure=args.insecure, hosts=[host])
-    recorder = Recorder(host, port, context=context, distributed=distributed,
+    endpoint = resolve_endpoint(args)
+    recorder = Recorder(endpoint.host, endpoint.port, context=endpoint.context, distributed=endpoint.distributed,
                         capacity=args.capacity, byte_budget=args.byte_budget, max_frame=args.max_frame,
-                        label=args.label)
+                        label=args.label, endpoint=lambda: resolve_endpoint(args))
     console = Console(recorder)
     commands = CommandInput()
     try:

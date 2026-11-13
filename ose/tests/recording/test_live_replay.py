@@ -175,7 +175,7 @@ class LiveReplayTests(unittest.IsolatedAsyncioTestCase):
     async def cluster(self, context=None, client_context=None, worker_context=None):
         self.plan["execution"] = "distributed"
         self.plan_path.write_text(json.dumps(self.plan))
-        coordinator = Coordinator(self.plan, context, lease_seconds=2)
+        coordinator = Coordinator(self.plan, context)
         await coordinator.start()
         self.addAsyncCleanup(coordinator.close)
         worker = Worker(self.plan, "sink", "127.0.0.1", coordinator.port,

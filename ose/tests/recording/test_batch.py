@@ -1,5 +1,7 @@
 """Batch capture across local run and simulated/live replay."""
 import asyncio
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -7,6 +9,7 @@ import struct
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
 from ose.recording.batch import destination, select
 from ose.recording.replay import run
@@ -115,6 +118,14 @@ for activation in s.activations():
             self.assertEqual(self.plan_path.read_bytes(), original)
 
     async def test_realtime_run_arms_before_first_timer_and_overwrites(self):
+        from ose.execution.supervisor import run as realtime
+        from ose.recording.batch import LiveCapture
+        origins = []
+        begin_run = LiveCapture.begin_run
+        def begin(capture):
+            begin_run(capture)
+            if capture.window.enabled:
+                origins.append(capture.window.times[0])
         script = self.root / 'sink.py'
         script.write_text('''import struct
 from ose.execution.input_process import InputSession
@@ -136,22 +147,23 @@ for index, activation in enumerate(s.activations(), 1):
         for format in ('pcapng', 'mcap'):
             output = self.root / ('live.' + format)
             output.write_bytes(b'old capture')
-            window_options = ['--record-from', '50ms', '--record-until', '110ms'] if format == 'mcap' else []
-            result = await asyncio.to_thread(subprocess.run,
-                [sys.executable, '-m', 'ose.cli', 'run', '--plan', str(self.plan_path), '--duration', '.15',
-                 '--record', 'sink.*', '--record-file', str(output), *window_options], capture_output=True, text=True, timeout=30)
-            self.assertEqual(result.returncode, 0, result.stderr)
+            window_options = dict(record_from='50ms', record_until='110ms') if format == 'mcap' else {}
+            with patch.object(LiveCapture, 'begin_run', begin), redirect_stdout(io.StringIO()):
+                await realtime(self.plan_path, .15, record=['sink.*'], record_file=output, **window_options)
             records = self.records(output)
             self.assertGreaterEqual(len(records), 1)
             self.assertEqual({r.channel.topic for r in records}, {'sink.out', 'sink.record.sample'})
             for topic in ('sink.out', 'sink.record.sample'):
                 first = next(r for r in records if r.channel.topic == topic)
-                if window_options:
-                    self.assertGreater(first.decode().fields['sequence'], 1)
-                else:
+                if not window_options:
                     self.assertEqual(first.decode().fields['sequence'], 1)
             self.assertTrue(all(r.log_time_ns >= r.publish_time_ns > 10**18 for r in records))
             if window_options:
+                # Timer expirations coalesce when scheduling is late: sequence
+                # 1 may legitimately be published after the window opens.
+                origin = origins[-1]
+                self.assertTrue(all(origin + 50_000_000 <= r.publish_time_ns < origin + 110_000_000
+                                    for r in records))
                 dates = [r.publish_time_ns for r in records]
                 self.assertLess(max(dates) - min(dates), 60_000_000)
 

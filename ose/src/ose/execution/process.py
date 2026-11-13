@@ -9,6 +9,39 @@ from ose.parameters.bindings import updates, write_reply
 from ose.execution.measurements import Measurements
 from ose.execution.logs import ComponentLogs
 
+DEFAULT_OUTPUT_LIMIT = 16 * 1024 * 1024
+
+
+async def calculate(process, node, reference, index, services, codec, now, *, parameters=None,
+                    timings=None, limit=DEFAULT_OUTPUT_LIMIT):
+    """Validate/stage one callback and commit its withdrawals, never publish.
+
+    Real-time endpoints release the result immediately. Simulation keeps it
+    behind its wave barrier. Failure/cancellation releases reservations without
+    consuming inputs and exposes none of the staged outputs.
+    """
+    outputs, size, success = [], 0, False
+    events = input_events(process, node, reference, index, services,
+                          **({'parameters': parameters} if node.get('parameter_bindings') else {}))
+    if timings is not None:
+        events = timings.events(events)
+    try:
+        async for port, payload, app_id in events:
+            size += len(payload) + len(port.encode()) + 12
+            if size > limit:
+                raise ValueError(f'callback outputs exceed max_tick_output_bytes={limit}')
+            desc = node['outputs'][port]
+            envelope = codec.wrap(desc['catalogue'], payload)
+            codec.validate_only(desc['catalogue'], desc['root'], envelope)
+            outputs.append((port, envelope, app_id))
+        success = True
+    finally:
+        try:
+            await events.aclose()
+        finally:
+            services.scheduler.complete(reference, now(), success=success)
+    return outputs
+
 
 async def start_component(node, parameters=None, recording=None, logs=None, *, working_directory=None, inputs=None):
     if type(node.get("execution_model")) is not int or node["execution_model"] != 2:

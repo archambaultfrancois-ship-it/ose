@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 import json
 import math
 import os
-from pathlib import Path
 import re
 import shutil
 import ssl
@@ -13,7 +12,8 @@ import termios
 import time
 import tty
 
-from ose.transport.secure import connect, contexts, finish_cleanup
+from ose.transport.endpoint import resolve
+from ose.transport.secure import connect, finish_cleanup
 
 
 from ose.diagnostics import COUNTERS, Observer
@@ -150,20 +150,7 @@ async def run(args, output=None, stdin=None):
         raise ValueError("count must be positive")
     if args.endpoint and (args.host or args.port):
         raise ValueError("choose --endpoint or --host/--port")
-    distributed = args.distributed or args.insecure or any((args.tls_ca, args.tls_cert, args.tls_key))
-    def address():
-        endpoint_path = args.endpoint or ("build/endpoint.json" if not args.host and not args.port and not distributed else None)
-        if endpoint_path:
-            endpoint = json.loads(Path(endpoint_path).read_text())
-            host, port = endpoint.get("host"), endpoint.get("port")
-        else:
-            host, port = args.host if args.host is not None else "127.0.0.1", args.port if args.port is not None else 7000
-        if not isinstance(host, str) or not host or type(port) is not int or not 1 <= port <= 65535:
-            raise ValueError("endpoint requires a host and a port between 1 and 65535")
-        return host, port
-    # Validate authentication before starting a retrying dashboard.
-    host, port = address()
-    context = contexts(args.tls_ca, args.tls_cert, args.tls_key, insecure=args.insecure, hosts=[host])[1] if distributed else None
+    resolve(args)  # Validate connection settings before entering the retry loop.
     color = color_enabled(args.color, output) and args.format == "text"
     screen = output.isatty() and os.environ.get("TERM") != "dumb" and args.format == "text" and args.count is None
     observer = Observer(args.window)
@@ -182,11 +169,9 @@ async def run(args, output=None, stdin=None):
                     error = None
                     try:
                         if client is None:
-                            host, port = address()
-                            if distributed and args.insecure:
-                                contexts(insecure=True, hosts=[host])
-                            client = await connect(host, port, 1024 * 1024, context,
-                                                   "coordinator" if distributed else None, timeout=3)
+                            endpoint = resolve(args)
+                            client = await connect(endpoint.host, endpoint.port, 1024 * 1024, endpoint.context,
+                                                   "coordinator" if endpoint.distributed else None, timeout=3)
                         snapshot, _ = await client.request("status", timeout=3)
                     except ssl.SSLError:
                         raise

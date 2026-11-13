@@ -4,13 +4,13 @@ from datetime import datetime, timezone
 from fnmatch import fnmatchcase
 import json
 import math
-from pathlib import Path
 import ssl
 import sys
 
 from ose.execution.measurements import validate_snapshot
 from ose.top import safe_text
-from ose.transport.secure import connect, contexts, finish_cleanup
+from ose.transport.endpoint import resolve
+from ose.transport.secure import connect, finish_cleanup
 
 
 def sample(snapshot, patterns=('*',)):
@@ -53,32 +53,16 @@ async def run(args, output=None):
         raise ValueError('count must be positive')
     if args.endpoint and (args.host is not None or args.port is not None):
         raise ValueError('choose --endpoint or --host/--port')
-    distributed = args.distributed or args.insecure or any((args.tls_ca, args.tls_cert, args.tls_key))
-
-    def address():
-        endpoint_path = args.endpoint or ('build/endpoint.json' if args.host is None and args.port is None and not distributed else None)
-        if endpoint_path:
-            endpoint = json.loads(Path(endpoint_path).read_text())
-            host, port = endpoint.get('host'), endpoint.get('port')
-        else:
-            host, port = args.host if args.host is not None else '127.0.0.1', args.port if args.port is not None else 7000
-        if not isinstance(host, str) or not host or type(port) is not int or not 1 <= port <= 65535:
-            raise ValueError('endpoint requires a host and a port between 1 and 65535')
-        return host, port
-
-    host, port = address()
-    context = contexts(args.tls_ca, args.tls_cert, args.tls_key, insecure=args.insecure, hosts=[host])[1] if distributed else None
+    resolve(args)
     count = args.count if args.count is not None else (None if args.watch else 1)
     client, collected = None, 0
     try:
         while True:
             try:
                 if client is None:
-                    host, port = address()
-                    if distributed and args.insecure:
-                        contexts(insecure=True, hosts=[host])
-                    client = await connect(host, port, 1024 * 1024, context,
-                                           'coordinator' if distributed else None, timeout=3)
+                    endpoint = resolve(args)
+                    client = await connect(endpoint.host, endpoint.port, 1024 * 1024, endpoint.context,
+                                           'coordinator' if endpoint.distributed else None, timeout=3)
                 snapshot, _ = await client.request('status', timeout=3)
                 report = sample(snapshot, args.patterns or ('*',))
             except ssl.SSLError:

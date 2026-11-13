@@ -43,7 +43,7 @@ class RecordingManager:
         settings = settings or {}
         host, port = self.connection.address()
         return Recorder(host, port, context=self.connection.context,
-                        distributed=self.connection.config["distributed"],
+                        distributed=self.connection.distributed,
                         capacity=settings.get("capacity", 256), byte_budget=settings.get("byte_budget", 8 * 1024**2),
                         label=settings.get("label", "recorder"), max_size=settings.get("max_size"), cycle=settings.get("cycle"))
 

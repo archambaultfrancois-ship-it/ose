@@ -9,6 +9,14 @@ Python, C, Rust, Java and Ada callback containers used by `realtime`. It runs re
 processes, selects their input activations centrally and advances a virtual clock without
 waiting for wall time. The default engine remains `realtime`.
 
+Simulation shares `execution.process.calculate` with the real-time component
+engine: CH/2 activation, output validation/budget and withdrawal commit follow
+one implementation. Its coordinator still owns activation selection, virtual
+time, bounded calculation concurrency and publication barriers. It does not
+start real-time Worker processes, renew network leases or restart failed
+components. Sharing calculation code preserves the deterministic wave ordering;
+`--workers` continues to bound simultaneous component calculations.
+
 Application model v2 supports Python, Rust, C, Java and Ada containers with single-input
 callbacks, passive Pull inboxes and explicit timer inputs. Its activation graph,
 withdrawal commit and wave rules are described in the

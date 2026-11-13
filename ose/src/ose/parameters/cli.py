@@ -94,12 +94,12 @@ def parser(commands):
                                 help='maximum total JSON bytes for --dir (default: 67108864 / 64 MiB)')
         action.add_argument('--client', required=True, help='client identity declared in the parameter configuration')
         action.add_argument('--token-env', default='OSE_PARAMETER_TOKEN', help='environment variable containing the client token (default: OSE_PARAMETER_TOKEN)')
-        action.add_argument('--endpoint', default='build/endpoint.json', help='local service endpoint JSON (default: build/endpoint.json)')
+        action.add_argument('--endpoint', default='build/endpoint.json', help='active application endpoint JSON (default: build/endpoint.json)')
         action.add_argument('--host', help='service or coordinator host; with --host, also supply --port')
         action.add_argument('--port', type=int, help='service or coordinator TCP port (default: from endpoint)')
         action.add_argument('--plan', default='build/plan.json', help='plan used to locate the SDL runtime (default: build/plan.json)')
         action.add_argument('--sdl-root', default=os.environ.get('SDL_ROOT'), help='SDL checkout (default: SDL_ROOT, plan runtime or installed runtime)')
-        action.add_argument('--distributed', action='store_true', help='connect through a distributed coordinator; required for TLS options')
+        action.add_argument('--distributed', action='store_true', help='connect through a distributed coordinator; inferred from endpoint metadata by default')
         action.add_argument('--tls-ca', help='trusted CA certificate file for distributed mutual TLS')
         action.add_argument('--tls-cert', help='distributed client certificate file; common name must match --client')
         action.add_argument('--tls-key', help='private key file matching --tls-cert')
@@ -140,7 +140,7 @@ def read_directory(directory, max_size=MAX_JSON_SIZE, max_total=MAX_TOTAL_JSON_S
 def connection_factory(options):
     """Resolve the endpoint on each connection, including after restart."""
     from ose.parameters.client import ParameterClient
-    from ose.transport.secure import contexts
+    from ose.transport.endpoint import resolve
     from ose.codec.runtime import Runtime
     if options.sdl_root:
         from ose.codec.sdl2 import SDL2
@@ -156,17 +156,9 @@ def connection_factory(options):
                 raise
             raise ValueError('select --sdl-root, a compiled --plan, or install the SDL Python runtime') from error
     async def connect():
-        endpoint = json.loads(Path(options.endpoint).read_text()) if options.host is None and Path(options.endpoint).is_file() else {}
-        host, port = options.host or endpoint.get('host', '127.0.0.1'), options.port or endpoint.get('port')
-        if type(port) is not int or not 0 < port < 65536:
-            raise ValueError('select a valid parameter service port or endpoint')
-        context = None
-        if options.distributed:
-            _, context = contexts(options.tls_ca, options.tls_cert, options.tls_key, insecure=options.insecure, hosts=[host])
-        elif options.insecure or any((options.tls_ca, options.tls_cert, options.tls_key)):
-            raise ValueError('TLS options require --distributed')
-        return await ParameterClient.connect(host, port, options.client, token=os.environ.get(options.token_env),
-            context=context, distributed=options.distributed, runtime=runtime)
+        endpoint = resolve(options)
+        return await ParameterClient.connect(endpoint.host, endpoint.port, options.client, token=os.environ.get(options.token_env),
+            context=endpoint.context, distributed=endpoint.distributed, runtime=runtime)
     return connect
 
 

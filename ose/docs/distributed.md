@@ -1,8 +1,10 @@
 # Distributed real-time execution
 
-OSE runs one adapter/component pair per worker, a central coordinator and optional
-direct TCP subscriptions. Business callbacks, SDL contracts and input timeouts
-use the existing local APIs. Simulation remains local.
+OSE runs one Worker process and one component process per component, a central
+coordinator and optional direct TCP subscriptions. Workers and local adapters
+host the [same component execution engine](runtime.md); transport/session handling
+and readiness remain specific to each endpoint. Business callbacks, SDL contracts
+and input timeouts use the existing local APIs. Simulation remains local.
 
 ## Deployment and build
 
@@ -129,9 +131,16 @@ Logs are reset for the current processes under `BUILD/distributed-logs`, or
 each line with `[coordinator]`, `[component_name]` or `[params-sync]`. Files retain
 the original output without prefixes. Restarted workers keep appending to the
 same file and console stream; shutdown drains remaining output. The final JSON
-status remains on stdout. `BUILD` is the plan's build directory. The launcher publishes its
-actual port in `BUILD/distributed-endpoint.json`; use that port explicitly for
-`cluster-status --insecure --port PORT`. Successful completion writes
+status remains on stdout. `BUILD` is the plan's build directory. The launcher
+publishes its active connection in `BUILD/endpoint.json`, including `host`, `port`,
+`distributed` and `insecure`. Local execution publishes the same file with
+`distributed: false` and `insecure: false`. Each launch atomically replaces it.
+`ose top`, `ose measure`, `ose record`, `ose logs`, `ose component`,
+`ose params`, live `ose replay` and `ose-ws` read this file and infer the connection mode; no distributed flags are needed
+for this loopback cluster. Explicit security options override the file hints;
+TLS credentials remain supplied by the caller. Tools that reconnect reread the
+connection settings. `cluster-status` still accepts an explicit
+`--insecure --port PORT`. Successful completion writes
 `distributed-status.json` and `distributed-processes.json` in `BUILD`.
 With synchronization enabled, its messages go to `params-sync.log` and its
 failure stops the cluster too. Relative sync and custom log directories follow
@@ -181,7 +190,10 @@ old sender cannot keep publishing just because its process cannot be terminated.
 `component lease expired` is the coordinator rejecting an expired worker
 session. Renewal requires a successful heartbeat, including during component
 initialization. Both sides measure time with a clock that includes host suspend
-on Linux. A blocked or suspended runtime event loop cannot send/process
+on Linux. The worker measures each renewal from the request's departure, rather
+than the reply's arrival, and rejects a reply whose round trip consumed the full
+lease. Renewal scheduling includes that round-trip time, avoiding accumulated
+drift. A blocked or suspended runtime event loop cannot send/process
 heartbeats even when the TCP connection remains open. Component calculations
 run in child processes; a long callback alone does not block that event loop.
 

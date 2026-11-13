@@ -121,22 +121,13 @@ class ComponentRuntime:
 
 async def command(options):
     import json
-    from pathlib import Path
-    from ose.transport.secure import connect, contexts
+    from ose.transport.secure import connect
+    from ose.transport.endpoint import resolve
     if options.operation != 'status' and not options.components:
         raise ValueError('select at least one component')
-    endpoint = {}
-    if options.host is None and options.port is None and Path(options.endpoint).is_file():
-        endpoint = json.loads(Path(options.endpoint).read_text())
-    host, port = options.host or endpoint.get('host', '127.0.0.1'), options.port or endpoint.get('port')
-    if type(port) is not int or not 0 < port < 65536:
-        raise ValueError('select a valid endpoint or --host/--port')
-    context = None
-    if options.distributed:
-        _, context = contexts(options.tls_ca, options.tls_cert, options.tls_key, insecure=options.insecure, hosts=[host])
-    elif options.insecure or any((options.tls_ca, options.tls_cert, options.tls_key)):
-        raise ValueError('TLS options require --distributed')
-    client = await connect(host, port, 1024 * 1024, context, 'coordinator' if options.distributed else None)
+    endpoint = resolve(options)
+    client = await connect(endpoint.host, endpoint.port, 1024 * 1024, endpoint.context,
+                           'coordinator' if endpoint.distributed else None)
     try:
         if options.operation == 'status':
             result, _ = await client.request('component_status')

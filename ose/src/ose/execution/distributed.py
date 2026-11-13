@@ -15,23 +15,23 @@ import uuid
 
 from ose.codec.sdl2 import SDL2
 from ose.parameters.service import ParameterEndpoint, OPERATIONS as PARAMETER_OPERATIONS
-from ose.parameters.bindings import RemoteBindings, updates
+from ose.parameters.bindings import RemoteBindings
 from ose.config import EXTERNAL_LIMITS
-from ose.delivery.buffers import Buffer, input_buffers
+from ose.delivery.buffers import Buffer
 from ose.delivery.engine import DeliveryEngine
 from ose.delivery.policies import SubscriptionPolicy
 from ose.delivery.stores import MemoryStore
 from ose.delivery.messages import validate_app_id
 from ose.execution.leadership import lease_clock
-from ose.execution.process import start_component, stop_component, input_events
+from ose.execution.process import stop_component
 from ose.execution.plan import require_v2, read_plan
-from ose.execution.observation import TickTimings, describe, ReportSchedule, ObservationDemand, subscription_schema
+from ose.execution.observation import describe, ObservationDemand, subscription_schema
 from ose.transport.protocol import encode
 from ose.transport.secure import RPCServer, connect, finish_cleanup, identity, loopback
 from ose.recording.taps import TapHub, OPERATIONS as RECORDING_OPERATIONS
 from ose.recording.component import ComponentRecording, validate_name, MAX_POINTS
 from ose.recording.inputs import InputRecording, input_points, input_key
-from ose.execution.logs import LogStore, ComponentLogs
+from ose.execution.logs import LogStore
 
 
 def fingerprint(plan):
@@ -629,66 +629,42 @@ class Coordinator:
             delivery.store.close()
 
 
-from ose.execution.components import ComponentRuntime
+from ose.execution.realtime import RealtimeRuntime
 
 
-class Worker(ComponentRuntime):
+class Worker(RealtimeRuntime):
     def __init__(self, plan, name, host, port, *, listen_host="127.0.0.1", listen_port=0,
-                 advertise_host="127.0.0.1", server_context=None, client_context=None):
+                 advertise_host="127.0.0.1", server_context=None, client_context=None, working_directory=None):
         check_plan(plan)
         self.plan, self.name, self.node = plan, name, plan["components"][name]
         self.host, self.port = host, port
         self.listen_host, self.listen_port, self.advertise_host = listen_host, listen_port, advertise_host
         self.context = client_context
         self.codec = SDL2(plan["sdl_root"])
-        self.catalogues = {}
         self.subscriptions = {s["id"]: s for s in plan["subscriptions"]}
         self.incoming = {key: s for key, s in self.subscriptions.items() if s["to"].split(".")[0] == name}
         self.outgoing = {key: s for key, s in self.subscriptions.items()
                          if s["from"].split(".")[0] == name and s.get("routing", "broker") == "direct"}
-        self.activity = asyncio.Event()
-        self.reports = ReportSchedule()
-        self.buffers = {target.split(".")[1]: buffer for target, buffer in
-                        input_buffers(self.incoming.values(), self._changed).items()}
+        self.setup_execution(self.incoming.values(), working_directory=working_directory)
         self.locks = {key: asyncio.Lock() for key in self.incoming}
         self.engines = {key: engine(sub) for key, sub in self.outgoing.items()}
         for delivery in self.engines.values():
             delivery.store.on_change = self.reports.mark
-        from ose.execution.activation import InputScheduler
-        from ose.execution.input_ipc import InputServices
-        for port, desc in self.node["inputs"].items():
-            if desc.get("kind") != "timer" and port not in self.buffers:
-                buffer = Buffer(SubscriptionPolicy(), MemoryStore())
-                buffer.store.on_change = self._changed
-                self.buffers[port] = buffer
-        self.scheduler = InputScheduler(self.node, self.buffers)
-        self.scheduler.start()
-        self.input_services = InputServices(self.scheduler, self._input_now, on_change=self._changed)
-        self.timings = TickTimings()
         self.recording = TapHub(self.recording_points, plan["max_frame"], codec=self.codec)
         self.input_recording = InputRecording(self.codec, self.node,
                                              self._active_inputs, self._emit_input)
         self.internal_recording = ComponentRecording(self.codec, declare=self._declare_recording,
             active=self._active_recording, emit=self._emit_recording)
+        self.recording_endpoint = self.internal_recording
         self.recording_sequence = 0
         self.rpc = RPCServer(plan["max_frame"], self.receive, server_context, self.recording.disconnected)
         self.metrics = Counter()
-        self.component_logs = ComponentLogs(on_change=self.reports.wake)
         self.directory = {"nodes": {}, "enabled": False}
         self.started = asyncio.Event()
         self.started_at = 0
         self.sequence = 0
         self.observed_outputs = set()
         self.direct_clients = {}
-        self.closing = False
-        self.setup_component_control()
-
-    def _changed(self):
-        self.activity.set()
-        self.reports.mark()
-
-    def _input_now(self):
-        return time.monotonic_ns() - self.started_at if self.started_at else 0
 
     def recording_points(self):
         points = {f"{self.name}.{port}": dict(topic=f"{self.name}.{port}", root=desc["root"], catalogue=desc["catalogue"], kind="output",
@@ -730,6 +706,7 @@ class Worker(ComponentRuntime):
                                catalogue=desc["catalogue"], root=desc["root"])
 
     async def control(self, op, body=b"", **kwargs):
+        kwargs.setdefault('timeout', self.request_timeout)
         return await self.client.request(op, body, node=self.name, token=self.token, **kwargs)
 
     async def run(self):
@@ -813,8 +790,7 @@ class Worker(ComponentRuntime):
             await client.close()
         if hasattr(self, "client"):
             await self.client.close()
-        for buffer in self.buffers.values():
-            buffer.store.close()
+        self.close_execution()
         for delivery in self.engines.values():
             delivery.store.close()
 
@@ -828,17 +804,23 @@ class Worker(ComponentRuntime):
 
     async def _heartbeat(self):
         while not self.closing:
+            sent = lease_clock()
             result, _ = await self.control("heartbeat")
             if self.closing:
                 return
             if result["epoch"] != self.epoch:
                 raise ValueError("coordinator generation changed")
+            elapsed = lease_clock() - sent
+            if elapsed >= self.lease_seconds:
+                raise RuntimeError("coordinator authorization expired")
             self.directory = result
-            self.last_contact = lease_clock()
+            # The coordinator renews while processing the request, not when
+            # its reply finally reaches us. A delayed reply cannot revive us.
+            self.last_contact = sent
             self.activity.set()
             for delivery in self.engines.values():
                 delivery.store.notify()
-            await asyncio.sleep(self.lease_seconds / 4)
+            await asyncio.sleep(max(0, self.lease_seconds / 4 - elapsed))
 
     async def _watchdog(self):
         while not self.closing:
@@ -907,20 +889,7 @@ class Worker(ComponentRuntime):
             source_name, source_port = sub["from"].split(".")
             desc = self.plan["components"][source_name]["outputs"][source_port]
         port = sub["to"].split(".")[1]
-        identity, _ = self.codec.api.unpack_envelope(body)
-        catalogue = desc['catalogue']
-        if identity != self.codec.identity(catalogue):
-            if identity not in self.catalogues:
-                _, schema = await self.control('catalogue', catalogue_id=identity)
-                text = schema.decode('utf-8')
-                if self.codec.identity(text) != identity:
-                    raise ValueError('catalogue identity mismatch')
-                if len(self.catalogues) >= 64:
-                    self.catalogues.pop(next(iter(self.catalogues)))
-                self.catalogues[identity] = text
-            catalogue = self.catalogues[identity]
-        self.codec.compare(catalogue, self.node['inputs'][port]['catalogue'], self.node['inputs'][port]['root'])
-        self.codec.validate_only(catalogue, desc['root'], body)
+        catalogue = await self.decode_input(port, body, self.control, desc)
         value = dict(record, body=body, payload=body[self.codec.api.ENVELOPE_HEADER_SIZE:], catalogue=catalogue,
                      **application_id(record))
         from ose.execution.input_ipc import check_record_size
@@ -928,22 +897,10 @@ class Worker(ComponentRuntime):
         # Latest sequence numbers belong to a source generation, not a whole run.
         value["epoch"] = record["source_token"]
         value['stream'] = record['source_token']
-        buffer = self.buffers[port]
+        async def authorize():
+            await self.control("authorize", subscription=key, source_token=record["source_token"])
         async with self.locks[key]:
-            deadline = time.monotonic() + buffer.policy.wait_timeout_ms / 1000
-            while True:
-                buffer.store.changed.clear()
-                await self.control("authorize", subscription=key, source_token=record["source_token"])
-                if record.get('target_version', 0) != (self.component_version or 0):
-                    raise ValueError('obsolete target activation')
-                result = self.scheduler.admit(port, value, self._input_now())
-                self._changed()
-                if result != "full" or buffer.policy.overflow != "wait" or time.monotonic() >= deadline:
-                    return result
-                try:
-                    await asyncio.wait_for(buffer.store.changed.wait(), max(0, deadline - time.monotonic()))
-                except asyncio.TimeoutError:
-                    return "full"
+            return await self.admit_input(port, value, version=record.get('target_version', 0), authorize=authorize)
 
     async def _poll(self, key):
         while not self.closing:
@@ -968,57 +925,8 @@ class Worker(ComponentRuntime):
                 await self.activity.wait()
         if self.closing:
             return
-        self.started_at = time.monotonic_ns()
+        self.started_at = self.activated_at_ns = time.monotonic_ns()
         await self._input_work()
-
-    async def initialize_component(self):
-        self.process = await start_component(self.node, self.parameters, self.internal_recording, self.component_logs,
-                                             inputs=self.input_services)
-        self.process.measurements.on_change = self.reports.mark
-
-    async def _input_work(self):
-        while not self.closing:
-            self.activity.clear()
-            async with self.component_lock:
-                if self.component_active:
-                    await updates(self.process, self.node, self.parameters.drain())
-                now = self._input_now()
-                reference = self.scheduler.select(now)
-                if self.component_active and reference is not None:
-                    await self._callback(reference)
-                    continue
-                deadline = self.scheduler.next_event(now)
-                timeout = max(0, (deadline - now) / 1e9) if deadline is not None else None
-            try:
-                await asyncio.wait_for(self.activity.wait(), timeout)
-            except asyncio.TimeoutError:
-                pass
-
-    async def _callback(self, reference):
-        self.metrics["ticks"] += 1
-        self.reports.mark()
-        self.input_recording.observe({reference.port: reference.record}, self.metrics["ticks"])
-        outputs, size, success = [], 0, False
-        try:
-            async for port, payload, app_id in self.timings.events(input_events(
-                    self.process, self.node, reference, self.metrics["ticks"], self.input_services,
-                    **({"parameters": self.parameters} if self.node.get("parameter_bindings") else {}))):
-                size += len(payload) + len(port.encode()) + 12
-                if size > 16 * 1024 * 1024:
-                    raise ValueError("callback outputs exceed 16 MiB")
-                desc = self.node["outputs"][port]
-                envelope = self.codec.wrap(desc["catalogue"], payload)
-                self.codec.validate_only(desc["catalogue"], desc["root"], envelope)
-                outputs.append((port, envelope, app_id))
-            success = True
-        finally:
-            self.scheduler.complete(reference, self._input_now(), success=success)
-        # Commit withdrawals before outbound admission waits, as in local
-        # execution. A failed/missing FINISHED publishes no staged output.
-        for port, envelope, app_id in outputs:
-            await self.publish(f"{self.name}.{port}", envelope, app_id=app_id)
-        self.metrics["completed_ticks"] += 1
-        self.reports.mark()
 
     async def publish(self, topic, body, *, app_id=None):
         extra = {"app_id": validate_app_id(app_id)} if app_id is not None else {}

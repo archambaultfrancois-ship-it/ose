@@ -35,8 +35,8 @@ async def run(plan_path, duration=None, port=0, *, working_directory=None, recor
         loop.add_signal_handler(sig, stop.set)
     try:
         await broker.start(port)
-        endpoint = {"host": "127.0.0.1", "port": broker.port}
-        (Path(plan["build_dir"]) / "endpoint.json").write_text(json.dumps(endpoint))
+        from ose.transport.endpoint import publish
+        endpoint = publish(plan["build_dir"], broker.port)
         env = dict(os.environ)
         source_root = str(Path(__file__).resolve().parents[2])
         env["PYTHONPATH"] = source_root + os.pathsep + env.get("PYTHONPATH", "")

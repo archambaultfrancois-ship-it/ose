@@ -66,7 +66,7 @@ class DistributedTests(unittest.IsolatedAsyncioTestCase):
         self.path = Path(self.directory.name) / "observations"
         self.plan = copy.deepcopy(self.template)
         self.plan["components"]["sink"]["parameters"]["path"] = str(self.path)
-        self.coordinator = Coordinator(self.plan, lease_seconds=1)
+        self.coordinator = Coordinator(self.plan)
         await self.coordinator.start()
         self.workers, self.tasks = {}, {}
         self.addAsyncCleanup(self.shutdown)
@@ -144,7 +144,7 @@ class DistributedTests(unittest.IsolatedAsyncioTestCase):
     async def test_broker_route_uses_same_handler(self):
         await self.coordinator.close()
         self.plan["subscriptions"][0]["routing"] = "broker"
-        self.coordinator = Coordinator(self.plan, lease_seconds=1)
+        self.coordinator = Coordinator(self.plan)
         await self.coordinator.start()
         await self.start_graph()
         await self.until(lambda: len(self.values()) >= 6)
@@ -230,6 +230,9 @@ class DistributedTests(unittest.IsolatedAsyncioTestCase):
             await client.close()
 
     async def test_lost_heartbeat_expires_live_control_connection(self):
+        await self.coordinator.close()
+        self.coordinator = Coordinator(self.plan, lease_seconds=1)
+        await self.coordinator.start()
         client = await connect("127.0.0.1", self.coordinator.port, self.plan["max_frame"])
         self.addAsyncCleanup(client.close)
         result, _ = await client.request("register", node="source", host="127.0.0.1", port=12345, plan_id=fingerprint(self.plan))
@@ -274,7 +277,7 @@ class DistributedTests(unittest.IsolatedAsyncioTestCase):
         root = Path(self.directory.name)
         certificates(root, ["coordinator", "observer", *self.plan["components"]])
         await self.coordinator.close()
-        self.coordinator = Coordinator(self.plan, tls(root, "coordinator")[0], lease_seconds=2)
+        self.coordinator = Coordinator(self.plan, tls(root, "coordinator")[0])
         await self.coordinator.start()
         for name in self.plan["components"]:
             server, client = tls(root, name)
@@ -300,7 +303,7 @@ class DistributedTests(unittest.IsolatedAsyncioTestCase):
     async def test_latest_accepts_sequence_reset_after_source_replacement(self):
         await self.coordinator.close()
         self.plan["subscriptions"][0]["policy"].update(buffer="latest", capacity=1, overflow="drop_oldest")
-        self.coordinator = Coordinator(self.plan, lease_seconds=1)
+        self.coordinator = Coordinator(self.plan)
         await self.coordinator.start()
         await self.start_graph()
         await self.until(lambda: len(self.values()) >= 7)
@@ -324,7 +327,7 @@ class DistributedTests(unittest.IsolatedAsyncioTestCase):
             await self.until(lambda: len(self.values()) >= 5)
             old_epoch, port = self.coordinator.epoch, self.coordinator.port
             await self.coordinator.close()
-            self.coordinator = Coordinator(self.plan, lease_seconds=1)
+            self.coordinator = Coordinator(self.plan)
             await self.coordinator.start(port=port)
             count = len(self.values())
             await self.until(lambda: self.coordinator.activated and len(self.values()) >= count + 5, timeout=12)

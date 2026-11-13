@@ -272,7 +272,7 @@ class DistributedInputTests(unittest.IsolatedAsyncioTestCase):
         from tests.integration import test_c_inputs as native
         model = json.loads((self.root / 'model.json').read_text())
         model['schemas'] = str(self.root / 'value.sdl')
-        model['components']['a']['inputs']['clock']['timer'] = dict(mode='periodic', delay=.2)
+        model['components']['a']['inputs']['clock']['timer'] = dict(mode='one_shot', delay=.001, start='manual')
         for sub in model['subscriptions']:
             sub['qos']['retry']['ack_timeout_ms'] = 200
         (self.case / 'model.json').write_text(json.dumps(model))
@@ -284,12 +284,37 @@ class DistributedInputTests(unittest.IsolatedAsyncioTestCase):
         path = await asyncio.to_thread(build, self.case / 'model.json', self.case / 'deployment.json', SDL_ROOT, self.case / 'build')
         self.plan = json.loads(path.read_text())
         await self.start_graph(('direct', 'broker'))
+        await self.until(lambda: all(worker.started_at for worker in self.workers.values()))
+        for index in range(1, 4):
+            # The C handler counts activations, unlike the Python handler which
+            # waits for feedback itself. Drive the next tick only after feedback
+            # and acknowledgements, rather than assuming a 200 ms network RTT.
+            source = self.workers['a']
+            source.scheduler.arm('clock', source._input_now())
+            source.activity.set()
+            await self.until(lambda: all(worker.metrics['completed_ticks'] == index for worker in self.workers.values())
+                and self.workers['a'].buffers['feedback'].store.size() == 1)
+            await self.until(lambda: all(delivery.snapshot().get('acknowledged', 0) == index
+                for worker in self.workers.values() for delivery in worker.engines.values())
+                and all(delivery.snapshot().get('acknowledged', 0) == index for delivery in self.coordinator.engines.values()))
         await self.finished()
         self.assertEqual(self.workers['a'].metrics['completed_ticks'], 3)
         self.assertEqual(self.workers['b'].metrics['completed_ticks'], 3)
         record = self.workers['a'].buffers['feedback'].get()
         self.assertEqual(record['app_id'], (1 << 64) - 1)
         self.assertEqual(record['payload'], b'\x01\0\0\0g')
+
+    @patch('ose.execution.distributed.lease_clock', time.monotonic)
+    async def test_idle_workers_survive_a_full_control_poll(self):
+        self.plan['components']['a']['inputs']['clock']['timer']['delay'] = 60
+        # Exercise RPC waits independently of suspend-aware lease detection.
+        await self.start_graph()
+        await self.until(lambda: all(worker.started_at for worker in self.workers.values()))
+        tokens = {name: worker.token for name, worker in self.workers.items()}
+        started = time.monotonic()
+        await self.until(lambda: time.monotonic() - started >= 10.2, timeout=12)
+        self.assertEqual({name: worker.token for name, worker in self.workers.items()}, tokens)
+        self.assertTrue(all(worker.tick_index == 0 for worker in self.workers.values()))
 
     async def test_remote_parameters_logs_measurements_and_internal_recording(self):
         (self.case / 'probe.py').write_text('''from value import Value

@@ -72,7 +72,13 @@ The installed command also accepts `ose-ws --root /path/to/application`. Without
 `--root`, it keeps the standalone, explicit-configuration workflow below.
 
 Run from the application directory, where `build/endpoint.json` identifies the
-running local broker:
+running application, either a local broker or a loopback distributed coordinator.
+The launcher writes `host`, `port`, `distributed` and `insecure` to this single
+file. The console infers the connection mode on each connection attempt,
+including after a restart in another mode. Default `distributed: false` and
+`insecure: false` settings leave this discovery enabled. Explicit distributed,
+insecure or TLS settings override the file's security hints; TLS credentials
+must be configured separately.
 
 ```sh
 ose-ws init --config ./ose-ws.json

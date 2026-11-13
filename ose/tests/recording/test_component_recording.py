@@ -43,7 +43,7 @@ class InternalCaptureTests(unittest.IsolatedAsyncioTestCase):
         plan = copy.deepcopy(self.plan)
         if distributed:
             plan["execution"] = "distributed"
-            self.source = Coordinator(plan, lease_seconds=2)
+            self.source = Coordinator(plan)
             await self.source.start()
             self.component = Worker(plan, "source", "127.0.0.1", self.source.port)
             task = asyncio.create_task(self.component.run())

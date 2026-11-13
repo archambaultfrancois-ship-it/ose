@@ -115,8 +115,8 @@ class LocalCluster:
                 await start_sync(self.processes, plan_path=self.path, port=self.port,
                                  distributed=True, stream=stream, **self.params_sync)
             self.initial_pids = self.pids()
-            (Path(self.plan['build_dir']) / 'distributed-endpoint.json').write_text(json.dumps(
-                dict(host='127.0.0.1', port=self.port, distributed=True, insecure=True)))
+            from ose.transport.endpoint import publish
+            publish(self.plan['build_dir'], self.port, distributed=True, insecure=True)
             return self
         except BaseException:
             await self.__aexit__(None, None, None)

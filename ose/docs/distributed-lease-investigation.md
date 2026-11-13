@@ -52,3 +52,44 @@ pass together (`ose/build/lease-investigation-final.log`), including the six
 cases that failed in the earlier batch. The lost-heartbeat expiry check and
 initialization-pause regression also pass together
 (`ose/build/lease-investigation-regression.log`).
+
+## Shared-engine qualification
+
+Some other functional fixtures still used one- or two-second leases for routing,
+recording and TLS checks. They now use the six-second production default. The
+lost-heartbeat test explicitly retains its one-second lease and checks actual
+retirement; unit tests also check the watchdog at the exact expiry boundary.
+The runtime's default, suspend-aware clock and generation fencing are unchanged.
+
+Worker renewal now uses the heartbeat request's departure as its conservative
+local authorization origin. A reply taking a full lease is refused before
+enabling execution. The next renewal subtracts the preceding round-trip time
+from its quarter-lease delay. Controlled-clock tests cover delayed replies,
+normal latency and expiry without waiting for a network reply.
+
+Timing assumptions were also removed from three functional checks:
+
+- Component disable acknowledgement stops future callbacks; it does not mean
+  all previously committed publications have reached the consumer. The test
+  waits until every committed source sequence has been observed before checking
+  that no new publications appear while disabled.
+- The C feedback handler counts activations and fires exactly three times.
+  Its test now arms each one-shot timer after the previous feedback and delivery
+  acknowledgements, rather than assuming that the network completes within a
+  200 ms periodic interval.
+- A capture window is defined by deposit timestamps, not callback indices.
+  Timer expirations can coalesce, so sequence 1 can legitimately arrive after
+  50 ms. The integration test measures the actual recording origin and checks
+  every saved timestamp against the exact half-open window, retaining the
+  first-sequence check for a capture without a window.
+
+On Android, keep the test host awake during distributed qualification, for
+example with `termux-wake-lock`, releasing it with `termux-wake-unlock` afterwards.
+An actual suspend longer than a lease must still fence the affected generation;
+extending or ignoring authorization on resume would violate that contract.
+
+Qualification of these corrections: 387 unit tests, 112 recording/replay tests,
+86 network tests (one Ada test skipped because GNAT is unavailable), and three
+repetitions of each of the five formerly timing-sensitive cases all pass.
+Vibration also runs with six ready components, a two-second lease and 36 observer
+events, without replacing any worker generation.

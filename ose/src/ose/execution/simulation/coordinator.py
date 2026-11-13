@@ -11,7 +11,7 @@ import signal
 from ose.codec.sdl2 import SDL2
 from ose.parameters.service import ParameterService
 from ose.parameters.bindings import LocalBindings
-from ose.execution.process import start_component, input_events, stop_component
+from ose.execution.process import start_component, calculate, stop_component, DEFAULT_OUTPUT_LIMIT
 from ose.execution.plan import require_v2, read_plan
 from ose.recording.component import ComponentRecording
 from ose.execution.simulation.clock import MAX_NS, VirtualClock, InputSchedule, seconds_ns
@@ -19,8 +19,6 @@ from ose.execution.simulation.router import Router
 from ose.execution.simulation.scenario import read_scenario, ParameterEvent
 from ose.execution.simulation.trace import Trace
 from ose.execution.simulation.options import microstep_limit
-
-DEFAULT_OUTPUT_LIMIT = 16 * 1024 * 1024
 
 
 class MicrostepLimitError(RuntimeError):
@@ -182,23 +180,10 @@ class Simulation:
             return await self._calculate_input(name, selected)
 
     async def _calculate_input(self, name, reference):
-        outputs, size, success = deque(), 0, False
         schedule = self.schedules[name]
-        try:
-            async for port, payload, app_id in input_events(self.processes[name], schedule.node, reference,
-                    schedule.tick_index, self.input_services[name],
-                    **({"parameters": self.parameter_bindings[name]} if schedule.node.get("parameter_bindings") else {})):
-                size += len(payload) + len(port.encode()) + 12
-                if size > self.limit:
-                    raise ValueError(f"{name}: callback outputs exceed max_tick_output_bytes={self.limit}")
-                desc = schedule.node["outputs"][port]
-                body = self.codec.wrap(desc["catalogue"], payload)
-                self.codec.validate_only(desc["catalogue"], desc["root"], body)
-                outputs.append((port, body, app_id))
-            success = True
-        finally:
-            schedule.complete(reference, success=success)
-        return outputs
+        return await calculate(self.processes[name], schedule.node, reference, schedule.tick_index,
+            self.input_services[name], self.codec, lambda: self.clock.time_ns,
+            parameters=self.parameter_bindings[name], limit=self.limit)
 
     def _input_operations(self, name):
         for operation in self.input_services[name].operations:

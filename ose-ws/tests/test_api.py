@@ -14,6 +14,7 @@ import uuid
 import httpx
 from ose.execution.broker import Broker
 from ose.execution.distributed import Coordinator
+from ose.transport.endpoint import publish
 from ose.delivery.policies import SubscriptionPolicy
 from ose.parameters.values import Values
 from ose.codec.runtime import Runtime
@@ -588,7 +589,7 @@ class APITests(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(task, 5)
             listener.close()
 
-    async def test_distributed_coordinator_status_and_existing_parameter_rpc(self):
+    async def test_endpoint_switches_local_distributed_local_for_status_parameters_and_recording(self):
         plan = dict(self.broker.plan, execution="distributed")
         coordinator = Coordinator(plan)
         await coordinator.start()
@@ -596,7 +597,8 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         collector = self.app.state.collector
         await collector.close()
         collector.client = None
-        self.app.state.connection.config.update(port=coordinator.port, distributed=True, insecure=True)
+        publish(self.root, coordinator.port, distributed=True, insecure=True)
+        self.app.state.connection.config.update(host=None, port=None, endpoint=str(self.root / 'endpoint.json'))
         await self.app.state.parameters.reset()
         await collector.start()
         await self.until(lambda: collector.snapshot.get("epoch") == coordinator.epoch)
@@ -612,6 +614,20 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         points = await self.client.get("/api/v1/recording-points")
         self.assertEqual(points.status_code, 200, points.text)
         self.assertEqual(points.json()["items"][0]["root"], "Settings")
+        self.assertTrue(self.app.state.recordings.discovery.distributed)
+        self.assertFalse(self.app.state.connection.config['distributed'])
+        await collector.close()
+        collector.client = None
+        publish(self.root, self.broker.port)
+        await self.app.state.parameters.reset()
+        await collector.start()
+        await self.until(lambda: collector.snapshot.get("epoch") == self.broker.epoch)
+        status = (await self.client.get("/api/v1/application")).json()
+        self.assertEqual(status["mode"], "local")
+        self.assertTrue(status["connected"])
+        self.assertEqual((await self.client.get(f"/api/v1/parameters/{block}")).status_code, 200)
+        await self.app.state.recordings.refresh(force=True)
+        self.assertFalse(self.app.state.recordings.discovery.distributed)
 
     async def test_real_capture_stop_works_when_intention_persistence_fails(self):
         from ose_ws.util import APIError

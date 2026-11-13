@@ -3,11 +3,11 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import math
-from pathlib import Path
 import sys
 from ose.execution.logs import LEVELS
 from ose.top import safe_text
-from ose.transport.secure import connect, contexts, finish_cleanup
+from ose.transport.endpoint import resolve
+from ose.transport.secure import connect, finish_cleanup
 
 
 def add_parser(commands):
@@ -41,27 +41,16 @@ async def run(args, output=None):
         raise ValueError('logs require interval >= 0.1 and limit between 1 and 200')
     if args.endpoint and (args.host is not None or args.port is not None):
         raise ValueError('choose --endpoint or --host/--port')
-    distributed = args.distributed or args.insecure or any((args.tls_ca, args.tls_cert, args.tls_key))
-    def address():
-        path = args.endpoint or ('build/endpoint.json' if args.host is None and args.port is None and not distributed else None)
-        value = json.loads(Path(path).read_text()) if path else {
-            'host': args.host if args.host is not None else '127.0.0.1',
-            'port': args.port if args.port is not None else 7000}
-        if not isinstance(value.get('host'), str) or not value['host'] or type(value.get('port')) is not int or not 1 <= value['port'] <= 65535:
-            raise ValueError('invalid log service endpoint')
-        return value['host'], value['port']
-    host, port = address()
-    context = contexts(args.tls_ca, args.tls_cert, args.tls_key, insecure=args.insecure, hosts=[host])[1] if distributed else None
+    resolve(args)  # Validate connection settings before entering the retry loop.
     filters = dict(components=args.components or ['*'], levels=args.level, search=args.search, logger=args.logger, limit=args.limit)
     client = None
     try:
         while True:
             try:
                 if client is None:
-                    host, port = address()
-                    if distributed and args.insecure:
-                        contexts(insecure=True, hosts=[host])
-                    client = await connect(host, port, 1024 * 1024, context, 'coordinator' if distributed else None, timeout=3)
+                    endpoint = resolve(args)
+                    client = await connect(endpoint.host, endpoint.port, 1024 * 1024, endpoint.context,
+                                           "coordinator" if endpoint.distributed else None, timeout=3)
                 result, _ = await client.request('logs', filters=filters, timeout=3)
                 if result['truncated']:
                     print('Log history was truncated or the runtime restarted; some entries are unavailable.', file=sys.stderr)

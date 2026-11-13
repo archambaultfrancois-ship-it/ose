@@ -4,32 +4,25 @@ import json
 import sys
 import time
 from ose.codec.sdl2 import SDL2
-from ose.delivery.buffers import Buffer, input_buffers
-from ose.delivery.stores import MemoryStore
 from ose.delivery.policies import SubscriptionPolicy
 from ose.parameters.bindings import RemoteBindings
-from ose.execution.process import start_component, input_events, stop_component
+from ose.execution.process import stop_component
 from ose.execution.plan import require_v2
 from ose.modeling.activation import activation_order
-from ose.execution.observation import TickTimings, ReportSchedule
 from ose.transport.tcp import Client
 from ose.transport.udp import UDP
 from ose.recording.component import RemoteRecording
 from ose.recording.inputs import InputRecording
-from ose.execution.logs import ComponentLogs
 
 
-from ose.execution.components import ComponentRuntime
+from ose.execution.realtime import RealtimeRuntime
 
 
-class Adapter(ComponentRuntime):
+class Adapter(RealtimeRuntime):
     def __init__(self, plan, name, *, working_directory=None):
         require_v2(plan)
         activation_order(plan)
         self.plan, self.name, self.node = plan, name, plan["components"][name]
-        self.working_directory = working_directory
-        self.reports = ReportSchedule()
-        self.component_logs = ComponentLogs(on_change=self.reports.wake)
         self.codec = SDL2(plan["sdl_root"])
         self.component_recording = RemoteRecording(self.codec, self._recording_request, max_frame=plan["max_frame"])
         self.input_recording = InputRecording(self.codec, self.node,
@@ -37,38 +30,12 @@ class Adapter(ComponentRuntime):
         self.subscriptions = {s["id"]: s for s in plan["subscriptions"] if s["to"].split(".")[0] == name}
         self.policies = {identity: SubscriptionPolicy.from_dict(sub["policy"])
                          for identity, sub in self.subscriptions.items()}
-        self.catalogues, self.metrics = {}, {}
-        self.compatibility = set()
+        self.metrics = {}
         self.network_queues = {identity: asyncio.Queue(maxsize=1024) for identity in self.subscriptions}
         self.data_clients = {}
-        self.activity = asyncio.Event()
-        max_wait = max((sub["policy"]["wait_timeout_ms"] for sub in plan["subscriptions"]
-                        if sub["from"].split(".")[0] == name and sub["policy"]["overflow"] == "wait"), default=0)
-        self.request_timeout = 15 + max_wait / 1000
-        self.buffers = {target.split(".")[1]: buffer for target, buffer in
-                        input_buffers(self.subscriptions.values(), self._changed).items()}
-        from ose.execution.activation import InputScheduler
-        from ose.execution.input_ipc import InputServices
-        for port, desc in self.node["inputs"].items():
-            if desc.get("kind") != "timer" and port not in self.buffers:
-                buffer = Buffer(SubscriptionPolicy(), MemoryStore())
-                buffer.store.on_change = self._changed
-                self.buffers[port] = buffer
-        self.scheduler = InputScheduler(self.node, self.buffers)
-        self.scheduler.start()
-        self.input_services = InputServices(self.scheduler, self._input_now, on_change=self._changed)
-        self.timings = TickTimings()
+        self.setup_execution(self.subscriptions.values(), working_directory=working_directory)
+        self.recording_endpoint = self.component_recording.endpoint
         self.started_at = time.monotonic()
-        self.tick_index, self.activated_at_ns = 0, 0
-        self.closing = False
-        self.setup_component_control()
-
-    def _changed(self):
-        self.activity.set()
-        self.reports.mark()
-
-    def _input_now(self):
-        return time.monotonic_ns() - self.activated_at_ns if self.activated_at_ns else 0
 
     async def _recording_request(self, *args, **kwargs):
         return await self.client.request(*args, **kwargs)
@@ -103,23 +70,7 @@ class Adapter(ComponentRuntime):
                     raise ValueError("wrong data transport")
                 if buffer.policy.buffer == "latest" and header["epoch"] != self.broker_epoch:
                     raise ValueError("obsolete broker epoch")
-                identity = self.codec.api.unpack_envelope(body)[0]
-                if identity not in self.catalogues:
-                    _, raw_catalogue = await self.client.request("catalogue", catalogue_id=identity)
-                    text = raw_catalogue.decode()
-                    if self.codec.identity(text) != identity:
-                        raise ValueError("catalogue identity mismatch")
-                    if len(self.catalogues) >= 64:
-                        evicted = next(iter(self.catalogues))
-                        self.catalogues.pop(evicted)
-                        self.compatibility = {key for key in self.compatibility if key[0] != evicted}
-                    self.catalogues[identity] = text
-                text = self.catalogues[identity]
-                key = (identity, port)
-                if key not in self.compatibility:
-                    self.codec.compare(text, self.node["inputs"][port]["catalogue"], self.node["inputs"][port]["root"])
-                    self.compatibility.add(key)
-                self.codec.validate_only(text, self.node["inputs"][port]["root"], body)
+                text = await self.decode_input(port, body, self.client.request)
                 if header.get('target_version', 0) != (self.component_version or 0):
                     raise ValueError('obsolete target activation')
                 record = {"id": header["id"], "epoch": header["epoch"], "sequence": header["sequence"],
@@ -129,19 +80,7 @@ class Adapter(ComponentRuntime):
                     record["app_id"] = header["app_id"]
                 from ose.execution.input_ipc import check_record_size
                 check_record_size(port, record)
-                deadline = time.monotonic() + buffer.policy.wait_timeout_ms / 1000
-                while True:
-                    if header.get('target_version', 0) != (self.component_version or 0):
-                        raise ValueError('obsolete target activation')
-                    buffer.store.changed.clear()
-                    result = self.scheduler.admit(port, record, self._input_now())
-                    self._changed()
-                    if result != "full" or buffer.policy.overflow != "wait" or time.monotonic() >= deadline:
-                        break
-                    try:
-                        await asyncio.wait_for(buffer.store.changed.wait(), max(0, deadline - time.monotonic()))
-                    except asyncio.TimeoutError:
-                        break
+                result = await self.admit_input(port, record, version=header.get('target_version', 0))
                 if result in ("accepted", "duplicate", "stale") and policy.ack == "received":
                     ack = {"op": "ack", "subscription": sub["id"], "id": record["id"]}
                     if address is None:
@@ -183,60 +122,18 @@ class Adapter(ComponentRuntime):
                 return
             await self._send_report(full)
 
-    async def initialize_component(self):
-        self.process = await start_component(self.node, self.parameters, self.component_recording.endpoint, self.component_logs,
-            **({"working_directory": self.working_directory} if self.working_directory is not None else {}),
-            inputs=self.input_services)
-        self.process.measurements.on_change = self.reports.mark
-
     async def _work(self):
-        while not self.closing:
-            self.activity.clear()
-            async with self.component_lock:
-                now = self._input_now()
-                reference = self.scheduler.select(now)
-                if self.component_active and reference is not None:
-                    await self._callback(reference)
-                    continue
-                deadline = self.scheduler.next_event(now)
-                timeout = max(0, (deadline - now) / 1e9) if deadline is not None else None
-            try:
-                await asyncio.wait_for(self.activity.wait(), timeout)
-            except asyncio.TimeoutError:
-                pass
+        await self._input_work()
 
-    async def _callback(self, reference):
-        self.tick_index += 1
-        self.reports.mark()
-        self.input_recording.observe({reference.port: reference.record}, self.tick_index)
-        outputs, size, success = [], 0, False
-        try:
-            async for port, payload, app_id in self.timings.events(input_events(
-                    self.process, self.node, reference, self.tick_index, self.input_services,
-                    **({"parameters": self.parameters} if self.node.get("parameter_bindings") else {}))):
-                size += len(payload) + len(port.encode()) + 12
-                if size > 16 * 1024 * 1024:
-                    raise ValueError("callback outputs exceed 16 MiB")
-                desc = self.node["outputs"][port]
-                envelope = self.codec.wrap(desc["catalogue"], payload)
-                self.codec.validate_only(desc["catalogue"], desc["root"], envelope)
-                outputs.append((port, envelope, app_id))
-            success = True
-        finally:
-            self.scheduler.complete(reference, self._input_now(), success=success)
-        # FINISHED releases withdrawn inbox capacity before any outbound
-        # admission wait, so feedback cannot hold its own consumed slot.
-        for port, envelope, app_id in outputs:
-            result, _ = await self.client.request("publish", envelope, timeout=self.request_timeout,
-                topic=f"{self.name}.{port}", **({"app_id": app_id} if app_id is not None else {}))
-            self.metrics["publications"] = self.metrics.get("publications", 0) + 1
-            refused = {key: value for key, value in result["delivery"].items()
-                       if value not in ("accepted", "duplicate", "stale")}
-            if refused:
-                self.metrics["delivery_refused"] = self.metrics.get("delivery_refused", 0) + len(refused)
-                print(f"{self.name}: delivery refused {refused}", file=sys.stderr)
-        self.metrics["ticks"] = self.metrics.get("ticks", 0) + 1
-        self.reports.mark()
+    async def publish(self, topic, envelope, *, app_id=None):
+        result, _ = await self.client.request("publish", envelope, timeout=self.request_timeout,
+            topic=topic, **({"app_id": app_id} if app_id is not None else {}))
+        self.metrics["publications"] = self.metrics.get("publications", 0) + 1
+        refused = {key: value for key, value in result["delivery"].items()
+                   if value not in ("accepted", "duplicate", "stale")}
+        if refused:
+            self.metrics["delivery_refused"] = self.metrics.get("delivery_refused", 0) + len(refused)
+            print(f"{self.name}: delivery refused {refused}", file=sys.stderr)
 
     async def run(self, host, port):
         from ose.execution.identity import identify
@@ -316,10 +213,7 @@ class Adapter(ComponentRuntime):
                 await self.client.close()
             if hasattr(self, "udp"):
                 await self.udp.close()
-            for buffer in self.buffers.values():
-                buffer.store.close()
-            self.catalogues.clear()
-            self.compatibility.clear()
+            self.close_execution()
             self.network_queues.clear()
 
     async def _stop_component(self):

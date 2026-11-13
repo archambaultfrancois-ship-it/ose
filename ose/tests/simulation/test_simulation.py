@@ -219,7 +219,7 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
                         yield None
                 finally:
                     active -= 1
-            with patch("ose.execution.simulation.coordinator.input_events", calculations):
+            with patch("ose.execution.process.input_events", calculations):
                 summary, events = await self.simulate(plan, .1, workers=workers)
             self.assertEqual(peak, min(3, workers))
             self.assertEqual(summary["waves"], 1)

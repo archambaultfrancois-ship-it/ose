@@ -16,7 +16,8 @@ from ose.transport.secure import connect, loopback, finish_cleanup
 class Recorder:
     def __init__(self, host, port, *, context=None, distributed=False, capacity=256,
                  byte_budget=8 * 1024 * 1024, max_frame=1024 * 1024, label=DEFAULT_LABEL,
-                 max_size=None, cycle=None, overwrite=False):
+                 max_size=None, cycle=None, overwrite=False, endpoint=None):
+        self.endpoint = endpoint  # Optional resolver, called again by reconnect().
         self.overwrite = overwrite
         self.host, self.port, self.context = host, port, context
         self.distributed, self.capacity, self.byte_budget = distributed, capacity, byte_budget
@@ -29,6 +30,10 @@ class Recorder:
         self.client = None
 
     async def connect(self):
+        if self.endpoint is not None:
+            endpoint = self.endpoint()
+            self.host, self.port = endpoint.host, endpoint.port
+            self.context, self.distributed = endpoint.context, endpoint.distributed
         self.client = await connect(self.host, self.port, self.max_frame, self.context,
                                     "coordinator" if self.distributed else None)
         await self.refresh()
