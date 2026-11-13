@@ -346,7 +346,8 @@ uses the generic OSE synchronizer.
   parameter permissions. The development operator token supports local tools before
   the first build; cluster preparation removes it, except for the loopback sync demo.
 - `scenarios/`: deterministic profiles; `tests/`: business, end-to-end and opt-in cluster tests.
-- `packaging/` and `deploy/`: image construction and cluster deployment instructions.
+- `packaging/`: image construction.
+- `docs/deployment.md`: cluster deployment instructions.
 
 The alarm inputs are independent and optional: losing one motor's branch does
 not stall the other. Every analysis produces an observation with state 0 or 1;
@@ -552,7 +553,7 @@ generates the development operator credentials. Cluster access authenticates the
 `operator` certificate identity; it does not use the local development token.
 The ordinary `ose parameter get PATH --client operator` still returns a
 bare block for existing scripts; the application command returns a path-keyed export.
-See [cluster deployment](deploy/README.md) for credentials and connectivity.
+See [cluster deployment](docs/deployment.md) for credentials and connectivity.
 
 ## Replay captured signals
 
@@ -658,7 +659,7 @@ ordinary suites keep their standard-library-only Python requirements.
 
 ## Cluster deployment
 
-See [deployment instructions](deploy/README.md) and [architecture](docs/architecture.md).
+See [deployment instructions](docs/deployment.md) and [architecture](docs/architecture.md).
 The image build compiles one component per image, with its generated container,
 SDL runtime, native recording filter service and OSE adapter. Cluster images are referenced by digest.
 Distributed execution is real time; deterministic simulation remains local.

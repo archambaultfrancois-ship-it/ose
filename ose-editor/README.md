@@ -63,7 +63,10 @@ is never placed in the URL. One editor process owns a project at a time.
 `--model FILE`, repeated `--deployment FILE`, repeated `--source-root PATH`,
 `--port PORT`, `--create` and `--check` customize project opening. Without
 explicit deployment options the editor reopens registered profiles or discovers
-`*deployment*.json` files. `--create` starts model/deployment drafts in an
+`*deployment*.json` files. Missing remembered deployments are dropped; if none
+remain, discovery runs again, so replacing split deployments with a single
+`deployment.json` does not block startup. Explicit `--deployment` paths must
+exist unless `--create` is supplied. `--create` starts model/deployment drafts in an
 existing directory. Missing schema inputs remain visible as draft errors.
 
 The existing compiled frontend is included. To rebuild it, use Node.js 22.12+

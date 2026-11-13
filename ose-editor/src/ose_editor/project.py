@@ -95,6 +95,13 @@ class Project:
             self.lock.close()
             raise Conflict('This project already has an editor writer') from None
         self.mutex = threading.RLock()
+        try:
+            self._open(model, deployments, create)
+        except BaseException:
+            self.close()
+            raise
+
+    def _open(self, model, deployments, create):
         self.documents = {}
         self.revision = secrets.token_hex(8)
         self.history, self.redo_history, self.prepared = [], [], {}
@@ -113,7 +120,12 @@ class Project:
         self.workspace_baseline = deepcopy(self.workspace)
         self.recovery = self._read_recovery()
         self.model = self.load(self.resolve(model), 'model', create=create)
-        candidates = list(deployments) or self.workspace.get('deployments', []) or [p.name for p in sorted(self.root.glob('*deployment*.json'))]
+        candidates = list(deployments)
+        if not candidates:
+            # Remembered files may have been removed by a source refactoring.
+            candidates = [path for path in self.workspace.get('deployments', []) if self.resolve(path).exists()]
+            if not candidates:
+                candidates = [p.name for p in sorted(self.root.glob('*deployment*.json'))]
         if not candidates and create:
             candidates = ['deployment.json']
         self.deployments = []
@@ -121,6 +133,7 @@ class Project:
             self.deployments.append(self.load(self.resolve(path), 'deployment', create=create))
         self.workspace['deployments'] = self.deployments[:]
         self.selected_deployment = self.workspace.get('selected_deployment') if self.workspace.get('selected_deployment') in self.deployments else self.deployments[0] if self.deployments else None
+        self.workspace['selected_deployment'] = self.selected_deployment
         self.discover()
         self.draft_recovery = self._read_draft()
 
