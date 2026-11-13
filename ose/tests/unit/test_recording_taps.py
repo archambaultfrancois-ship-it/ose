@@ -2,6 +2,29 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from ose.recording.taps import TapHub
+from ose.recording import unpack_record
+
+
+class RecordDecodingTests(unittest.TestCase):
+    def test_source_catalogue_is_separated_without_mutating_metadata(self):
+        catalogue = ('SDL2|Value{1:string:étiquette;}' * 4096).encode('utf-8')
+        metadata = {'catalogue_size': len(catalogue), 'sequence': 7}
+        record, body = unpack_record(metadata, catalogue + b'envelope')
+        self.assertEqual(record, {'catalogue': catalogue.decode('utf-8'), 'sequence': 7})
+        self.assertEqual(body, b'envelope')
+        self.assertEqual(metadata, {'catalogue_size': len(catalogue), 'sequence': 7})
+
+    def test_existing_records_without_catalogue_prefix_keep_their_body(self):
+        record, body = unpack_record({'sequence': 1}, b'envelope')
+        self.assertEqual(record, {'sequence': 1})
+        self.assertEqual(body, b'envelope')
+
+    def test_invalid_prefix_size_and_utf8_are_rejected(self):
+        for size in (True, -1, 0, '1', 4, 5):
+            with self.subTest(size=size), self.assertRaisesRegex(ValueError, 'catalogue size'):
+                unpack_record({'catalogue_size': size}, b'data')
+        with self.assertRaises(UnicodeDecodeError):
+            unpack_record({'catalogue_size': 1}, b'\xffdata')
 
 
 class TapTests(unittest.IsolatedAsyncioTestCase):

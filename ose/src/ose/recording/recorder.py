@@ -6,7 +6,7 @@ import json
 import time
 
 from ose.codec.runtime import Runtime
-from ose.recording import DEFAULT_LABEL, session_label
+from ose.recording import DEFAULT_LABEL, session_label, unpack_record
 from ose.delivery.messages import validate_app_id
 from ose.recording.filters import prepare_filter
 from ose.recording.rotation import OutputFiles, positive_setting
@@ -277,13 +277,8 @@ class Capture:
                 if result["stopped"]:
                     return
             else:
-                record = dict(result["record"], log_time_ns=time.time_ns())
-                if 'catalogue_size' in record:
-                    size = record.pop('catalogue_size')
-                    if type(size) is not int or not 0 < size < len(body):
-                        raise ValueError('invalid recording catalogue size')
-                    record['catalogue'] = body[:size].decode('utf-8')
-                    body = body[size:]
+                record, body = unpack_record(result["record"], body)
+                record['log_time_ns'] = time.time_ns()
                 if self.accept is None or self.accept(record):
                     await self.disk(self.write, record, body)
 

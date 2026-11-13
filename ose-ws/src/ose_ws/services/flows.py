@@ -6,6 +6,7 @@ import time
 import uuid
 
 from ose.transport.secure import connect, loopback
+from ose.recording import unpack_record
 from ose.execution.identity import initialize_thread, thread_name
 from ose_ws.schema.adapter import SchemaAdapter
 from ose_ws.util import APIError, dumps, require, utc
@@ -166,8 +167,10 @@ class FlowSource:
                         "Source messages exceed the preview byte budget.", 413)
                 # A message larger than the reserved tap budget never reaches this reader.
                 if result.get("record"):
-                    record = result["record"]
+                    record, envelope = unpack_record(result["record"], envelope)
                     require(record["generation"] == self.generation, "Source generation changed; restart Live.", 409)
+                    require(record.get('catalogue', self.adapter.catalogue) == self.adapter.catalogue,
+                            "Source SDL catalogue changed; restart Live.", 409)
                     require(len(envelope) <= self.manager.settings["max_payload_bytes"], "Source message is too large.", 413)
                     self.envelope = bytes(envelope)
                     self.last_mono = time.monotonic()

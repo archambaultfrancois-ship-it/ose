@@ -127,7 +127,7 @@ class FlowAPITests(unittest.IsolatedAsyncioTestCase):
         for counter in (10, 11, 12):
             await self.publish(counter)
         source = next(iter(self.app.state.flows.sources.values()))
-        await self.until(lambda: bool(source.sample) and source.sample['source_sequence'] == '3')
+        await self.until(lambda: bool(source.previews) and source.sample['source_sequence'] == '3')
         a, b = await self.snapshot(first), await self.snapshot(second)
         self.assertEqual(a['sample'], b['sample'])
         fields = {v['name']: v for v in a['sample']['value']['children']}
@@ -270,7 +270,10 @@ class FlowAPITests(unittest.IsolatedAsyncioTestCase):
             registered, _ = await worker.client.request('register', node='source', host='127.0.0.1', port=port, plan_id=fingerprint(plan))
             worker.token, worker.epoch = registered['token'], registered['epoch']
             await worker.control('ready'); worker.started.set(); coordinator.activated = True
-            self.addAsyncCleanup(worker.close, [])
+            # Output taps now live at the coordinator. Real workers acknowledge
+            # activation and forward observed outputs, including direct routes.
+            forwarding = asyncio.create_task(worker._output_recording())
+            self.addAsyncCleanup(worker.close, [forwarding])
             await self.switch(coordinator, True)
             self.assertTrue(coordinator.recording_points()['source.settings']['available'],
                             f'{routing}: {coordinator.directory()}')
@@ -279,10 +282,10 @@ class FlowAPITests(unittest.IsolatedAsyncioTestCase):
             await worker.publish('source.settings', worker.codec.wrap(CATALOGUE, adapter.values.encode(adapter.convert(copy.deepcopy(VALUE), to_web=False))))
             await self.until(lambda: bool(next(iter(self.app.state.flows.sources.values())).previews))
             self.assertEqual((await self.snapshot(watch))['status'], 'live')
-            self.assertEqual(len(worker.recording.sessions), 1)
-            self.assertEqual(len(coordinator.recording.sessions), 0)
+            self.assertEqual(len(worker.recording.sessions), 0)
+            self.assertEqual(len(coordinator.recording.sessions), 1)
             await self.client.delete('/api/v1/flow-watches/' + watch)
-            await self.until(lambda: not worker.recording.sessions)
+            await self.until(lambda: not coordinator.recording.sessions)
         external = {'id': 'external', 'from': 'source.external', 'from_topic': 'source.external', 'to': 'source.input', 'policy': SubscriptionPolicy.resolve().to_dict()}
         source_node = copy.deepcopy(self.broker.plan['components']['source'])
         source_node['inputs']['input'] = dict(source_node['outputs']['settings'])
@@ -302,12 +305,24 @@ class FlowAPITests(unittest.IsolatedAsyncioTestCase):
         await self.until(lambda: bool(next(iter(self.app.state.flows.sources.values())).previews))
         self.assertEqual((await self.snapshot(watch))['status'], 'live')
         source = next(iter(self.app.state.flows.sources.values()))
+        version = source.version
         await publisher.close()
-        await self.until(lambda: source.error is not None)
-        stopped = await self.snapshot(watch)
-        self.assertEqual(stopped['status'], 'unavailable')
-        self.assertEqual(stopped['sample']['source_sequence'], '1')
-        await self.until(lambda: not coordinator.recording.sessions)
+        # A declared topic remains observable between independent publishers.
+        replacement = await connect('127.0.0.1', coordinator.port, 1024**2)
+        self.addAsyncCleanup(replacement.close)
+        opened, _ = await replacement.request('external_open', plan_id=fingerprint(plan), topics=['source.external'])
+        value = adapter.convert(copy.deepcopy(VALUE), to_web=False)
+        value['counter'] = 42
+        wire = coordinator.codec.wrap(CATALOGUE, adapter.values.encode(value))
+        await replacement.request('external_publish', wire, topic='source.external', token=opened['token'])
+        await self.until(lambda: source.version > version)
+        self.assertIsNone(source.error)
+        observed = await self.snapshot(watch)
+        self.assertEqual(observed['status'], 'live')
+        self.assertEqual(observed['sample']['source_sequence'], '1')  # New producer's sequence.
+        self.assertEqual(next(field['value'] for field in observed['sample']['value']['children']
+                              if field['name'] == 'counter'), '42')
+        self.assertEqual(len(coordinator.recording.sessions), 1)
         await self.client.delete('/api/v1/flow-watches/' + watch)
         await self.until(lambda: not coordinator.recording.sessions)
 

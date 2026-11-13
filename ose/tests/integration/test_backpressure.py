@@ -184,6 +184,7 @@ class BackpressureTests(unittest.IsolatedAsyncioTestCase):
         adapter = self.adapter(self.plan({"left": policy, "right": policy}))
         for buffer in adapter.buffers.values():
             buffer.admit(self.record(1))
+        adapter.component_active = True  # This fixture bypasses supervisor enablement.
         entered, release = asyncio.Event(), asyncio.Event()
         adapter.process = SimpleNamespace(ipc_writer=object())
         async def blocked_send(writer, op, data=b""):

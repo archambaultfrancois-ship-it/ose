@@ -36,7 +36,9 @@ class SyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         paths = [f'machines/m{index}/detection' for index in range(count)]
         self.path = paths[0]
         self.file = self.directory / (self.path + '.json')
-        self.plan = dict(sdl_root=str(SDL_ROOT), components={}, subscriptions=[], max_frame=1024 * 1024,
+        self.plan = dict(version=2, sdl_root=str(SDL_ROOT),
+            components={'probe': dict(execution_model=2, inputs={}, outputs={})},
+            subscriptions=[], max_frame=1024 * 1024,
             max_datagram=1200, execution='distributed' if distributed else 'local',
             shared_parameters={path: dict(root='Settings', catalogue=catalogue,
                 initial_payload=base64.b64encode(self.values.encode({'threshold': 80.})).decode()) for path in paths},
