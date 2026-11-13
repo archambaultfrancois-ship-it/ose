@@ -1,11 +1,32 @@
 """Loopback development cluster, using the workers of a compiled distributed plan."""
 import asyncio
+import codecs
 import json
 from pathlib import Path
 import signal
+import sys
 
 from ose.execution.launch import Processes, start_sync
 from ose.execution.plan import read_plan
+
+
+async def _follow_log(name, path, stopped, output=None):
+    output = sys.stderr if output is None else output
+    decoder, pending = codecs.getincrementaldecoder('utf-8')('replace'), ''
+    with path.open('rb') as stream:
+        while True:
+            chunk = stream.read(65536)
+            finished = not chunk and stopped.is_set()
+            lines = (pending + decoder.decode(chunk, final=finished)).split('\n')
+            pending = lines.pop()
+            if pending and (finished or len(pending) >= 65536):
+                lines.append(pending)
+                pending = ''
+            for line in lines:
+                print(f'[{name}] {line}', file=output, flush=True)
+            if finished:
+                return
+            await asyncio.sleep(0 if chunk else .05)
 
 
 class LocalCluster:
@@ -20,6 +41,7 @@ class LocalCluster:
         self.disabled = disabled_components(self.plan, disabled)
         self.params_sync = params_sync
         self.processes, self.streams = Processes(), []
+        self.log_stop, self.followers = asyncio.Event(), []
 
     async def launch(self, name, arguments):
         stream = (self.logs / (name + '.log')).open('ab')
@@ -56,7 +78,9 @@ class LocalCluster:
         try:
             self.logs.mkdir(parents=True, exist_ok=True)
             for name in ('coordinator', 'params-sync', *self.plan['components']):
-                (self.logs / (name + '.log')).write_bytes(b'')
+                path = self.logs / (name + '.log')
+                path.write_bytes(b'')
+                self.followers.append(asyncio.create_task(_follow_log(name, path, self.log_stop)))
             await self.launch('coordinator', ['serve', '--plan', self.path, '--port', self.port,
                                             '--insecure', '--lease-seconds', self.lease_seconds,
                                             *[arg for name in sorted(self.disabled) for arg in ('--disable-component', name)]])
@@ -99,9 +123,13 @@ class LocalCluster:
             raise
 
     async def __aexit__(self, *exc):
-        await self.processes.close()
-        for stream in self.streams:
-            stream.close()
+        try:
+            await self.processes.close()
+        finally:
+            self.log_stop.set()
+            await asyncio.gather(*self.followers, return_exceptions=True)
+            for stream in self.streams:
+                stream.close()
 
 
 async def run(plan_path, duration=300, *, port=0, logs=None, lease_seconds=2, params_sync=None, exercise=None, disabled=()):

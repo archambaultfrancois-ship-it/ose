@@ -57,6 +57,9 @@ def add_parser(commands):
     command.epilog = core['distributed-local'].epilog.replace('ose distributed-local', 'ose app distributed')
     command.add_argument('--build-target', default='build', help='application Makefile build target (default: build)')
     command.add_argument('variables', nargs='*', metavar='NAME=VALUE', help='Makefile assignments selecting the distributed deployment')
+    for name in ('build', 'validate', 'run', 'simulate', 'distributed'):
+        actions.choices[name].add_argument('--profile', choices=('local', 'cluster'),
+            help='select the application deployment profile through Makefile PROFILE')
     parameter = _inherit(actions, 'parameter', core['parameter'], 'read, export, write, watch or synchronize application parameters')
     parameter.description = 'Use the application endpoint and selected client; get exports path-keyed blocks.'
     for action in parameter._actions:
@@ -252,6 +255,16 @@ def run(args):
             context.make(arguments)
             return 0
         variables = list(args.variables)
+        if action == 'distributed':
+            if args.profile not in (None, 'cluster'):
+                raise ValueError('ose app distributed requires the cluster profile')
+            args.profile = 'cluster'
+        if args.profile is not None:
+            profiles = [value for value in variables if value.startswith('PROFILE=')]
+            if any(value != f'PROFILE={args.profile}' for value in profiles):
+                raise ValueError('--profile conflicts with the PROFILE assignment')
+            variables = [value for value in variables if not value.startswith('PROFILE=')]
+            variables.append(f'PROFILE={args.profile}')
         duration = getattr(args, 'duration', None)
         for value in variables if action in ('run', 'simulate', 'distributed') else ():
             if value.startswith('DURATION=') and getattr(args, 'duration', None) is None:

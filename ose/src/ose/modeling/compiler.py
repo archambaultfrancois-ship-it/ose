@@ -15,14 +15,19 @@ from ose.modeling.containers import generate_python, scaffold_handler
 from ose.modeling.native_containers import generate_c, generate_rust, scaffold_native
 from ose.modeling.managed_containers import generate_java, generate_ada, scaffold_managed
 from ose.modeling.incremental import stable_sources, build_c
+from ose.modeling.deployment import deployment_profile
 
 BACKENDS = {"c": generate_c, "rust": generate_rust, "java": generate_java, "ada": generate_ada}
 
 
-def compile_plan(model_path, deployment_path, sdl_root, destination):
+def compile_plan(model_path, deployment_path, sdl_root, destination, *, profile=None,
+                 routing=None, development_tokens=False):
     model_path, deployment_path = Path(model_path).resolve(), Path(deployment_path).resolve()
     model, deployment = load(model_path, version=2), load(deployment_path)
     validate_graph(model, deployment)
+    deployment = deployment_profile(deployment, profile, routing=routing, development_tokens=development_tokens)
+    if profile is not None:
+        validate_graph(model, deployment)
     from ose.execution.identity import aliases_for
     process_names = {"prefix": deployment.get("process_names", {}).get("prefix", "ose")}
     process_names["components"] = aliases_for(model["components"],
@@ -180,8 +185,8 @@ def compile_plan(model_path, deployment_path, sdl_root, destination):
             "max_datagram": deployment.get("max_datagram", 1200)}
 
 
-def build(model, deployment, sdl_root, destination, component=None):
-    plan = compile_plan(model, deployment, sdl_root, destination)
+def build(model, deployment, sdl_root, destination, component=None, **profile_options):
+    plan = compile_plan(model, deployment, sdl_root, destination, **profile_options)
     if component is not None and component not in plan["components"]:
         raise ValueError("unknown component to build")
     nodes = plan["components"].values() if component is None else [plan["components"][component]]
@@ -205,6 +210,6 @@ def build(model, deployment, sdl_root, destination, component=None):
     return path
 
 
-def validate(model, deployment, sdl_root):
+def validate(model, deployment, sdl_root, **profile_options):
     with tempfile.TemporaryDirectory(prefix="ose-validate-") as directory:
-        compile_plan(model, deployment, sdl_root, directory)
+        compile_plan(model, deployment, sdl_root, directory, **profile_options)

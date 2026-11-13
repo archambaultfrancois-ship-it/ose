@@ -6,6 +6,11 @@ use the existing local APIs. Simulation remains local.
 
 ## Deployment and build
 
+Applications can maintain a [single deployment source](architecture.md#single-deployment-source-for-local-and-cluster-profiles).
+`ose build/validate` respect the deployment's declared execution by default.
+Use `--profile local` to derive a local deployment, or `--profile cluster` to
+apply cluster preparation rules, as Vibration's launcher does.
+
 Add `"execution": "distributed"` to a deployment. Subscription bindings accept
 `"routing": "broker"` (default) or `"routing": "direct"`, with `"transport": "tcp"`.
 UDP and external client subscriptions remain local-only. The coordinator accepts
@@ -120,7 +125,11 @@ This command uses insecure transport on loopback only. For remote or production
 execution, use the authenticated `serve`/`worker` commands below.
 
 Logs are reset for the current processes under `BUILD/distributed-logs`, or
-`--logs DIR`. `BUILD` is the plan's build directory. The launcher publishes its
+`--logs DIR`. The launcher also follows these files live on stderr, prefixing
+each line with `[coordinator]`, `[component_name]` or `[params-sync]`. Files retain
+the original output without prefixes. Restarted workers keep appending to the
+same file and console stream; shutdown drains remaining output. The final JSON
+status remains on stdout. `BUILD` is the plan's build directory. The launcher publishes its
 actual port in `BUILD/distributed-endpoint.json`; use that port explicitly for
 `cluster-status --insecure --port PORT`. Successful completion writes
 `distributed-status.json` and `distributed-processes.json` in `BUILD`.

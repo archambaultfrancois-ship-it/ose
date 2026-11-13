@@ -14,10 +14,25 @@ def invoke(*args):
 
 
 def observations(text):
-    return [json.loads(line) for line in text.splitlines() if line.startswith('{"event": "vibration"')]
+    lines = [line.removeprefix('[observer] ') for line in text.splitlines()]
+    return [json.loads(line) for line in lines if line.startswith('{"event": "vibration"')]
 
 
 class ApplicationTests(unittest.TestCase):
+    def test_ose_app_distributed_selects_cluster_without_profile_assignment(self):
+        result = subprocess.run([sys.executable, "-m", "ose.cli", "app", "--root", str(ROOT),
+                        "distributed", "--duration", "2", "SCENARIO=normal"],
+                       cwd=ROOT, env=os.environ, check=True, text=True, capture_output=True, timeout=180)
+        plan = json.loads((ROOT / "build/plan.json").read_text())
+        self.assertEqual(plan["execution"], "distributed")
+        state = json.loads((ROOT / "build/distributed-status.json").read_text())
+        self.assertEqual(set(state["components"]), set(plan["components"]))
+        rows = observations((ROOT / "build/distributed-logs/observer.log").read_text())
+        self.assertEqual({row["machine_id"] for row in rows}, {1, 2})
+        self.assertEqual(observations(result.stderr), rows)
+        self.assertIn('[coordinator] ', result.stderr)
+        self.assertIn('[observer] ', result.stderr)
+
     def test_normal_and_increasing_profiles_and_deterministic_simulation(self):
         expected = json.loads((ROOT / "tests/fixtures/expected.json").read_text())
         normal = observations(invoke("simulate", "--scenario", "normal", "--duration", "2", "--workers", "1").stderr)

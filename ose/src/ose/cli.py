@@ -89,6 +89,12 @@ For remote distributed execution, start serve and worker instead of run.""")
             [f"ose {name} --model model.json --deployment deployment.json"])
         command.add_argument("--model", required=True, help="application model JSON file")
         command.add_argument("--deployment", required=True, help="deployment JSON file")
+        command.add_argument("--profile", choices=("local", "cluster"),
+                             help="derive an execution profile (default: respect the deployment source)")
+        command.add_argument("--routing", choices=("mixed", "broker"),
+                             help="cluster routes: preserve source routes or force broker (requires --profile)")
+        command.add_argument("--development-tokens", action="store_true",
+                             help="retain development tokens for a loopback cluster (requires --profile)")
         command.add_argument("--sdl-root", default=os.environ.get("SDL_ROOT", str(Path(__file__).resolve().parents[3] / "sdl")),
                              help="SDL checkout (default: SDL_ROOT or the sibling sdl directory of the OSE source checkout)")
         command.add_argument("--build-dir", default="build", help="build output directory (default: build; build command only)")
@@ -357,11 +363,12 @@ def execute(args, parser=None):
         elif args.action in ("build", "validate"):
             if not args.sdl_root:
                 raise ValueError("set SDL_ROOT or pass --sdl-root explicitly")
+            options = dict(profile=args.profile, routing=args.routing, development_tokens=args.development_tokens)
             if args.action == "validate":
-                validate(args.model, args.deployment, args.sdl_root)
+                validate(args.model, args.deployment, args.sdl_root, **options)
                 print(json.dumps({"valid": True}))
             else:
-                print(build(args.model, args.deployment, args.sdl_root, args.build_dir, args.component))
+                print(build(args.model, args.deployment, args.sdl_root, args.build_dir, args.component, **options))
         elif args.action == "export-kubernetes":
             from ose.modeling.kubernetes import export
             export(args.plan, args.images, args.namespace, args.output, args.image_pull_secret)

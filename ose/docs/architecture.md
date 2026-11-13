@@ -84,6 +84,65 @@ Deployment `subscriptions` maps IDs to `{transport: "tcp" | "udp"}`. Model QoS
 specifies the delivery requirements. Compilation resolves both into the plan,
 never silently weakening an unsupported profile.
 
+### Single deployment source for local and cluster profiles
+
+When local and cluster execution use the same components and implementations,
+keep one source `deployment.json` describing the distributed deployment. OSE
+derives the selected execution profile during validation and compilation, sharing
+component definitions, handler paths and parameter-client permissions.
+
+Without `--profile`, `ose build` and `ose validate` respect the deployment source:
+`"execution": "distributed"` selects distributed execution; omitting `execution`
+selects local execution. Routes, placements and credentials remain as declared.
+Use `--profile local` to explicitly derive a local deployment, or
+`--profile cluster` to apply cluster preparation rules:
+
+```sh
+ose validate --model model.json --deployment deployment.json
+ose build --model model.json --deployment deployment.json
+ose build --model model.json --deployment deployment.json --profile local
+ose build --model model.json --deployment deployment.json --profile cluster
+ose build --model model.json --deployment deployment.json --profile cluster --routing broker
+```
+
+For a deployment such as [Vibration](../../vibration-watch/README.md), preparation
+applies these rules:
+
+| Setting | Cluster profile | Local profile |
+| --- | --- | --- |
+| `components`, implementations and parameter rights | Keep | Keep |
+| `execution` | `distributed` | Omit; defaults to `local` |
+| Distributed `subscriptions` route overrides | Keep, or select broker routing | Remove; use local broker defaults |
+| Component `placement` constraints | Keep | Remove |
+| Development operator token | Remove for production | Keep |
+
+OSE applies the profile in memory, preserving the source document and resolving
+paths from its original location. It validates both the source and the selected
+deployment against the complete model. A deployment that is already local keeps
+its transport overrides, including UDP. Local execution, simulation and replay
+retain the same components and contracts. Parameter clients in a local profile
+require an explicit token in the deployment source.
+
+Keep development authentication separate from production authentication during
+preparation. Vibration retains a development operator token in the source for
+local tools before the first build. Cluster preparation removes it, except for
+the explicit loopback parameter-sync demonstration. Use `--development-tokens`
+with `--profile cluster` to retain tokens for that demonstration; production
+cluster clients use certificates. Application tools use an existing compiled plan as the
+authoritative credential source, including when that plan has no token.
+
+`ose app build/validate/run/simulate/distributed --profile local|cluster` forwards
+the selection as the application's Makefile `PROFILE` assignment. The Makefile
+passes it to `ose build/validate --profile`; OSE's own Makefile supports this too.
+`ose app distributed` selects `cluster` automatically and rejects a local profile.
+This command explicitly requests distributed execution; plain `ose build/validate`
+continue to respect the source when no profile is selected.
+Vibration uses the same public `ose.modeling.deployment.deployment_profile` function
+for its prepared documents; its launcher only supplies application settings and
+the selected profile. Its existing `make build PROFILE=local|cluster` interface
+is preserved. Python compiler callers can pass `profile='local'` or
+`profile='cluster'`; omitting it preserves their deployment's declared execution.
+
 ## Process lifecycle
 
 The runtime also provides a [functional simulated engine](simulation.md), selected

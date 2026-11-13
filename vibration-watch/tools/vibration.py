@@ -26,7 +26,7 @@ def write(path, value):
 
 
 def framework(args):
-    root = Path(args.framework_root or os.environ.get("FRAMEWORK_ROOT", ROOT.parent)).resolve()
+    root = Path(getattr(args, "framework_root", None) or os.environ.get("FRAMEWORK_ROOT", ROOT.parent)).resolve()
     if not (root / "sdl/sdlc/generator.py").is_file() or not (root / "ose/src/ose/cli.py").is_file():
         raise ValueError("framework not found; use the parent SDL/OSE checkout or set FRAMEWORK_ROOT")
     return root
@@ -88,16 +88,10 @@ def prepare(args):
     if not args.scenario.replace("-", "").isalnum():
         raise ValueError("invalid scenario name")
     model = read(ROOT / "model.json")
-    deployment = read(ROOT / "deployment.json")
-    if args.profile == "local":
-        deployment.pop("execution", None)
-        deployment.pop("subscriptions", None)
-        for component in deployment["components"].values():
-            component.pop("placement", None)
-    elif not (args.task == "distributed-local" and args.params_sync is not None):
-        # Development tokens are only used locally and in the loopback sync demo.
-        for client in deployment.get("parameter_clients", {}).values():
-            client.pop("token", None)
+    sys.path.insert(0, str(framework(args) / "ose/src"))
+    from ose.modeling.deployment import deployment_profile
+    deployment = deployment_profile(read(ROOT / "deployment.json"), args.profile, routing=args.routing,
+        development_tokens=args.task == "distributed-local" and args.params_sync is not None)
     machines = read(ROOT / "config/machines.json")
     thresholds = read(ROOT / "config/thresholds.json")
     scenario = read(ROOT / "scenarios" / (args.scenario + ".json"))
@@ -126,9 +120,6 @@ def prepare(args):
     for component in deployment["components"].values():
         component["container"]["handler"] = str(ROOT / component["container"]["handler"])
         component["cwd"] = str(ROOT)
-    if args.profile == "cluster" and args.routing == "broker":
-        deployment["subscriptions"] = {key: {"routing": "broker", "transport": "tcp"}
-                                       for key in deployment.get("subscriptions", {})}
     destination = ROOT / "build/prepared"
     write(destination / "model.json", model)
     write(destination / "deployment.json", deployment)
@@ -139,7 +130,10 @@ def prepare(args):
 def compile_app(args, *, validate=False):
     prepared = prepare(args)
     options = ["validate" if validate else "build", "--model", prepared / "model.json",
-               "--deployment", prepared / "deployment.json", "--build-dir", prepared.parent]
+               "--deployment", prepared / "deployment.json", "--build-dir", prepared.parent,
+               "--profile", args.profile]
+    if args.task == "distributed-local" and args.params_sync is not None:
+        options += ["--development-tokens"]
     if not validate and args.component:
         options += ["--component", args.component]
     cli(args, *options)
@@ -173,9 +167,6 @@ def distributed_local(args):
     finally:
         os.environ.clear()
         os.environ.update(previous)
-        observer = ROOT / "build/distributed-logs/observer.log"
-        if observer.exists():
-            print(observer.read_text(), file=sys.stderr, end="")
 
 
 def certs(args):

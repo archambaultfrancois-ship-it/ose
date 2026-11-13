@@ -41,6 +41,7 @@
 
 ## Distributed execution and deployment
 
+- **[Single deployment source](architecture.md#single-deployment-source-for-local-and-cluster-profiles)**: respect the declared deployment by default or explicitly derive local and cluster profiles, sharing component implementations and parameter permissions.
 - **[Remote workers](distributed.md#deployment-and-build)**: deploy one adapter/component pair per worker using the existing callbacks and SDL contracts.
 - **[Direct and broker routes](distributed.md#delivery-and-bounds)**: send TCP payloads through the coordinator or directly between adapters with common FIFO/latest and admission semantics.
 - **[Mutual TLS](distributed.md#processes-and-authentication)**: authenticate the coordinator and each logical worker using CA-verified certificate identities.

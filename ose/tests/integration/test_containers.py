@@ -51,6 +51,47 @@ class ContainerTests(unittest.TestCase):
         self.model_path.write_text(json.dumps(self.model))
         self.deployment_path.write_text(json.dumps(self.deployment))
 
+    def test_single_deployment_profiles_via_cli_preserve_paths_and_source(self):
+        from contextlib import redirect_stdout
+        from ose.cli import main
+        self.deployment.update(execution='distributed',
+            subscriptions={'link': {'routing': 'direct', 'transport': 'tcp'}},
+            parameter_clients={'operator': {'read': [], 'write': [], 'token': 'development-only-token'}})
+        for node in self.deployment['components'].values():
+            node['placement'] = {'node_selector': {'kubernetes.io/os': 'linux'}}
+        self.documents()
+        source = self.deployment_path.read_bytes()
+        for profile, extra, route, token in (
+                (None, [], 'direct', True),
+                ('local', [], None, True),
+                ('cluster', [], 'direct', False),
+                ('cluster', ['--routing', 'broker'], 'broker', False),
+                ('cluster', ['--development-tokens'], 'direct', True)):
+            options = ['--model', str(self.model_path), '--deployment', str(self.deployment_path),
+                       '--sdl-root', SDL_ROOT, '--build-dir', str(self.destination), *extra]
+            if profile:
+                options += ['--profile', profile]
+            with self.subTest(profile=profile, extra=extra), redirect_stdout(io.StringIO()):
+                self.assertEqual(main(['validate', *options]), 0)
+                self.assertEqual(main(['build', *options]), 0)
+                plan = json.loads((self.destination / 'plan.json').read_text())
+                self.assertEqual(plan['execution'], 'local' if profile == 'local' else 'distributed')
+                self.assertEqual(plan['subscriptions'][0].get('routing'), route)
+                self.assertEqual('token' in plan['parameter_clients']['operator'], token)
+                for name, node in plan['components'].items():
+                    self.assertEqual(node['container']['handler'], str(self.root / f'{name}.py'))
+                    self.assertEqual(node['cwd'], str(self.root))
+                    self.assertEqual('placement' in node, profile != 'local')
+                self.assertEqual(self.deployment_path.read_bytes(), source)
+
+    def test_local_profile_rejects_invalid_source_placement_before_generating(self):
+        self.deployment['execution'] = 'distributed'
+        self.deployment['components']['source']['placement'] = {'unsupported': True}
+        self.documents()
+        with self.assertRaises(ValueError):
+            compile_plan(self.model_path, self.deployment_path, SDL_ROOT, self.destination, profile='local')
+        self.assertFalse(self.destination.exists())
+
     def compile(self):
         self.documents()
         return compile_plan(self.model_path, self.deployment_path, SDL_ROOT, self.destination)

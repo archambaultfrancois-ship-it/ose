@@ -139,7 +139,7 @@ ose app build SCENARIO=normal
 ose app run --duration 60 SCENARIO=normal
 ose app run --params-sync parameters --duration 60
 ose app simulate DURATION=10
-ose app distributed --duration 300 PROFILE=cluster
+ose app distributed --duration 300
 ose app make -- -j4 build
 ose app --root /path/to/application env
 ```
@@ -153,11 +153,14 @@ selected by default; missing target compilers produce installation warnings.
 
 Build, validate and simulate use the application's Makefile targets.
 `ose app distributed` builds first, then OSE supervises a loopback coordinator
-and the workers declared in the compiled distributed plan. Make variables such
-as `PROFILE=cluster` select the application's distributed configuration; use
+and the workers declared in the compiled distributed plan. This command selects
+the application's `PROFILE=cluster` automatically; a local profile is rejected. Use
 `--build-target TARGET` if it has a dedicated build target. The duration defaults
 to 300 seconds after readiness. Application demonstrations remain available
 through `ose app make demo-distributed`.
+Coordinator, worker and synchronizer output appears live on stderr with the
+process name in brackets. Original output also remains in
+`build/distributed-logs/*.log`; the final JSON status goes to stdout.
 `ose app run` builds first, then executes `build/plan.json` until Ctrl+C by default;
 `app-run DURATION=60` remains accepted. Both real-time launchers accept
 `--params-sync [DIR]` to own a parameter synchronizer (default: `parameters`),

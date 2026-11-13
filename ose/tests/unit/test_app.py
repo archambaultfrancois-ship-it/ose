@@ -120,6 +120,20 @@ class ApplicationTests(unittest.TestCase):
             self.assertEqual(self.command('build'), 0)
         build.assert_called_once_with(['build'], [])
 
+    def test_profile_selection_reaches_application_makefile(self):
+        for action in ('build', 'validate', 'simulate'):
+            with self.subTest(action=action), patch('ose.app.Application.make') as build:
+                self.assertEqual(self.command(action, '--profile', 'local'), 0)
+            build.assert_called_once_with([action], ['PROFILE=local'])
+        self.configuration({'execution': 'distributed'})
+        with patch('ose.app.Application.make') as build, \
+                patch('ose.execution.local_cluster.run', new=AsyncMock()):
+            self.assertEqual(self.command('distributed', '--profile', 'cluster'), 0)
+        build.assert_called_once_with(['build'], ['PROFILE=cluster'])
+        with patch('ose.app.Application.make') as build, contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.command('build', '--profile', 'local', 'PROFILE=cluster'), 1)
+        build.assert_not_called()
+
     def test_sync_storage_follows_caller_and_import_files_follow_application(self):
         caller = Path.cwd()
         synced = self.parameter('sync', '--dir', 'relative folder')
@@ -246,14 +260,21 @@ class ApplicationTests(unittest.TestCase):
     def test_distributed_builds_then_uses_generic_cluster_instead_of_demo_target(self):
         self.configuration({'execution': 'distributed'})
         caller = Path.cwd()
-        for options, duration in (([], 300), (['DURATION=2'], 2), (['--duration', '3'], 3)):
+        for options, duration in (([], 300), (['DURATION=2'], 2), (['--duration', '3', 'PROFILE=cluster'], 3)):
             with self.subTest(options=options), patch('ose.app.Application.make') as build, \
                     patch('ose.execution.local_cluster.run', new=AsyncMock()) as launch:
-                self.assertEqual(self.command('distributed', *options, 'PROFILE=cluster'), 0)
+                self.assertEqual(self.command('distributed', *options), 0)
             build.assert_called_once_with(['build'], ['PROFILE=cluster'])
             launch.assert_awaited_once_with(str(self.root / 'build/plan.json'), duration,
                 port=0, logs=None, lease_seconds=2, params_sync=None)
             self.assertEqual(Path.cwd(), caller)
+
+    def test_distributed_rejects_local_profile_before_building(self):
+        for options in (['--profile', 'local'], ['PROFILE=local']):
+            with self.subTest(options=options), patch('ose.app.Application.make') as build, \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(self.command('distributed', *options), 1)
+            build.assert_not_called()
 
     def test_managed_sync_storage_follows_caller(self):
         self.configuration({'execution': 'local'})

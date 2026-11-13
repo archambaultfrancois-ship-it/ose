@@ -318,9 +318,13 @@ After sourcing the environment, the generic entry points are:
 
 ```sh
 ose app run --params-sync parameters --duration 60 SCENARIO=normal
-ose app distributed --duration 60 PROFILE=cluster SCENARIO=normal
+ose app distributed --duration 60 SCENARIO=normal
 ose app make demo-distributed PARAMS_SYNC=1 DURATION=60
 ```
+
+Distributed launches show component output live on stderr, for example
+`[observer] {"event": "vibration", ...}`. Original lines remain in
+`build/distributed-logs/observer.log`; they are displayed once as they arrive.
 
 For the synchronized cluster demonstration, retain the last command: it also
 prepares the loopback operator token. A plain `PROFILE=cluster` build keeps the
@@ -336,9 +340,9 @@ uses the generic OSE synchronizer.
 - `config/`: machine definitions, block sizes, seeds and thresholds.
 - `model.json`: ports, timers, activation links and bounded QoS.
 - `deployment.json`: the single deployment source, describing component implementations,
-  distributed routes and cluster placement resources. The launcher derives the local
-  profile by removing distributed execution, route overrides and placements; local
-  communication then uses the broker. Both profiles keep the same components and
+  distributed routes and cluster placement resources. The launcher uses OSE's
+  deployment profiles: local execution removes distributed route overrides and
+  placements, and communication uses the broker. Both profiles keep the same components and
   parameter permissions. The development operator token supports local tools before
   the first build; cluster preparation removes it, except for the loopback sync demo.
 - `scenarios/`: deterministic profiles; `tests/`: business, end-to-end and opt-in cluster tests.

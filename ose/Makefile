@@ -4,12 +4,13 @@ SDL_ROOT ?= $(abspath $(CURDIR)/../sdl)
 export PYTHONPATH := $(CURDIR)/src:$(_ose_python_deps)
 MODEL := examples/acquisition/model.json
 DEPLOYMENT := examples/acquisition/deployment.json
+PROFILE_OPTIONS = $(if $(PROFILE),--profile "$(PROFILE)")
 
 .PHONY: validate build demo check test test-unit test-integration test-sdk test-simulated test-distributed
 validate:
-	"$(PYTHON)" -m ose.cli validate --model $(MODEL) --deployment $(DEPLOYMENT) --sdl-root "$(SDL_ROOT)"
+	"$(PYTHON)" -m ose.cli validate --model $(MODEL) --deployment $(DEPLOYMENT) $(PROFILE_OPTIONS) --sdl-root "$(SDL_ROOT)"
 build:
-	"$(PYTHON)" -m ose.cli build --model $(MODEL) --deployment $(DEPLOYMENT) --sdl-root "$(SDL_ROOT)"
+	"$(PYTHON)" -m ose.cli build --model $(MODEL) --deployment $(DEPLOYMENT) $(PROFILE_OPTIONS) --sdl-root "$(SDL_ROOT)"
 demo: build
 	"$(PYTHON)" -m ose.cli run --duration 2
 	"$(PYTHON)" -m ose.cli inspect --last
