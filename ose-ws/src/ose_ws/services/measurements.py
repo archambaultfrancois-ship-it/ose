@@ -21,6 +21,7 @@ class MeasurementStore:
         self.last_wall = None
         self.truncated = False
         self.allocated_bytes = 0
+        self.last_simulation_snapshot = None
 
     def active(self):
         now = time.monotonic()
@@ -53,6 +54,13 @@ class MeasurementStore:
         wall, mono = time.time(), time.monotonic()
         backwards = self.last_wall is not None and wall < self.last_wall
         self.last_wall = wall
+        simulated = snapshot.get('mode') == 'simulated'
+        stamp = (snapshot.get('epoch'), snapshot.get('snapshot_sequence'))
+        duplicate = simulated and not error and self.last_simulation_snapshot == stamp
+        if simulated:
+            wall = int(snapshot.get('simulation_time_ns', '0')) / 1e9
+            self.last_simulation_snapshot = stamp
+            backwards = False
         self.sequence += 1
         inventory = snapshot.get("observation", {}).get("components", {})
         present = set()
@@ -71,7 +79,9 @@ class MeasurementStore:
                 self.catalogue[identity] = {"id": identity, "component": component, "local_name": name,
                     "name": f"{component}.{name}", "value": value if quality == "good" else None,
                     "generation": desc.get("generation"), "epoch": snapshot.get("epoch"),
-                    "quality": quality, "observed_at": timestamp(wall), "report_age_ms": age}
+                    "quality": quality, "observed_at": None if simulated else timestamp(wall), "report_age_ms": age,
+                    "time_basis": 'simulated' if simulated else 'realtime',
+                    "simulation_time_ns": snapshot.get('simulation_time_ns') if simulated else None}
         for identity, item in self.catalogue.items():
             if identity not in present:
                 item.update(value=None, quality="unavailable")
@@ -80,9 +90,12 @@ class MeasurementStore:
             if item is None:
                 continue
             segment_id = opaque("segment", identity, item["epoch"], item["generation"])
+            if duplicate and segment_id in self.segments:
+                continue
             if segment_id not in self.segments:
                 self.segments[segment_id] = {"id": segment_id, "measurement_id": identity,
-                    "name": item["name"], "epoch": item["epoch"], "generation": item["generation"], "points": deque()}
+                    "name": item["name"], "epoch": item["epoch"], "generation": item["generation"],
+                    "time_basis": item['time_basis'], "points": deque()}
             quality = "clock_reset" if backwards else item["quality"]
             point = (self.sequence, wall, mono, item["value"] if quality == "good" else None, quality)
             # Account for the point, deque reference and global eviction record conservatively.
@@ -166,13 +179,14 @@ class MeasurementStore:
         per_segment = min(maximum, max(8, 50000 // max(1, len(matching))))
         result = []
         for segment in matching:
+            simulated = segment.get('time_basis') == 'simulated'
             points = [p for p in segment["points"] if (start is None or p[1] >= start) and (end is None or p[1] <= end)]
             reduced = self.reduce(points, per_segment)
             result.append({k: v for k, v in segment.items() if k != "points"} | {
-                "points": [{"sequence": str(p[0]), "time": p[1] * 1000, "observed_at": timestamp(p[1]),
+                "points": [{"sequence": str(p[0]), "time": p[1] * 1000, "observed_at": None if simulated else timestamp(p[1]),
                             "value": p[3], "quality": p[4]} for p in reduced],
                 "raw_count": len(points), "reduced": len(reduced) < len(points),
-                "available_from": timestamp(points[0][1]) if points else None,
-                "available_to": timestamp(points[-1][1]) if points else None})
+                "available_from": (points[0][1] if simulated else timestamp(points[0][1])) if points else None,
+                "available_to": (points[-1][1] if simulated else timestamp(points[-1][1])) if points else None})
         return {"segments": result, "next": next_cursor, "truncated": self.truncated, "buffer_samples": len(self.order),
                 "buffer_bytes": self.allocated_bytes}

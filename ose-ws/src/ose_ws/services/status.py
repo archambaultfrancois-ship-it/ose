@@ -36,7 +36,8 @@ class StatusCollector:
                 self.last_success, self.last_mono = utc(), time.monotonic()
                 self.error, delay = None, 1
                 try:
-                    self.report = self.observer.sample(snapshot)
+                    self.report = self.observer.sample(snapshot, now=(int(snapshot['simulation_time_ns']) / 1e9
+                        if snapshot.get('mode') == 'simulated' else None))
                 except ValueError as error:
                     self.report = {"components": [], "error": str(error)}
                 self.measurements.observe(snapshot)
@@ -62,7 +63,8 @@ class StatusCollector:
 
     def application(self):
         snapshot = self.snapshot
-        return self.connection.public() | {"connected": self.error is None, "error": self.error,
+        return self.connection.public() | {"mode": "simulated" if snapshot.get('mode') == 'simulated' else self.connection.public().get('mode', 'local'),
+            "execution": snapshot.get('execution'), "connected": self.error is None, "error": self.error,
             "epoch": snapshot.get("epoch"), "observed_at": self.last_success,
             "age_ms": (time.monotonic() - self.last_mono) * 1000 if self.last_mono else None,
             "capabilities": {"components": snapshot.get("observation", {}).get("version") == 1,
@@ -80,7 +82,7 @@ class StatusCollector:
                 for name, desc in observation.get("components", {}).items()},
                 "subscriptions": observation.get("subscriptions", {}),
                 "external_topics": observation.get("external_topics", {})}
-        return self.report | {"error": self.error or self.report.get("error"), "observed_at": self.last_success,
+        return self.report | {"execution": self.snapshot.get('execution'), "error": self.error or self.report.get("error"), "observed_at": self.last_success,
                               "age_ms": self.application()["age_ms"], "topology": topology}
 
     async def close(self):

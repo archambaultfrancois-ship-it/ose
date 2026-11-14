@@ -120,6 +120,13 @@ breakpoints, interactively or through `--command` / `--command-file`. Simulation
 with `--microsteps` also supports `microstep N`. Controlled sessions start paused;
 real-time `run` rejects these controls.
 
+Simulated CLI runs also expose a loopback server for the web console. Use
+`ose app simulate --duration 60 --interactive` to start paused and keep the
+server available after completion. The terminal prompt and history survive
+completion and reset; terminal and browser share commands and breakpoints.
+See [simulation server](docs/simulation-server.md)
+for connection discovery, control semantics, services and the two time bases.
+
 `SDL_ROOT` defaults to the sibling SDL project (`../sdl`). To use another checkout,
 set `SDL_ROOT=/absolute/path/to/ose/sdl` in the environment or on the `make` command
 line. The CLI also accepts `--sdl-root`, which takes precedence over `SDL_ROOT`.

@@ -491,4 +491,6 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(summary["ticks"], 4 * (1 + 1 + 1 + 2))
             self.assertEqual(summary["publications"], 4 * 4 + 2)  # Two external offsets.
         self.assertEqual((project / "build/w1.jsonl").read_bytes(), (project / "build/w4.jsonl").read_bytes())
-        self.assertFalse((project / "build/endpoint.json").exists())
+        endpoint = json.loads((project / 'build/endpoint.json').read_text())
+        self.assertEqual(endpoint['mode'], 'simulated')
+        self.assertGreater(endpoint['port'], 0)

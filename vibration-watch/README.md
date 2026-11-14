@@ -148,6 +148,22 @@ the framework, restart the application when new engine capabilities are needed.
 See the [console guide](../ose-ws/README.md) for captures, permissions,
 network access and the complete-block parameter overwrite semantics.
 
+#### Observe a simulation
+
+```sh
+source ./setenv.sh
+ose app simulate --duration 60 --interactive
+# In another terminal, source ./setenv.sh, then:
+ose-ws
+```
+
+Open **Simulation** to advance virtual time. The run starts paused; the server
+stays available after completion until Ctrl+C. Components, typed parameters,
+logs and latest scalar measurements are available. Measurement charts and
+application rates use simulated time; resource usage uses real time. Fast
+advances may skip intermediate measurements in the console's collected history.
+See [simulation server](../ose/docs/simulation-server.md).
+
 #### Compatible contract example
 
 In **Components → Application flow**, select **events**

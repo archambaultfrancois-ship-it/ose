@@ -80,3 +80,36 @@ it('uses Components for an absent or unknown section and follows fragment naviga
   window.dispatchEvent(new HashChangeEvent('hashchange'))
   await until(() => heading() === 'Components')
 })
+
+it('keeps the Simulation page selected while reset temporarily changes the reported mode', async () => {
+  window.history.replaceState(null, '', '#simulation')
+  let channel: any
+  vi.stubGlobal('WebSocket', class {
+    static OPEN = 1
+    static CONNECTING = 0
+    readyState = 0
+    constructor() { channel = this }
+    close() { this.readyState = 3 }
+  })
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => {
+    const data = path.endsWith('/session') ? { actor: 'reset-navigation-test', csrf: 'csrf', permissions: {}, expires_at: '' }
+      : path.endsWith('/application') ? { connected: true, mode: 'simulated', execution: { mode: 'simulated', state: 'paused' } }
+      : { items: [], next: null }
+    return new Response(JSON.stringify(data), { status: 200 })
+  }))
+  await mount()
+  await until(() => !!root.querySelector('.simulation-panel'))
+  const update = async (data: any) => {
+    channel.onmessage({ data: JSON.stringify({ type: 'application.changed', data }) })
+    await nextTick()
+    expect(heading()).toBe('Simulation')
+    expect(window.location.hash).toBe('#simulation')
+  }
+  await update({ connected: true, mode: 'local', execution: { mode: 'simulated', state: 'resetting' } })
+  expect(root.querySelector('.simulation-panel')).not.toBeNull()
+  await update({ connected: false, mode: 'local', execution: null })
+  await update({ connected: true, mode: 'simulated', execution: { mode: 'simulated', state: 'paused', epoch: 'new' } })
+  expect(root.querySelector('nav button.active')?.textContent).toContain('Simulation')
+  channel.onmessage({ data: JSON.stringify({ type: 'application.changed', data: { connected: true, mode: 'local', execution: null } }) })
+  await until(() => heading() === 'Components')
+})

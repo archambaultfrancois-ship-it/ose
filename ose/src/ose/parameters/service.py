@@ -166,8 +166,8 @@ def binding_rights(node):
 
 class ParameterEndpoint:
     """Shared RPC authorization; component sessions keep their existing identity."""
-    def __init__(self, plan, codec):
-        self.service = ParameterService(plan, codec)
+    def __init__(self, plan, codec, *, service=None):
+        self.service = service if service is not None else ParameterService(plan, codec)
         self.clients = plan.get('parameter_clients', {})
         self.external = {}
 

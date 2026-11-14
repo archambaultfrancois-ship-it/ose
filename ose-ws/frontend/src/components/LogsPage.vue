@@ -85,7 +85,7 @@ onBeforeUnmount(() => { stopped = true; clearInterval(timer); clearTimeout(debou
     <div ref="viewport" class="table-scroll log-viewport" aria-label="Component logs" :aria-busy="busy">
       <table class="log-table"><thead><tr><th>Time</th><th>Level</th><th>Component</th><th>Category</th><th>Message</th></tr></thead>
         <tbody><tr v-for="row in records" :key="`${epoch}:${row.sequence}`" :data-level="row.level">
-          <td class="mono" :title="row.time_ns + ' ns UTC'">{{ time(row.time_ns) }}</td>
+          <td class="mono" :title="row.time_ns + ' ns UTC'">{{ time(row.time_ns) }}<small v-if="row.simulation_time_ns != null">Simulated: {{ row.simulation_time_ns }} ns</small></td>
           <td><span class="log-level" :data-level="row.level">{{ row.level }}</span></td>
           <td class="mono" :title="`Generation ${row.generation}`">{{ row.component }}</td>
           <td class="mono">{{ row.logger || '—' }}</td><td class="log-message">{{ row.message }}</td>

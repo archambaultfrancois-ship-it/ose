@@ -265,6 +265,27 @@ containing the invalid element. **Go to field** returns to that location.
 The marker clears when that value is edited; validate again before applying.
 Failures without a field location stay visible beside the editor's action buttons.
 
+## Simulated execution
+
+Run `ose app simulate --duration 60 --interactive` from the application environment,
+then start `ose-ws` in another terminal. The console discovers the simulation server
+through the usual endpoint file and adds a **Simulation** page: pause/resume,
+instant or duration stepping, absolute targets, time breakpoints, optional
+microsteps and reset. Interactive servers retain the final snapshot until Ctrl+C.
+
+The common banner distinguishes simulated position from real connection freshness.
+Measurements use a simulated-time chart axis, while CPU, memory and callback
+execution durations use real time. Parameters retain their typed editor and OSE
+client permissions. Simulation control requires `simulation.control`; read-only
+users can observe without advancing time. Commands use the existing durable
+operations, CSRF and idempotency mechanisms.
+
+Measurement history contains collected latest-value snapshots and can skip
+intermediate simulated emissions. Live message previews and dynamic capture
+controls are unavailable for simulation; launch-time captures remain supported.
+See [simulation server](../ose/docs/simulation-server.md) for the complete lifecycle,
+RPC services, clock semantics and limitations.
+
 ## Configuration and network access
 
 See [configuration](docs/configuration.md) for paths, settings, proxy identity

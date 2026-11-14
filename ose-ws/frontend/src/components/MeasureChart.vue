@@ -17,7 +17,10 @@ function update() {
     tooltip: { trigger: 'axis', confine: true },
     legend: { type: 'scroll', top: 0, textStyle: { color: '#52616b', fontSize: 11 } },
     grid: { left: 65, right: 24, top: 45, bottom: 75 },
-    xAxis: { type: 'time', axisLabel: { color: '#6c7a86' }, splitLine: { show: false } },
+    xAxis: { type: props.segments.some(s => s.time_basis === 'simulated') ? 'value' : 'time',
+      name: props.segments.some(s => s.time_basis === 'simulated') ? 'Simulated seconds' : '',
+      nameLocation: 'middle', nameGap: 30,
+      axisLabel: { color: '#6c7a86', ...(props.segments.some(s => s.time_basis === 'simulated') ? { formatter: (value: number) => String(value / 1000) } : {}) }, splitLine: { show: false } },
     yAxis: { type: 'value', scale: true, axisLabel: { color: '#6c7a86' }, splitLine: { lineStyle: { color: '#e8edf0' } } },
     dataZoom: [{ type: 'inside', filterMode: 'none' }, { type: 'slider', height: 22, bottom: 10 }],
     series: props.segments.map(segment => ({

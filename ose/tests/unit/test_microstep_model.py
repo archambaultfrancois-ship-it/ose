@@ -102,7 +102,7 @@ class MicrostepStartupTests(unittest.IsolatedAsyncioTestCase):
 class MicrostepCliTests(unittest.TestCase):
     def test_simulation_and_replay_forward_launch_options(self):
         from ose.cli import main
-        for arguments, target in ((['run'], 'ose.execution.simulation.run'),
+        for arguments, target in ((['run'], 'ose.execution.simulation.server.serve'),
                                   (['replay', 'capture.pcapng', '--map', 'recorded=external'], 'ose.recording.replay.run')):
             with self.subTest(arguments=arguments), patch(target, new=AsyncMock(return_value={})) as launch, \
                     contextlib.redirect_stdout(io.StringIO()):

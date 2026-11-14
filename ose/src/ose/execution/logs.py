@@ -106,6 +106,11 @@ class LogStore:
             if not isinstance(stamp, str) or not stamp.isascii() or not stamp.isdecimal() or len(stamp) > 20:
                 raise ValueError('log timestamp must be an unsigned nanosecond string')
             prepared.append(dict(record, time_ns=stamp, component=component, generation=generation))
+            virtual = entry.get('simulation_time_ns')
+            if virtual is not None:
+                if not isinstance(virtual, str) or not virtual.isascii() or not virtual.isdecimal() or len(virtual) > 20:
+                    raise ValueError('simulation log timestamp must be an unsigned nanosecond string')
+                prepared[-1]['simulation_time_ns'] = virtual
         for record in prepared:
             self.sequence += 1
             record['sequence'] = str(self.sequence)

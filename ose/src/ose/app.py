@@ -45,6 +45,10 @@ def add_parser(commands):
         command = actions.add_parser(name, help=f'run the application Makefile target {target}')
         if name == 'simulate':
             command.add_argument('--duration', type=float, help='execution duration')
+            command.add_argument('--interactive', action='store_true', help='start paused and keep the simulation server available until interrupted')
+            command.add_argument('--port', type=int, help='simulation server TCP port (default: automatically assigned)')
+            command.add_argument('--workers', type=int, help='simulation worker count')
+            command.add_argument('--microsteps', action='store_true', help='enable logical microsteps')
         command.add_argument('variables', nargs='*', metavar='NAME=VALUE', help='application Makefile assignments')
     command = actions.add_parser('make', help='invoke the application Makefile')
     command.add_argument('arguments', nargs=argparse.REMAINDER, help='make arguments; use -- before flags')
@@ -274,6 +278,18 @@ def run(args):
                     raise ValueError('duration must be a positive finite number') from error
         if duration is not None and (not math.isfinite(duration) or duration <= 0):
             raise ValueError('duration must be a positive finite number')
+        if action == 'simulate' and (args.interactive or args.port is not None or args.workers is not None or args.microsteps):
+            context.make(['build'], variables)
+            args.action, args.mode, args.plan = 'run', 'simulated', str(context.plan)
+            args.duration = duration if duration is not None else (60 if args.interactive else 3)
+            args.working_directory = str(context.caller)
+            args.trace = str(context.root / 'build/simulation.jsonl')
+            args.scenario = args.max_microsteps = args.max_tick_output_bytes = None
+            args.command = args.command_file = None
+            args.record = args.record_file = args.record_from = args.record_until = None
+            args.disable_component = []
+            args.params_sync = None
+            return execute(args)
         if action in ('run', 'distributed'):
             variables = [value for value in variables if not value.startswith('DURATION=')]
             context.make([args.build_target if action == 'distributed' else 'build'], variables)

@@ -232,3 +232,8 @@ the message includes its PID when available. Stop that console with Ctrl+C or
 SIGTERM before restarting. A leftover `server.lock` file or old PID alone does
 not block startup: the operating system releases the lock when its owner exits.
 Do not delete the lock file to bypass an active server's ownership.
+
+Simulation observation uses `components.read`; control additionally requires
+`"simulation.control":["*"]`. Control is shared across browsers, with one active
+advance at a time. Administrators already have this permission. See the
+[simulation server guide](../../ose/docs/simulation-server.md).

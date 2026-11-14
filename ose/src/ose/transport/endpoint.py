@@ -8,8 +8,10 @@ import tempfile
 from ose.transport.secure import contexts
 
 
-def publish(build_dir, port, *, distributed=False, insecure=False):
+def publish(build_dir, port, *, distributed=False, insecure=False, mode=None, epoch=None):
     endpoint = dict(host='127.0.0.1', port=port, distributed=distributed, insecure=insecure)
+    if mode is not None:
+        endpoint.update(mode=mode, epoch=epoch)
     path = Path(build_dir) / 'endpoint.json'
     with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as stream:
         temporary = Path(stream.name)

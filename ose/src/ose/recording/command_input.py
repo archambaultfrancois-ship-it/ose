@@ -13,6 +13,13 @@ class CommandInput:
         self.transport, self.reader = None, None
         self.output = output if output is not None else sys.stdout
         self.history = []
+        self.redraw = None
+
+    def display(self, message):
+        """Print an asynchronous result while preserving the edited line."""
+        print(('\r\x1b[2K' if self.redraw else '') + message, file=self.output, flush=True)
+        if self.redraw:
+            self.redraw()
 
     async def readline(self, prompt="record> "):
         # Regular command files cannot block on user input and are not selectable.
@@ -89,6 +96,7 @@ class CommandInput:
 
         try:
             termios.tcsetattr(descriptor, termios.TCSANOW, editing)
+            self.redraw = redraw
             print(prompt, end="", flush=True, file=self.output)
             while True:
                 key = await self._key(decoder)
@@ -130,6 +138,7 @@ class CommandInput:
                     cursor += len(key)
                 redraw()
         finally:
+            self.redraw = None
             termios.tcsetattr(descriptor, termios.TCSANOW, saved)
 
     def close(self):

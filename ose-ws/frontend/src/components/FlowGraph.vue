@@ -3,7 +3,7 @@ import { computed, nextTick, ref, useId, watch, shallowRef } from 'vue'
 import { layout, inputSummary, inputDetails, portY, nodeWidth, type FlowNode, type FlowEdge, type Topology } from '../flow-graph'
 import { metrics, metricValue, linkHealth, FlowHistory, sparkline, sparkPaths, stateTransitions, type Metric } from '../flow-metrics'
 import LinkContract from './LinkContract.vue'
-const props = defineProps<{ timestamp?: string; topology?: Topology | null; components: any[]; epoch?: string | null; error?: string | null; matching: string[]; selected?: string | null; active?: boolean; connected?: boolean; frozen?: boolean }>()
+const props = withDefaults(defineProps<{ timestamp?: string; topology?: Topology | null; components: any[]; epoch?: string | null; error?: string | null; matching: string[]; selected?: string | null; active?: boolean; connected?: boolean; frozen?: boolean; liveAvailable?: boolean }>(), { liveAvailable: true })
 const emit = defineEmits<{ select: [name: string] }>()
 const ports = ref(false), historyVisible = ref(true), metric = ref<Metric>('cpu')
 const graph = computed(() => layout(props.topology, ports.value))
@@ -111,7 +111,7 @@ function edgeTitle(edge: FlowEdge) {
           <div><dt>Shared input queue (all producers)</dt><dd>{{ occupancy(selectedHealth.input) }}</dd></div>
         </dl>
         <p class="muted small">Delivery admissions measure queue acceptance, not downstream processing. Refusals and losses are events in the counter window, not rates or unique messages. — means unavailable; external publishers may have no delivery telemetry.</p>
-        <LinkContract :subscription="selectedLink.id" :epoch="epoch" :active="active" :connected="connected" :frozen="frozen" />
+        <LinkContract :live-available="liveAvailable" :subscription="selectedLink.id" :epoch="epoch" :active="active" :connected="connected" :frozen="frozen" />
       </section>
       <details v-if="historyVisible && selected && selectedHistory.length" class="flow-transitions">
         <summary>{{ selected }} · state history (2 min, up to 120 reports)</summary>

@@ -78,6 +78,20 @@ class TerminalCommandInputTests(unittest.IsolatedAsyncioTestCase):
     async def test_eof_restores_terminal(self):
         self.assertEqual(await self.enter("\x04"), "")
 
+    async def test_async_result_redraws_the_unfinished_command_and_preserves_history(self):
+        task = await self.start_input()
+        os.write(self.master, b'step 10')
+        for _ in range(100):
+            if 'step 10' in self.output.getvalue():
+                break
+            await asyncio.sleep(.01)
+        self.commands.display('advance completed')
+        self.assertIn('advance completed\n\r\x1b[2Krecord> step 10', self.output.getvalue())
+        os.write(self.master, b'ms\n')
+        self.assertEqual(await asyncio.wait_for(task, 2), 'step 10ms\n')
+        self.assertEqual(self.commands.history, ['step 10ms'])
+        self.assertIsNone(self.commands.redraw)
+
     async def test_long_recalled_command_scrolls_without_wrapping(self):
         command = "filter sensor_1.signal value > 123456789"
         with patch("shutil.get_terminal_size", return_value=os.terminal_size((24, 24))):

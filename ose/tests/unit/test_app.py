@@ -176,7 +176,7 @@ class ApplicationTests(unittest.TestCase):
             observed.update(run_cwd=Path.cwd(), plan=plan, **options)
             return {}
         with patch('ose.app.Application.make', side_effect=build), \
-                patch('ose.execution.simulation.run', new=AsyncMock(side_effect=simulate)), \
+                patch('ose.execution.simulation.server.serve', new=AsyncMock(side_effect=simulate)), \
                 contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(self.command('run', '--mode', 'simulated', '--duration', '1',
                                          '--scenario', 'inputs/scenario.json', '--trace', 'result.jsonl'), 0)
@@ -286,3 +286,15 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(launch.call_args.kwargs['params_sync'],
                          dict(directory=str(caller / 'parameter files'), client='maintenance',
                               initial='app', token_env='OSE_PARAMETER_TOKEN'))
+
+    def test_interactive_simulate_builds_and_starts_a_persistent_server(self):
+        self.configuration({'execution': 'local'})
+        with patch('ose.app.Application.make') as build, \
+                patch('ose.execution.simulation.server.serve', new=AsyncMock(return_value={})) as launch, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.command('simulate', '--interactive', '--duration', '60', '--port', '9000', '--workers', '2'), 0)
+        build.assert_called_once_with(['build'], [])
+        self.assertEqual(launch.call_args.args, (str(self.root / 'build/plan.json'), 60))
+        self.assertTrue(launch.call_args.kwargs['keep_alive'])
+        self.assertEqual(launch.call_args.kwargs['port'], 9000)
+        self.assertEqual(launch.call_args.kwargs['workers'], 2)

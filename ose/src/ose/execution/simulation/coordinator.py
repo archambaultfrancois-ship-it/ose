@@ -49,11 +49,15 @@ class Simulation:
     def __init__(self, plan, duration, *, workers=1, scenario=None, events=None, trace=None,
                  max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT, working_directory=None,
                  microsteps=False, max_microsteps=None, controller=None, record=None, record_file=None,
-                 record_from=None, record_until=None, disabled=()):
+                 record_from=None, record_until=None, disabled=(), observer=None):
         require_v2(plan)
         from ose.execution.components import disabled_components
         self.disabled = disabled_components(plan, disabled)
         self.controller = controller
+        self.observer = observer
+        self.initialized = False
+        from ose.execution.observation import TickTimings
+        self.timings = {name: TickTimings() for name in plan['components']} if observer is not None else {}
         self.microstep_limit = microstep_limit(microsteps, max_microsteps)
         if controller is not None:
             if controller.mode != "simulated":
@@ -183,7 +187,7 @@ class Simulation:
         schedule = self.schedules[name]
         return await calculate(self.processes[name], schedule.node, reference, schedule.tick_index,
             self.input_services[name], self.codec, lambda: self.clock.time_ns,
-            parameters=self.parameter_bindings[name], limit=self.limit)
+            parameters=self.parameter_bindings[name], timings=self.timings.get(name), limit=self.limit)
 
     def _input_operations(self, name):
         for operation in self.input_services[name].operations:
@@ -387,7 +391,10 @@ class Simulation:
                 control.snapshot = self._control_snapshot
                 control.start()
                 await asyncio.sleep(0)
+            self.initialized = True
             while self.horizon is None or self.clock.time_ns < self.horizon:
+                if self.observer is not None:
+                    self.observer(self)
                 if control is not None:
                     if not await control.ready():
                         self.reason = "stopped"
@@ -490,6 +497,8 @@ class Simulation:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(*starting, return_exceptions=True)
+            if self.observer is not None and self.reason not in ('failed', 'interrupted'):
+                self.observer(self)
             if self.controller is not None:
                 await self.controller.finish(self.reason)
                 await self.controller.close()

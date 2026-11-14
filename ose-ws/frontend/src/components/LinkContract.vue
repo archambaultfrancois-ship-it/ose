@@ -5,7 +5,7 @@ import SchemaView from './SchemaView.vue'
 import FlowLive from './FlowLive.vue'
 import ContractDiagnostic from './ContractDiagnostic.vue'
 
-const props = defineProps<{ subscription: string; epoch?: string | null; active?: boolean; connected?: boolean; frozen?: boolean }>()
+const props = withDefaults(defineProps<{ subscription: string; epoch?: string | null; active?: boolean; connected?: boolean; frozen?: boolean; liveAvailable?: boolean }>(), { liveAvailable: true })
 const schema = ref<any>(null), error = ref(''), loading = ref(false)
 let request = 0
 async function load() {
@@ -31,7 +31,7 @@ onBeforeUnmount(() => { request++ })
     <p class="muted small">Source port contract</p>
     <p v-if="loading" role="status" class="muted">Loading SDL contract…</p>
     <div v-else-if="error" class="notice warning" role="alert"><p>{{ error }}</p><button class="quiet" @click="load">Retry contract</button></div>
-    <template v-else-if="schema"><SchemaView :schema="schema" /><ContractDiagnostic :subscription="subscription" :epoch="epoch" /><FlowLive :subscription="subscription" :epoch="epoch" :active="active" :connected="connected" :frozen="frozen" /></template>
+    <template v-else-if="schema"><SchemaView :schema="schema" /><ContractDiagnostic :subscription="subscription" :epoch="epoch" /><p v-if="!liveAvailable" class="muted small">Live publication previews are unavailable in this simulation.</p><FlowLive v-if="liveAvailable" :subscription="subscription" :epoch="epoch" :active="active" :connected="connected" :frozen="frozen" /></template>
   </section>
 </template>
 <style scoped>

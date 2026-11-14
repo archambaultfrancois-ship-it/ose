@@ -27,6 +27,7 @@ from ose_ws.services.operations import Operations
 from ose_ws.services.parameters import ParameterManager
 from ose_ws.services.recordings import RecordingManager
 from ose_ws.services.status import StatusCollector
+from ose_ws.services.simulation import SimulationManager
 from ose_ws.storage.state import StateStore
 from ose_ws.util import APIError, dumps, loads, opaque, page, public_numbers, require, utc
 
@@ -55,6 +56,7 @@ def create_app(config):
     store = StateStore(config)
     measurements = MeasurementStore(config)
     collector = StatusCollector(config, connection, measurements)
+    simulation = SimulationManager(connection, collector)
     flows = FlowManager(config, connection, collector, auth)
     parameters = ParameterManager(config, connection, collector)
     recordings = RecordingManager(config, connection, store)
@@ -200,6 +202,23 @@ def create_app(config):
         session(request).check("components.read")
         return public(collector.diagnostics())
 
+    @app.get('/api/v1/simulation')
+    async def simulation_status(request: Request):
+        session(request).check('components.read')
+        require(collector.snapshot.get('mode') == 'simulated', 'The application is not a simulation.', 409)
+        return public(collector.snapshot.get('execution', {}))
+
+    @app.post('/api/v1/simulation/commands')
+    async def simulation_command(request: Request):
+        signed_in = session(request, mutation=True)
+        signed_in.check('simulation.control')
+        data = await body(request, 4096)
+        require(collector.error is None and collector.snapshot.get('mode') == 'simulated',
+                'No simulation is connected.', 409)
+        require(data.get('epoch') == collector.snapshot.get('epoch'), 'The simulation changed; refresh its status.', 409)
+        return public(await operations.run(signed_in, 'simulation:' + data['epoch'], key(request), data,
+                                          lambda: simulation.execute(data), background=True))
+
     @app.get("/api/v1/flow/schema")
     async def flow_schema(request: Request, subscription: str, epoch: str):
         session(request).check("components.read")
@@ -323,6 +342,8 @@ def create_app(config):
         require(start is None or end is None or start <= end, "Invalid time window.")
         require(8 <= max_points <= 5000 and len(selected) <= 128, "Invalid history point or series budget.")
         matching, next_cursor = measurements.snapshot(selected, cursor)
+        basis = "simulated" if collector.snapshot.get("mode") == "simulated" else "realtime"
+        matching = [segment for segment in matching if segment.get("time_basis", "realtime") == basis]
         result = await asyncio.to_thread(measurements.render, matching, start, end, max_points, next_cursor)
         return await asyncio.to_thread(public, result)
 
@@ -331,19 +352,19 @@ def create_app(config):
         selected = set(measurement_ids(session(request), ids.split(",")))
         measurements.evict()
         # A bounded snapshot protects this download from concurrent buffer eviction.
-        snapshot = [(segment["id"], segment["name"], list(segment["points"])) for segment in measurements.segments.values()
+        snapshot = [(segment["id"], segment["name"], segment.get("time_basis", "realtime"), list(segment["points"])) for segment in measurements.segments.values()
                     if segment["measurement_id"] in selected]
         def stream():
             output = io.StringIO()
             writer = csv.writer(output)
-            writer.writerow(["observed_at", "sequence", "segment", "measurement", "value", "quality"])
+            writer.writerow(["observed_at", "sequence", "segment", "measurement", "value", "quality", "time_basis", "simulated_seconds"])
             yield output.getvalue()
-            for segment_id, name, points in snapshot:
+            for segment_id, name, basis, points in snapshot:
                 for point in points:
                     output.seek(0)
                     output.truncate(0)
                     from ose_ws.util import timestamp
-                    writer.writerow([timestamp(point[1]), point[0], segment_id, name, point[3], point[4]])
+                    writer.writerow([timestamp(point[1]) if basis == "realtime" else "", point[0], segment_id, name, point[3], point[4], basis, point[1] if basis == "simulated" else ""])
                     yield output.getvalue()
         return StreamingResponse(stream(), media_type="text/csv", headers={"Content-Disposition": 'attachment; filename="observations.csv"'})
 
@@ -702,6 +723,8 @@ def create_app(config):
                             if sub["changes"].get(block) != changed:
                                 sub["changes"][block] = changed
                                 await emit("parameters.changed", identity, {"block_id": block})
+                    elif stream == 'application':
+                        await emit('application.changed', identity, collector.application())
                     else:
                         await emit(stream + ".changed", identity, {"refresh": True})
         except (WebSocketDisconnect, asyncio.TimeoutError, RuntimeError):

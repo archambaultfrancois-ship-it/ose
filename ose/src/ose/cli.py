@@ -165,7 +165,7 @@ For remote distributed execution, start serve and worker instead of run.""")
     command.add_argument("--plan", default="build/plan.json", help="compiled deployment plan (default: build/plan.json)")
     command.add_argument("--duration", type=float, help="positive execution duration in seconds; required in simulated mode")
     command.add_argument("--working-directory", help="component working directory (default: plan settings; app run: launch directory)")
-    command.add_argument("--port", type=int, help="local broker TCP port; real-time only (default: automatically assigned)")
+    command.add_argument("--port", type=int, help="local broker or simulation server TCP port (default: automatically assigned)")
     command.add_argument("--mode", choices=("realtime", "simulated"), default="realtime", help="execution clock (default: realtime)")
     command.add_argument("--workers", type=int, help="simulation worker count (default: 1; simulated mode only)")
     command.add_argument("--microsteps", action="store_true", help="defer callback publications to the next logical stage (simulated mode only)")
@@ -439,17 +439,15 @@ def execute(args, parser=None):
             if args.duration is not None and (not math.isfinite(args.duration) or args.duration <= 0):
                 raise ValueError("duration must be finite and positive")
             if args.mode == "simulated":
-                from ose.execution.simulation import run
+                from ose.execution.simulation.server import serve
                 from ose.execution.simulation.coordinator import DEFAULT_OUTPUT_LIMIT
                 if args.duration is None:
                     raise ValueError("simulated execution requires --duration in virtual seconds")
-                if args.port is not None:
-                    raise ValueError("--port is unavailable in simulated mode")
                 if controlled:
                     from ose.recording.control import ReplayControl
                     execution_options["controller"] = ReplayControl("simulated", replay=False,
                         interactive=args.interactive, commands=_control_commands(args), microsteps=args.microsteps)
-                summary = asyncio.run(run(args.plan, args.duration,
+                summary = asyncio.run(serve(args.plan, args.duration, port=args.port or 0, keep_alive=args.interactive,
                     workers=1 if args.workers is None else args.workers, scenario=args.scenario, trace=args.trace,
                     max_tick_output_bytes=DEFAULT_OUTPUT_LIMIT if args.max_tick_output_bytes is None else args.max_tick_output_bytes,
                     **execution_options))

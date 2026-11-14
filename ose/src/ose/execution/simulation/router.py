@@ -24,6 +24,9 @@ class Router:
         self.topics = dict(plan.get("external_topics", {}))
         self.capture = None
         self.sequence = 0
+        self.topic_counts_by_component = Counter()
+        self.component_topics = {f'{name}.{port}': name for name, node in plan['components'].items()
+                                 for port in node['outputs']}
         self.external_deliveries = Counter()
         self.schedulers = {}
         inboxes = input_buffers(self.subscriptions.values(), clock=clock.seconds)
@@ -49,6 +52,8 @@ class Router:
         if self.capture is not None:
             self.capture.emit(topic, body, app_id=app_id)
         self.sequence += 1
+        if topic in self.component_topics:
+            self.topic_counts_by_component[self.component_topics[topic]] += 1
         record = dict(id=identity, epoch="simulated", sequence=self.sequence, topic=topic,
                       body=body, payload=memoryview(body)[self.codec.api.ENVELOPE_HEADER_SIZE:], catalogue=desc["catalogue"])
         if app_id is not None:
