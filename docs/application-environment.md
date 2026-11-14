@@ -27,6 +27,11 @@ and Make uses this same interpreter. `make python-info` shows the selection.
 Setup fails immediately if no compatible interpreter is found. Run `make setup` from the
 repository root to install Python dependencies into `build/python-deps` using
 that interpreter. Sourcing again does not duplicate paths or install anything.
+Both `setenv.sh` and the shared Make configuration set `PYTHONPYCACHEPREFIX` to
+the framework's absolute `build/pycache` directory. Python creates its bytecode
+cache there, including for child processes, instead of adding `__pycache__`
+directories beside sources. Reload the environment and restart existing Python
+processes to adopt this setting. Existing source-side caches are left in place.
 Interactive Bash terminals also enable `ose` completion for commands,
 options and option choices. Press Tab after `ose`, `ose app parameter`,
 or an option such as `ose run --mode` followed by a space.

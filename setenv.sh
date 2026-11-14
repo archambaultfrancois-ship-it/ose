@@ -12,6 +12,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 fi
 
 export FRAMEWORK_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+export PYTHONPYCACHEPREFIX="$FRAMEWORK_ROOT/build/pycache"
 if ! PYTHON="$(sh "$FRAMEWORK_ROOT/tools/find-python.sh")"; then
     return 1
 fi

@@ -1,5 +1,6 @@
 # Share one compatible PATH interpreter across Make and the application commands.
 _ose_python_root := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
+export PYTHONPYCACHEPREFIX := $(_ose_python_root)/build/pycache
 ifneq ($(origin PYTHON),command line)
 PYTHON := $(shell sh "$(_ose_python_root)/tools/find-python.sh")
 endif
