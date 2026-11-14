@@ -3,6 +3,7 @@ import { createApp, h, nextTick, ref } from 'vue'
 import { layout, inputSummary, inputDetails, nodeHeight, nodeWidth, type Topology } from '../src/flow-graph'
 import ComponentsPage from '../src/components/ComponentsPage.vue'
 import model from '../../../vibration-watch/model.json'
+import { portY } from '../src/flow-graph'
 
 const topology: Topology = {
   version: 1, components: model.components,
@@ -116,6 +117,58 @@ it('keeps the status table usable when topology metadata is unavailable', () => 
   app = createApp(ComponentsPage, { report: { ...report(), topology: null } }); app.mount(root)
   expect(root.textContent).toContain('Flow topology is unavailable')
   expect(root.querySelectorAll('tbody tr')).toHaveLength(Object.keys(model.components).length)
+})
+
+it('anchors links to named ports with enough space for all inputs and outputs', () => {
+  const graph = layout(topology, true)
+  for (const edge of graph.edges) {
+    const source = graph.nodes.find(node => node.id === edge.source)!
+    const target = graph.nodes.find(node => node.id === edge.target)!
+    const output = Object.keys(source.outputs || {}).indexOf(edge.from.split('.')[1])
+    const input = Object.keys(target.inputs || {}).indexOf(edge.to.split('.')[1])
+    expect(output).toBeGreaterThanOrEqual(0)
+    expect(input).toBeGreaterThanOrEqual(0)
+    expect(edge.path).toContain(`M ${source.x + nodeWidth} ${source.y + portY(output)} `)
+    expect(edge.path.endsWith(`${target.x} ${target.y + portY(input)}`)).toBe(true)
+    expect(portY(input)).toBeLessThan(target.height)
+  }
+  for (const a of graph.nodes) for (const b of graph.nodes) {
+    if (a !== b && a.x === b.x) expect(a.y + a.height <= b.y || b.y + b.height <= a.y).toBe(true)
+  }
+})
+
+it('toggles ports and history, changes metrics, and freezes historical values with current values', async () => {
+  const snapshot = (second: number, cpu: number) => ({ ...report(), epoch: 'e1', timestamp: `2026-11-14T10:00:0${second}Z`,
+    components: report().components.map(row => ({ ...row, resources: { component: { cpu_percent: cpu, rss_bytes: 2097152 } } })) })
+  const value = ref(snapshot(0, 12))
+  const root = document.createElement('div'); document.body.append(root)
+  app = createApp({ render: () => h(ComponentsPage, { report: value.value, active: true }) }); app.mount(root)
+  const toggle = async (label: string) => {
+    const input = [...root.querySelectorAll('label')].find(el => el.textContent?.trim() === label)!.querySelector('input')!
+    input.click(); await nextTick()
+  }
+  expect(root.querySelector('.flow-port')).toBeNull()
+  await toggle('Ports')
+  expect(root.querySelectorAll('.flow-port').length).toBeGreaterThan(0)
+  expect(root.querySelector('.flow-port.timer title')?.textContent).toContain('timer')
+  const metric = root.querySelector('.flow-panel select') as HTMLSelectElement
+  metric.value = 'memory'; metric.dispatchEvent(new Event('change', { bubbles: true })); await nextTick()
+  expect(root.querySelector('.flow-metric')?.textContent).toBe('2 MiB')
+  const points = () => root.querySelectorAll('.flow-history circle').length
+  const initial = points()
+  expect(initial).toBe(Object.keys(topology.components).length)
+  const freeze = [...root.querySelectorAll('button')].find(button => button.textContent === 'Freeze view')!
+  freeze.click(); await nextTick()
+  value.value = snapshot(1, 99); await nextTick()
+  expect(points()).toBe(initial)
+  freeze.click(); await nextTick()
+  expect(points()).toBe(initial * 2)
+  await toggle('History')
+  expect(root.querySelector('.flow-history')).toBeNull()
+  await toggle('Ports')
+  expect(root.querySelector('.flow-port')).toBeNull()
+  const states = [...root.querySelectorAll('.toolbar select option')].map(option => option.textContent)
+  for (const state of ['DISABLED', 'ENABLING', 'DISABLING', 'WAIT PUB']) expect(states).toContain(state)
 })
 
 it('opens full link details by tapping a line or label, without a hover event', async () => {

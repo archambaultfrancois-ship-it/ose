@@ -117,12 +117,37 @@ an exclusive lock refuses another console using the same state directory.
   sliding-window rates, freshness, FIFO occupancy, alerts and queue details.
   A directed application flow graph shows components, external topics and
   declared subscriptions, with live component states and admission/publication
-  rates. Select a component for diagnostics; tap or click a link or its label
+  rates. A metric selector adds component CPU, RSS, worst-port timer/input-wait
+  p95, publication-wait p95, callback p95 or admission/publication rates to cards.
+  The state filter includes disabled components, enable/disable transitions and
+  publication waits. CPU and RSS describe the component process, excluding its
+  OSE runtime process; CPU can exceed 100% when multiple cores are used.
+  Select a component for diagnostics; tap or click a link or its label
   to open a closeable panel with ports, the source SDL contract and delivery policy. Mouse
   hover also shows a tooltip. Zoom, fit and optional link labels help explore larger
   applications. Search/state filters highlight matches while preserving the
   full topology. Freezing the view holds the graph, table and selected details
   together and does not stop server collection.
+  Link labels show delivery admissions/s, delivery queue depth/capacity and
+  recent refusal/loss events; amber indicates refusals or at least 80% FIFO
+  occupancy, red indicates dropped/failed events. Refusals count attempts and
+  losses count queue events, not unique messages. The link panel separates the
+  subscription's delivery queue from its destination input queue, which may be
+  shared by several producers. Delivery admission does not prove downstream
+  processing. Missing or stale telemetry is shown as unavailable, including
+  external publishers without a component-owned delivery queue.
+  **Ports** toggles named input/output anchors (off initially), distinguishes
+  Push, Pull and timers, and expands cards to fit all ports. **History** toggles
+  sparklines of the selected metric (on initially), with state-colored samples
+  and hover values. Each component uses its own vertical scale from zero to its
+  recent maximum (at least one displayed unit). The selected component also
+  offers a state-transition list, omitting publication waits shorter than one
+  second while retaining their metric samples. History is held only in the browser, at most
+  120 reports over two minutes, and resets on application epoch or component
+  generation changes. Unavailable values and gaps over five seconds break the
+  curve. It records reports received while the Components page is active;
+  freezing the view also freezes history, and resuming leaves gaps where data
+  was not observed. Reloading the console clears this history.
 - **Logs:** the second page, after Components; an in-memory component log stream
   with component/category/text filters, minimum severity through FATAL, pause,
   resume and JSONL export. Scoped `logs.read` rights control access. See
