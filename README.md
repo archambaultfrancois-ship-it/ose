@@ -4,7 +4,7 @@
   <img src="docs/branding/ose-banner.svg" alt="OSE — Orchestration, Simulation, Exécution" width="960">
 </p>
 
-The `ose` repository contains five projects that evolve together:
+The `ose` repository contains six projects that evolve together:
 
 - **[SDL](sdl/README.md)** (Schema Design Language) generates message codecs
   for C99, Rust, Python, Java, Ada, and Matlab/Octave. It also provides catalogue filtering,
@@ -21,6 +21,8 @@ The `ose` repository contains five projects that evolve together:
   [validation record](ose-editor/docs/validation.md) tracks initial-release qualification.
 - **[Vibration Watch](vibration-watch/README.md)** is a runnable SDL/OSE application
   with C sensors, Rust analyzers, Python alarms, and local, simulated or distributed execution.
+- **[Thermal Workshop](thermal-workshop/README.md)** is an ose-ws load application
+  with 20 components, feedback control loops and variable nested SDL messages.
 
 New to OSE? Follow the **[beginner quick start](docs/quick-start.md)**
 to run Vibration Watch, compare simulations, inspect live measurements and change
@@ -71,6 +73,7 @@ ose/                    OSE project root
 ose-ws/                 Standalone Python web server and bundled Vue frontend
 ose-editor/             Independent model editor service, bundled Vue frontend and tests
 vibration-watch/         Application sources, scenarios, tests and deployment tools
+thermal-workshop/        20-component feedback and variable-message load application
 ```
 
 A [local autonomous CI watchdog](docs/ci-watchdog.md) can monitor GitHub Actions

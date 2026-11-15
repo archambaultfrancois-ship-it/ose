@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "process_names": {
+    "prefix": "tw"
+  },
+  "components": {
+    "plant_1": {
+      "container": {
+        "language": "python",
+        "handler": "components/plant.py"
+      }
+    },
+    "analyzer_1": {
+      "container": {
+        "language": "python",
+        "handler": "components/analyzer.py"
+      }
+    },
+    "controller_1": {
+      "container": {
+        "language": "python",
+        "handler": "components/controller.py"
+      }
+    },
+    "actuator_1": {
+      "container": {
+        "language": "python",
+        "handler": "components/actuator.py"
+      }
+    },
+    "plant_2": {
+      "container": {
+        "language": "python",
+        "handler": "components/plant.py"
+      }
+    },
+    "analyzer_2": {
+      "container": {
+        "language": "python",
+        "handler": "components/analyzer.py"
+      }
+    },
+    "controller_2": {
+      "container": {
+        "language": "python",
+        "handler": "components/controller.py"
+      }
+    },
+    "actuator_2": {
+      "container": {
+        "language": "python",
+        "handler": "components/actuator.py"
+      }
+    },
+    "plant_3": {
+      "container": {
+        "language": "python",
+        "handler": "components/plant.py"
+      }
+    },
+    "analyzer_3": {
+      "container": {
+        "language": "python",
+        "handler": "components/analyzer.py"
+      }
+    },
+    "controller_3": {
+      "container": {
+        "language": "python",
+        "handler": "components/controller.py"
+      }
+    },
+    "actuator_3": {
+      "container": {
+        "language": "python",
+        "handler": "components/actuator.py"
+      }
+    },
+    "plant_4": {
+      "container": {
+        "language": "python",
+        "handler": "components/plant.py"
+      }
+    },
+    "analyzer_4": {
+      "container": {
+        "language": "python",
+        "handler": "components/analyzer.py"
+      }
+    },
+    "controller_4": {
+      "container": {
+        "language": "python",
+        "handler": "components/controller.py"
+      }
+    },
+    "actuator_4": {
+      "container": {
+        "language": "python",
+        "handler": "components/actuator.py"
+      }
+    },
+    "fusion": {
+      "container": {
+        "language": "python",
+        "handler": "components/fusion.py"
+      }
+    },
+    "supervisor": {
+      "container": {
+        "language": "python",
+        "handler": "components/supervisor.py"
+      }
+    },
+    "historian": {
+      "container": {
+        "language": "python",
+        "handler": "components/historian.py"
+      }
+    },
+    "audit": {
+      "container": {
+        "language": "python",
+        "handler": "components/audit.py"
+      }
+    }
+  },
+  "parameter_clients": {
+    "operator": {
+      "read": [
+        "workload",
+        "cells/1/settings",
+        "cells/2/settings",
+        "cells/3/settings",
+        "cells/4/settings"
+      ],
+      "write": [
+        "workload",
+        "cells/1/settings",
+        "cells/2/settings",
+        "cells/3/settings",
+        "cells/4/settings"
+      ],
+      "token": "thermal-workshop-local-operator"
+    }
+  }
+}

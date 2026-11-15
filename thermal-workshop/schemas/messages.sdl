@@ -1,0 +1,60 @@
+message Header {
+    1: uint32 cell;
+    2: uint64 sequence;
+    3: uint64 time_ns;
+}
+message Tag { 1: string key; 2: string value; }
+message Diagnostic { 1: uint32 code; 2: string text; 3: repeated string hints; }
+message Channel { 1: string name; 2: packed fl32 samples; 3: repeated Tag tags; }
+message SensorFrame {
+    1: Header header;
+    2: repeated Channel channels;
+    3: repeated Tag tags;
+    4: optional Diagnostic diagnostic;
+    5: optional string note;
+}
+message Feature { 1: string name; 2: fl64 value; 3: optional string unit; }
+message Spectrum { 1: packed fl32 bins; 2: fl64 resolution; }
+message Analysis {
+    1: Header header;
+    2: fl64 temperature;
+    3: fl64 deviation;
+    4: uint32 sample_count;
+    5: repeated Feature features;
+    6: optional Spectrum spectrum;
+    7: optional Diagnostic diagnostic;
+}
+message Ramp { 1: fl64 slope; 2: uint32 stages; }
+message Command {
+    1: Header header;
+    2: fl64 power;
+    3: fl64 target;
+    4: optional Ramp ramp;
+    5: repeated Tag reasons;
+}
+message Stage { 1: uint32 index; 2: fl64 power; 3: optional string note; }
+message Actuation {
+    1: Header header;
+    2: fl64 power;
+    3: repeated Stage stages;
+    4: optional Diagnostic diagnostic;
+}
+message Alarm { 1: uint32 cell; 2: uint32 severity; 3: repeated Feature evidence; }
+message FleetReport {
+    1: Header header;
+    2: repeated Analysis cells;
+    3: repeated Alarm alarms;
+    4: packed fl64 history;
+    5: optional string note;
+}
+message Setpoint { 1: uint32 cell; 2: fl64 target; 3: optional string reason; }
+message Policy { 1: Header header; 2: repeated Setpoint setpoints; 3: optional string note; }
+message CellSettings { 1: fl64 target; 2: fl64 gain; 3: fl64 ambient; }
+message Workload {
+    1: uint32 min_samples;
+    2: uint32 max_samples;
+    3: uint32 burst;
+    4: uint32 cpu_iterations;
+    5: uint32 log_every;
+    6: optional string label;
+}
