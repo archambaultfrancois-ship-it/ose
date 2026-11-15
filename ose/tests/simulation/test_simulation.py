@@ -95,7 +95,8 @@ for input in s.activations():
         if p.get("flood"):
             while True: s.send("P", publication_data(port, b"\\x01" + struct.pack(">Qd", 1, 1.)))
         for sequence, value in messages:
-            s.send("P", publication_data(port, b"\\x01" + struct.pack(">Qd", sequence, value)))
+            payload = b"\\x01" + struct.pack(">Qd", sequence, value)
+            s.send("P", publication_data(port, payload[:-1] if p.get("invalid_payload") else payload))
     if p.get("fail"): raise RuntimeError("injected callback failure")
 '''
 
@@ -226,6 +227,25 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
             if reference is None:
                 reference = events
             self.assertEqual(events, reference)
+
+    async def test_component_publications_are_validated_once_before_wave_commit(self):
+        engine = Simulation(copy.deepcopy(self.diamond), .31, workers=4)
+        with patch.object(engine.codec, 'validate_only', wraps=engine.codec.validate_only) as validate:
+            summary = await engine.execute()
+        self.assertEqual(summary['publications'], 12)
+        self.assertEqual(validate.call_count, summary['publications'])
+
+    async def test_invalid_component_output_discards_the_whole_wave(self):
+        plan = self.plan({'a': self.node(source=True),
+                          'b': self.node(source=True, parameters=dict(invalid_payload=True))})
+        trace = self.root / 'invalid-output.jsonl'
+        engine = Simulation(plan, .1, workers=2, trace=trace)
+        with self.assertRaises(ValueError):
+            await engine.execute()
+        self.assertEqual(engine.summary['stop_reason'], 'failed')
+        self.assertEqual(engine.summary['publications'], 0)
+        self.assertNotIn('"event":"publication"', trace.read_text())
+        self.assertTrue(all(p.returncode is not None for p in engine.processes.values()))
 
     async def test_scenario_data_wins_at_timeout_and_horizon_is_exclusive(self):
         plan = self.plan({"sink": self.node({"input": dict(timeout=.1)})}, [("external", "sink.input")], ["external"])

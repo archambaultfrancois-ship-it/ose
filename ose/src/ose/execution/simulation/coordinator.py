@@ -253,7 +253,7 @@ class Simulation:
                     index, output = tick.outputs.popleft()
                     port, body = output[:2]
                     identity = f"{name}:{self.schedules[name].tick_index}:{index}"
-                    tick.publication = self.router.publish(f"{name}.{port}", body, identity,
+                    tick.publication = self.router.publish_validated(f"{name}.{port}", body, identity,
                         app_id=output[2])
                     changed = True
                     processed += 1

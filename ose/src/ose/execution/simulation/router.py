@@ -45,10 +45,16 @@ class Router:
                     self.buffers[name][port] = Buffer(SubscriptionPolicy(), MemoryStore(), clock.seconds)
 
     def publish(self, topic, body, identity, *, app_id=None):
+        """Validate an external envelope before routing it."""
+        desc = self.topics[topic]
+        self.codec.validate_only(desc["catalogue"], desc["root"], body)
+        return self.publish_validated(topic, body, identity, app_id=app_id)
+
+    def publish_validated(self, topic, body, identity, *, app_id=None):
+        """Route an immutable envelope already checked against the topic's contract."""
         if app_id is not None:
             validate_app_id(app_id)
         desc = self.topics[topic]
-        self.codec.validate_only(desc["catalogue"], desc["root"], body)
         if self.capture is not None:
             self.capture.emit(topic, body, app_id=app_id)
         self.sequence += 1

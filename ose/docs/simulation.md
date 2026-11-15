@@ -17,6 +17,10 @@ start real-time Worker processes, renew network leases or restart failed
 components. Sharing calculation code preserves the deterministic wave ordering;
 `--workers` continues to bound simultaneous component calculations.
 
+Callback outputs are validated once by the shared calculation code, before the
+wave commits. The simulation router reuses those validated immutable envelopes;
+external scenario and replay publications retain their validation at admission.
+
 Application model v2 supports Python, Rust, C, Java and Ada containers with single-input
 callbacks, passive Pull inboxes and explicit timer inputs. Its activation graph,
 withdrawal commit and wave rules are described in the
