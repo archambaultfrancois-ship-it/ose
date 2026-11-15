@@ -17,6 +17,7 @@ def main(argv=None):
     parser.add_argument('--source-root', action='append', default=[], help='additional allowed schema/deployment root')
     parser.add_argument('--sdl-root', default=os.environ.get('SDL_ROOT', str(Path(__file__).resolve().parents[3] / 'sdl')))
     parser.add_argument('--port', type=int, default=8082)
+    parser.add_argument('--auth', action='store_true', help='require a browser access token (default: direct local access)')
     parser.add_argument('--create', action='store_true', help='create model/deployment drafts if missing')
     parser.add_argument('--check', action='store_true', help='inspect project and report syntax errors without starting HTTP')
     args = parser.parse_args(argv)
@@ -44,14 +45,17 @@ def main(argv=None):
                     for sig, handler in previous.items():
                         signal.signal(sig, handler)
         token_file = project.state / 'access.token'
-        if not token_file.exists():
-            atomic_write(token_file, (secrets.token_urlsafe(32) + '\n').encode())
-        token = token_file.read_text().strip()
-        if len(token) < 32:
-            raise ValueError('Editor token must contain at least 32 characters')
+        token = None
+        if args.auth:
+            if not token_file.exists():
+                atomic_write(token_file, (secrets.token_urlsafe(32) + '\n').encode())
+            token = token_file.read_text().strip()
+            if len(token) < 32:
+                raise ValueError('Editor token must contain at least 32 characters')
         app = create_app(project, args.sdl_root, token)
         print(f'OSE Model Editor: http://127.0.0.1:{args.port}', flush=True)
-        print(f'Access token file: {token_file}', flush=True)
+        if args.auth:
+            print(f'Access token file: {token_file}', flush=True)
         server = EditorServer(uvicorn.Config(app, host='127.0.0.1', port=args.port, access_log=False,
                               proxy_headers=False, limit_concurrency=128, timeout_graceful_shutdown=15))
         server.run()

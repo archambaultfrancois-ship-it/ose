@@ -17,7 +17,7 @@ DEFAULTS = {
     "recording": {"max_active": 4, "per_user": 2, "min_free_disk_mib": 1024},
     "flows": {"max_sources": 4, "per_session": 2, "lease_s": 60, "max_payload_bytes": 1024 * 1024},
     "parameters": {"client": "operator", "token_env": "OSE_PARAMETER_TOKEN"},
-    "auth": {"mode": "local_token", "token_file": ".ose-ws/access.token", "trusted_proxies": [],
+    "auth": {"mode": "none", "token_file": ".ose-ws/access.token", "trusted_proxies": [],
              "users": {}, "max_sessions": 20},
     "limits": {"max_drafts": 100, "max_operations": 10000, "max_unresolved_operations": 1000, "audit_days": 30,
                "audit_events": 100000, "shutdown_s": 60, "validation_s": 300},
@@ -101,9 +101,9 @@ def validate(config):
         ("limits", "validation_s", 1, 3600)):
         number(section, key, low, high)
     auth, app = config["auth"], config["application"]
-    if auth["mode"] not in ("local_token", "proxy"):
-        raise ValueError("auth.mode must be local_token or proxy.")
-    if auth["mode"] == "local_token" and not loopback(config["listen"]["host"]):
+    if auth["mode"] not in ("none", "local_token", "proxy"):
+        raise ValueError("auth.mode must be none, local_token or proxy.")
+    if auth["mode"] != "proxy" and not loopback(config["listen"]["host"]):
         raise ValueError("Network access requires proxy authentication and HTTPS.")
     if auth["mode"] == "proxy" and (not auth["trusted_proxies"] or not auth["users"]):
         raise ValueError("Proxy mode requires explicit trusted_proxies and users.")

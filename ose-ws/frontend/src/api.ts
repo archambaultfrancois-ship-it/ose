@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 
-export const account = reactive<{ actor: string; csrf: string; permissions: Record<string, string[]>; expires_at: string }>(
-  { actor: '', csrf: '', permissions: {}, expires_at: '' },
+export const account = reactive<{ actor: string; csrf: string; permissions: Record<string, string[]>; expires_at: string; auth_required: boolean }>(
+  { actor: '', csrf: '', permissions: {}, expires_at: '', auth_required: true },
 )
 export class RequestError extends Error {
   constructor(message: string, public code: string, public details: any = {}) { super(message) }

@@ -55,8 +55,9 @@ source ./setenv.sh
 ose-ws
 ```
 
-Open **http://127.0.0.1:8080**. Sign in using
-`thermal-workshop/.ose-ws/access.token`. The application environment selects this
+Open **http://127.0.0.1:8080** for direct local access. Use `ose-ws --auth`
+to require the browser token in `thermal-workshop/.ose-ws/access.token`.
+The application environment selects this
 application's plan, parameter client and endpoint; it does not reuse Vibration
 Watch's state. First launch prepares missing console services if needed.
 This example's local operator credential in `deployment.json` is for loopback

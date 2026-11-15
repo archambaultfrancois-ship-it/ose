@@ -27,7 +27,7 @@ are retained under that build directory. The independently generated editor
 wheel is under `ose-editor/dist/`. These generated outputs are not source files.
 
 The local preview uses `http://127.0.0.1:8082` and the Vibration Watch source
-directory. Authentication uses its private `.ose-editor/access.token` file.
+directory. With `--auth`, authentication uses its private `.ose-editor/access.token` file.
 
 ## Implemented authoring path
 

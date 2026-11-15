@@ -137,7 +137,7 @@ def create_app(config):
         request.state.request_id = uuid.uuid4().hex
         started = time.monotonic()
         host = urlsplit("//" + request.headers.get("host", "")).hostname or ""
-        if config["auth"]["mode"] == "local_token" and not loopback(host):
+        if config["auth"]["mode"] != "proxy" and not loopback(host):
             response = error_response(request, APIError(403, "HOST_REJECTED", "Local mode requires a loopback Host header."))
         else:
             response = await call_next(request)
@@ -157,13 +157,15 @@ def create_app(config):
     async def ready():
         return JSONResponse({"ready": app.state.ready}, status_code=200 if app.state.ready else 503)
 
-    @app.post("/api/v1/auth/login")
-    async def login(request: Request):
-        signed_in = auth.login(request, await body(request, 4096))
-        response = public(signed_in.public())
+    def session_response(signed_in):
+        response = public({**signed_in.public(), 'auth_required': config['auth']['mode'] != 'none'})
         response.set_cookie(auth.cookie, signed_in.id, httponly=True, samesite="strict",
                             secure=config["auth"]["mode"] == "proxy", max_age=28800, path="/")
         return response
+
+    @app.post("/api/v1/auth/login")
+    async def login(request: Request):
+        return session_response(auth.login(request, await body(request, 4096)))
 
     @app.post("/api/v1/auth/logout")
     async def logout(request: Request):
@@ -176,7 +178,16 @@ def create_app(config):
 
     @app.get("/api/v1/session")
     async def current_session(request: Request):
-        return session(request).public()
+        if config['auth']['mode'] == 'none':
+            auth.same_origin(request)
+            try:
+                signed_in = session(request)
+            except APIError as error:
+                if error.status != 401:
+                    raise
+                signed_in = auth.login(request, {})
+            return session_response(signed_in)
+        return {**session(request).public(), 'auth_required': True}
 
     @app.post("/api/v1/session/renew")
     async def renew_session(request: Request):

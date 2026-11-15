@@ -124,7 +124,7 @@ class WorkshopTests(unittest.IsolatedAsyncioTestCase):
         from ose_ws.server import create_app
 
         config_path = self.directory / 'ose-ws.json'
-        initialize(str(config_path))
+        initialize(str(config_path), auth=True)
         config = read(config_path)
         config['application'].update(root=str(ROOT), endpoint=str(self.directory / 'endpoint.json'))
         environment = patch.dict(os.environ, OSE_PARAMETER_TOKEN='thermal-workshop-local-operator')

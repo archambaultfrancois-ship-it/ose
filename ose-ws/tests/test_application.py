@@ -14,6 +14,14 @@ FRAMEWORK = Path(__file__).resolve().parents[2]
 
 
 class ApplicationTests(unittest.TestCase):
+    def test_default_launch_has_no_browser_token_but_resolves_application_credentials(self):
+        (self.root / 'deployment.local.json').write_text(json.dumps({
+            'parameter_clients': {'operator': {'token': 'application-only-token'}}}))
+        self.assertEqual(self.invoke(), 0)
+        self.assertEqual(self.settings['auth']['mode'], 'none')
+        self.assertEqual(self.token, 'application-only-token')
+        self.assertFalse((self.root / '.ose-ws/access.token').exists())
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix='web application ')
         self.addCleanup(temporary.cleanup)
@@ -51,7 +59,7 @@ class ApplicationTests(unittest.TestCase):
         (self.root / 'deployment.local.json').write_text(json.dumps({
             'process_names': {'prefix': 'demo'},
             'parameter_clients': {'operator': {'token': 'deployment-test-token'}}}))
-        self.assertEqual(self.invoke(), 0)
+        self.assertEqual(self.invoke(['--auth']), 0)
         self.assertEqual(self.token, 'deployment-test-token')
         self.assertEqual(self.prefix, 'demo')
         config = self.root / 'ose-ws.json'
@@ -70,7 +78,7 @@ class ApplicationTests(unittest.TestCase):
                 'version': 2, 'components': {'source': {'execution_model': 2}},
                 'process_names': {'prefix': 'plan'},
                 'parameter_clients': {'operator': {'token': value}}}))
-            self.assertEqual(self.invoke(), 0)
+            self.assertEqual(self.invoke(['--auth']), 0)
             self.assertEqual(self.token, value)
             self.assertEqual(self.prefix, 'plan')
         self.assertEqual(config.read_bytes(), original)

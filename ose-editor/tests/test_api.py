@@ -58,6 +58,21 @@ class ApiTests(unittest.TestCase):
         response = self.client.get('/api/v1/project', headers={**self.headers, 'Origin': 'https://untrusted.example'})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.get('project').status_code, 200)
+        self.assertTrue(self.client.get('/api/v1/auth').json()['auth_required'])
+
+    def test_direct_local_access_without_a_token_keeps_host_and_origin_checks(self):
+        app = create_app(self.project, ROOT / 'sdl')
+        client = TestClient(app, base_url='http://127.0.0.1:8082')
+        self.addCleanup(client.close)
+        self.assertFalse(client.get('/api/v1/auth').json()['auth_required'])
+        project = client.get('/api/v1/project')
+        self.assertEqual(project.status_code, 200)
+        response = client.post('/api/v1/commands/prepare', json={
+            'revision': project.json()['revision'],
+            'command': {'action': 'set', 'file': 'model.json', 'path': ['name'], 'literal': '"Local edit"'}})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(client.get('/api/v1/project', headers={'Origin': 'https://untrusted.example'}).status_code, 403)
+        self.assertEqual(client.get('/api/v1/project', headers={'Host': 'untrusted.example'}).status_code, 403)
 
     def test_frontend_is_local_and_capabilities_are_explicit(self):
         response = self.client.get('/')

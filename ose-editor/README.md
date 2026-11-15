@@ -56,9 +56,13 @@ ose-editor --port 8083
 ose-editor --root /path/to/application
 ```
 
-Open `http://127.0.0.1:8082` and enter the access token from the file printed
-by the command, normally `<application>/.ose-editor/access.token`. The token
-is never placed in the URL. One editor process owns a project at a time.
+Open `http://127.0.0.1:8082`: the workspace opens directly by default.
+Use `ose-editor --auth` to require an access token from the file printed by the
+command, normally `<application>/.ose-editor/access.token`. The token is generated
+only when authentication is requested, reused across launches, and never placed
+in the URL. Existing token files are ignored without `--auth`. Both modes listen
+only on loopback and retain browser-origin checks. One editor process owns a
+project at a time.
 
 `--model FILE`, repeated `--deployment FILE`, repeated `--source-root PATH`,
 `--port PORT`, `--create` and `--check` customize project opening. Without

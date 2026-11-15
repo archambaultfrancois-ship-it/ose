@@ -35,7 +35,7 @@ configuration file, including during `init`.
   "recording": {"max_active": 4, "per_user": 2, "min_free_disk_mib": 1024},
   "flows": {"max_sources": 4, "per_session": 2, "lease_s": 60, "max_payload_bytes": 1048576},
   "parameters": {"client": "operator", "token_env": "OSE_PARAMETER_TOKEN"},
-  "auth": {"mode": "local_token", "token_file": ".ose-ws/access.token"}
+  "auth": {"mode": "none", "token_file": ".ose-ws/access.token"}
 }
 ```
 
@@ -189,8 +189,8 @@ load changed metadata; a presentation digest participates in validation previews
   captures/<recording_id>/capture[_NNN].pcapng
 ```
 
-This runtime tree is under the launch directory by default. With the default
-authentication settings, `access.token` is in `.ose-ws/` beside the configuration
+This runtime tree is under the launch directory by default. When `--auth` is
+enabled, `access.token` is in `.ose-ws/` beside the configuration
 file; it shares the runtime tree only when both base directories are the same.
 
 SQLite uses a serialized worker and full synchronous commits. Disk writes and
@@ -237,3 +237,11 @@ Simulation observation uses `components.read`; control additionally requires
 `"simulation.control":["*"]`. Control is shared across browsers, with one active
 advance at a time. Administrators already have this permission. See the
 [simulation server guide](../../ose/docs/simulation-server.md).
+
+Local browser access defaults to `auth.mode: "none"`, with an automatically
+created browser session. CLI launches select `local_token` with `--auth` and
+`none` without it, even for existing local configurations. `--auth` creates a
+missing token before serving; `check --auth` only validates an existing token.
+Neither local mode permits a non-loopback listener. Explicit `proxy` mode stays
+active regardless of the flag. Browser authentication does not change the
+application credentials configured through `parameters`.

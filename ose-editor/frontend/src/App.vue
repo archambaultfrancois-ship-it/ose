@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onBeforeUnmount, watch } from 'vue'
+import { computed, ref, onBeforeUnmount, onMounted, watch } from 'vue'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
@@ -23,6 +23,7 @@ import NavigationPalette from './components/NavigationPalette.vue'
 import DiagnosticsView from './components/DiagnosticsView.vue'
 import { currentDiagnostics } from './diagnostics'
 const store = useProject(), view = ref('Graph'), filter = ref(''), deployment = ref(''), bottom = ref('Diagnostics'), changes = ref<any[]>([]), usages = ref<any[]>([])
+onMounted(() => { if (!store.project) void store.connect() })
 const { explorerOpen, inspectorOpen, diagnosticsOpen, widths, diagnosticsHeight, resize, resizeKey, stopResize } = useWorkspacePanels()
 const componentMode = computed(() => view.value === 'Graph' && !!store.editingComponent)
 const explorerVisible = computed(() => explorerOpen.value && !componentMode.value)

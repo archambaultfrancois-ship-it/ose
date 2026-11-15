@@ -57,7 +57,7 @@ ose-ws
 ```
 
 The shortcut passes `--root "$OSE_APP_ROOT"`. On the first `serve` without an
-explicit `--config`, the console creates `ose-ws.json` and its login token in
+explicit `--config`, the console creates `ose-ws.json` in
 that application. The initial display name comes from the application directory.
 Subsequent launches preserve both files. An explicit configuration, `init` and
 `check` retain their existing-file checks; `check` never creates missing files.
@@ -86,9 +86,13 @@ ose-ws check --config ./ose-ws.json
 ose-ws --config ./ose-ws.json
 ```
 
-Open **http://127.0.0.1:8080** and enter the access token from
-`.ose-ws/access.token`. The initializer prints its path, never the token itself.
-It creates the configuration and token exclusively, with owner-only permissions.
+Open **http://127.0.0.1:8080** for direct local access, without a browser token.
+Use `ose-ws --auth` to require a token; its file is `.ose-ws/access.token` beside
+the configuration. The command creates the token if missing and prints its path,
+never its contents. `ose-ws init --auth` also creates it during initialization.
+Configuration and token files are created exclusively with owner-only permissions.
+The `--auth` flag selects local browser authentication for that launch, including
+with an existing configuration. Configured proxy authentication is preserved.
 `check` validates local settings and secrets without contacting OSE.
 
 Runtime state and captures use `.ose-ws/` in the directory where you launch the
@@ -299,10 +303,12 @@ See [configuration](docs/configuration.md) for paths, settings, proxy identity
 and web policies, and [the specification](docs/ose-ws-specification.md)
 for the functional contract.
 
-The default is loopback with a local token and an HttpOnly/SameSite session
-cookie. Mutations require CSRF. Sessions expire after 30 minutes idle or eight
+The default is direct loopback access. `--auth` adds a local access token.
+Both modes use an HttpOnly/SameSite session cookie, created automatically for
+direct access. Mutations require CSRF. Sessions expire after 30 minutes idle or eight
 hours total. WebSocket pings and ordinary reads do not extend session lifetime.
-Do not expose local-token mode on the network.
+Both local modes require a loopback listener and Host header. Application OSE
+credentials are independent and remain in use in both modes.
 
 Network access requires an HTTPS reverse proxy that authenticates each user,
 strips incoming identity headers and sets `X-OSE-User` and

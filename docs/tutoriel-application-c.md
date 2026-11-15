@@ -640,19 +640,21 @@ ose-ws --config ose-ws.json
 ```
 
 `setenv.sh` fournit directement la commande `ose-ws` et les chemins nécessaires.
-`init` crée la configuration et le jeton local : ne le relancez pas si ces
-fichiers existent déjà. Aux lancements suivants, seule la dernière commande
+`init` crée la configuration : ne le relancez pas si ce fichier
+existe déjà. Aux lancements suivants, seule la dernière commande
 est nécessaire après la préparation de l'environnement. `check` vérifie la
 configuration sans se connecter au moteur. Le serveur utilise par défaut
 `build/endpoint.json` pour retrouver l'application.
 
-Ouvrez **http://127.0.0.1:8080**. Dans un **terminal C**, lisez le jeton :
+Ouvrez **http://127.0.0.1:8080** pour accéder directement à la console locale.
+Pour exiger un jeton, lancez `ose-ws --auth --config ose-ws.json`, puis
+lisez le jeton dans un **terminal C** :
 
 ```sh
 cat ~/calculatrice-ose/.ose-ws/access.token
 ```
 
-Copiez-le dans la page de connexion et gardez-le privé. Dans **Components →
+Avec `--auth`, copiez-le dans la page de connexion et gardez-le privé. Dans **Components →
 Application flow**, retrouvez les deux composants et les connexions `aller`
 et `retour`. Sélectionnez un lien pour consulter les contrats et observer les
 publications avec **Live**. La page **Recordings** permet aussi de sélectionner
@@ -688,8 +690,9 @@ les dépendances manquantes ; vous pouvez aussi le faire explicitement avec
 `ose-editor setup`. Cette préparation nécessite les outils et l'accès réseau
 décrits en section 12. Le frontend est fourni.
 
-Ouvrez **http://127.0.0.1:8082** et saisissez le jeton affiché par cette commande
-dans un autre terminal :
+Ouvrez **http://127.0.0.1:8082** pour accéder directement à l'éditeur local.
+Pour exiger un jeton, ajoutez `--auth` à la commande de lancement, puis
+lisez le jeton dans un autre terminal et saisissez-le dans l'éditeur :
 
 ```sh
 cat ~/calculatrice-ose/.ose-editor/access.token

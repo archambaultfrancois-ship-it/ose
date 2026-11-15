@@ -1,9 +1,10 @@
 """Local project HTTP API with revision checks and browser-origin protection."""
 from contextlib import asynccontextmanager
 import hmac
+import ipaddress
 import json
 from pathlib import Path
-import secrets
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -15,7 +16,6 @@ from .validation import Validator
 
 
 def create_app(project, sdl_root, token=None):
-    token = token or secrets.token_urlsafe(32)
     project.sdl_root = Path(sdl_root).resolve()
     validator = Validator(project, sdl_root)
 
@@ -34,11 +34,19 @@ def create_app(project, sdl_root, token=None):
     async def protect(request: Request, call_next):
         if request.url.path.startswith('/api/'):
             host = request.headers.get('host', '')
+            if token is None:
+                hostname = urlsplit('//' + host).hostname or ''
+                try:
+                    local = ipaddress.ip_address(hostname).is_loopback
+                except ValueError:
+                    local = hostname == 'localhost'
+                if not local:
+                    return JSONResponse({'message': 'Local mode requires a loopback Host header'}, status_code=403)
             origin = request.headers.get('origin')
             if origin and origin not in (f'http://{host}', f'https://{host}'):
                 return JSONResponse({'message': 'Cross-origin access is not allowed'}, status_code=403)
             supplied = request.headers.get('authorization', '').removeprefix('Bearer ')
-            if not hmac.compare_digest(supplied, token):
+            if request.url.path != '/api/v1/auth' and token is not None and not hmac.compare_digest(supplied, token):
                 return JSONResponse({'message': 'Enter the editor access token'}, status_code=401)
             length = request.headers.get('content-length')
             if length and int(length) > 8 * 1024 * 1024:
@@ -66,6 +74,10 @@ def create_app(project, sdl_root, token=None):
     def read_project():
         with project.mutex:
             return project.projection()
+
+    @app.get('/api/v1/auth')
+    def authentication():
+        return {'auth_required': token is not None}
 
     @app.get('/api/v1/capabilities')
     def capabilities():

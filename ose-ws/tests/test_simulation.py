@@ -53,7 +53,7 @@ class SimulationAPITests(unittest.IsolatedAsyncioTestCase):
         await self.server.start()
         await asyncio.wait_for(self.server.ready.wait(), 5)
         path = self.root / 'ose-ws.json'
-        initialize(str(path))
+        initialize(str(path), auth=True)
         config = read(path)
         config['application'].update(root=str(self.root), endpoint=str(self.root / 'build/endpoint.json'))
         environment = patch.dict(os.environ, OSE_PARAMETER_TOKEN='simulation-test-token')

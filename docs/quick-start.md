@@ -286,14 +286,10 @@ and needs network access the first time. All commands use the same detected Pyth
 versioned commands such as `python3.12`. `make setup` at the repository root prepares all Python dependencies.
 The frontend is included: no Node.js build is needed.
 
-Open **http://127.0.0.1:8080**. In a third terminal, read the local token and
-copy it into the sign-in page:
-
-```sh
-cat ~/ose/vibration-watch/.ose-ws/access.token
-```
-
-This token is a local secret; keep the console on its loopback address.
+Open **http://127.0.0.1:8080**: the local console opens directly.
+To require an access token, start it with `ose-ws --auth` instead. Read the
+file printed by the command and paste its contents into the sign-in page.
+The console remains limited to the loopback address in both local modes.
 Try this tour of the interface:
 
 1. **Components → Application flow**: find the graph of all six components.

@@ -47,7 +47,7 @@ Message contracts and parameter declarations are not editable at runtime.
 | Parameters | Catalogue-derived schema, server-side SDL validation/encoding. |
 | Concurrency | Complete replacement; the last write processed by OSE wins. |
 | Persistence | SQLite metadata/audit and capture files. |
-| Access | Loopback/local token by default; authenticated HTTPS proxy for network access. |
+| Access | Direct loopback access by default; `--auth` enables a local token; authenticated HTTPS proxy for network access. |
 | Language | English code, documentation, API messages and user interface. |
 
 Only one Uvicorn worker is allowed. An exclusive state-directory lock refuses a
@@ -108,7 +108,7 @@ ose-ws --config ./ose-ws.json
 ose-ws --config ./ose-ws.json --endpoint ./build/endpoint.json --port 8080
 ```
 
-`init` creates configuration and a random local token exclusively. Secrets are
+`init` creates configuration exclusively; `init --auth` also creates a random local token. Secrets are
 owner-only files or environment values, never URLs, public configuration or logs.
 `check` validates local settings without contacting or mutating OSE. Configuration
 precedence is CLI, documented environment, file, defaults. Config input paths are
@@ -467,7 +467,8 @@ A slow client MUST NOT slow collection or another capture.
 
 ## 15. Authentication and authorization
 
-Local mode uses a random token with at least 256 bits of entropy in an owner-only
+Local access opens directly by default and creates a browser session automatically.
+`--auth` requires a random token with at least 256 bits of entropy in an owner-only
 file. Login exchanges it for an HttpOnly, SameSite strict cookie; proxy HTTPS mode
 sets Secure. Tokens never appear in URLs or browser persistent storage. Sessions
 expire after 30 minutes idle and eight hours absolute. Mutations require CSRF.

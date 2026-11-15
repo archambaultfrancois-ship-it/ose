@@ -123,7 +123,7 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         self.broker.metric_times["source"] = time.monotonic()
         self.addAsyncCleanup(self.broker.close)
         path = self.root / "console.json"
-        initialize(path)
+        initialize(path, auth=True)
         runtime = self.root / "runtime files"
         runtime.mkdir()
         self.config = read(path, {"application": {"endpoint": None, "host": "127.0.0.1", "port": self.broker.port},

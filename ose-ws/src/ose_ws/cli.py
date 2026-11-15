@@ -11,24 +11,37 @@ import signal
 import sys
 import threading
 from types import SimpleNamespace
-from ose_ws.config import DEFAULTS, read
+from ose_ws.config import DEFAULTS, read, validate
 
 
-def initialize(path, *, application_root=None):
+def ensure_token(path):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except FileExistsError:
+        return
+    with os.fdopen(fd, 'w') as stream:
+        stream.write(secrets.token_urlsafe(32) + '\n')
+
+
+def initialize(path, *, application_root=None, auth=False):
     path = Path(path).absolute()
     config = copy.deepcopy(DEFAULTS)
+    config['auth']['mode'] = 'local_token' if auth else 'none'
     if application_root is not None:
         root = Path(application_root).resolve()
         config['application'].update(root=os.path.relpath(root, path.parent),
                                      name=root.name.replace('-', ' ').replace('_', ' ').title())
     token = path.parent / config["auth"]["token_file"]
-    token.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     # Claim configuration first. Never overwrite either an existing file or a link.
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     try:
-        token_fd = os.open(token, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        with os.fdopen(token_fd, "w") as stream:
-            stream.write(secrets.token_urlsafe(32) + "\n")
+        if auth:
+            token.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            token_fd = os.open(token, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(token_fd, "w") as stream:
+                stream.write(secrets.token_urlsafe(32) + "\n")
         with os.fdopen(fd, "w") as stream:
             fd = None
             json.dump(config, stream, indent=2)
@@ -36,7 +49,9 @@ def initialize(path, *, application_root=None):
     finally:
         if fd is not None:
             os.close(fd)
-    print(f"Configuration: {path}\nAccess token file: {token}\nKeep the token private; enter it on the sign-in page.")
+    print(f"Configuration: {path}")
+    if auth:
+        print(f"Access token file: {token}\nKeep the token private; enter it on the sign-in page.")
 
 
 @contextmanager
@@ -118,6 +133,7 @@ def main(argv=None):
     parser.add_argument("--endpoint", help="OSE endpoint file, relative to the calling directory")
     parser.add_argument("--host", help="HTTP bind address; network access requires configured proxy authentication")
     parser.add_argument("--port", type=int, help="HTTP port (default: 8080)")
+    parser.add_argument('--auth', action='store_true', help='require a browser access token (default: direct local access)')
     args = parser.parse_args(argv)
     try:
         directory = Path(args.working_directory or '.').resolve()
@@ -132,11 +148,14 @@ def main(argv=None):
             path = Path(args.config).absolute() if args.config is not None else (
                 context.root if context is not None else Path.cwd()) / 'ose-ws.json'
             if args.command == "init":
-                initialize(path, application_root=context.root if context is not None else None)
+                initialize(path, application_root=context.root if context is not None else None, auth=args.auth)
                 return 0
             if context is not None and args.command == 'serve' and args.config is None and not path.exists():
-                initialize(path, application_root=context.root)
+                initialize(path, application_root=context.root, auth=args.auth)
             config = read(path, overrides, working_directory=directory)
+            if config['auth']['mode'] != 'proxy':
+                config['auth']['mode'] = 'local_token' if args.auth else 'none'
+                validate(config)
             if context is not None:
                 application_credentials(config, context.sdl)
             if args.command == "check":
@@ -146,6 +165,9 @@ def main(argv=None):
                 ApplicationConnection(config)
                 print("Configuration is valid. No OSE connection or mutation was attempted.")
                 return 0
+            if config['auth']['mode'] == 'local_token':
+                ensure_token(config['auth']['token_file'])
+                print(f"Access token file: {config['auth']['token_file']}")
             return serve(config)
     except SystemExit as error:
         return 0 if error.code == 0 else 3

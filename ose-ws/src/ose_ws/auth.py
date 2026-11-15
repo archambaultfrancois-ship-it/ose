@@ -84,6 +84,8 @@ class Auth:
         if self.config["mode"] == "proxy":
             actor = self.proxy_actor(request)
             permissions = self.config["users"][actor]["permissions"]
+        elif self.config['mode'] == 'none':
+            actor, permissions = 'local', {'admin': ['*']}
         else:
             started, attempts = self.attempts.get(peer, (time.time(), 0))
             require(attempts < 20, "Too many login attempts; wait one minute.", 429, "LOGIN_THROTTLED")

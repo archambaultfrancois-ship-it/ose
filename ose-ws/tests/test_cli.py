@@ -23,7 +23,7 @@ class DirectoryTests(unittest.TestCase):
         self.caller.mkdir()
         self.config = self.application / 'console.json'
         with redirect_stdout(io.StringIO()):
-            cli.initialize(self.config)
+            cli.initialize(self.config, auth=True)
         self.original = self.config.read_bytes()
         self.original_token = (self.application / '.ose-ws/access.token').read_bytes()
         previous = Path.cwd()
@@ -50,6 +50,24 @@ class DirectoryTests(unittest.TestCase):
         self.assertEqual(settings['auth']['token_file'], str(self.application / '.ose-ws/access.token'))
         # Programmatic reads without a runtime directory keep configuration-relative paths.
         self.assertEqual(read(self.config)['state_dir'], str(self.application / '.ose-ws'))
+
+    def test_auth_flag_selects_token_mode_without_changing_existing_configuration(self):
+        self.assertEqual(self.launch()['auth']['mode'], 'none')
+        self.assertEqual(self.launch('--auth')['auth']['mode'], 'local_token')
+
+    def test_auth_flag_creates_a_token_for_a_previously_tokenless_configuration(self):
+        path = self.caller / 'new.json'
+        with redirect_stdout(io.StringIO()):
+            cli.initialize(path)
+        token = self.caller / '.ose-ws/access.token'
+        self.assertFalse(token.exists())
+        with patch.object(cli, 'serve', return_value=0) as serve, redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(['--config', str(path)]), 0)
+            self.assertEqual(serve.call_args.args[0]['auth']['mode'], 'none')
+            self.assertFalse(token.exists())
+            self.assertEqual(cli.main(['--config', str(path), '--auth']), 0)
+        self.assertEqual(token.stat().st_mode & 0o777, 0o600)
+        self.assertGreaterEqual(len(token.read_text().strip()), 43)
 
     def test_override_and_endpoint_are_relative_to_launch_directory(self):
         output = self.caller / 'output files'

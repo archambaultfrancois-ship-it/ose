@@ -40,8 +40,8 @@ def check(wheel):
         imported = subprocess.run([sys.executable, "-c", "import ose_ws; print(ose_ws.__file__)"],
                                   cwd=application, env=environment, capture_output=True, text=True, check=True)
         assert Path(imported.stdout.strip()).is_relative_to(target), imported.stdout
-        expect(cli("init"), 0)
-        expect(cli("check"), 0)
+        expect(cli("init", "--auth"), 0)
+        expect(cli("check", "--auth"), 0)
         expect(cli("init"), 3)
         configuration = application / "ose-ws.json"
         settings = json.loads(configuration.read_text())
@@ -53,7 +53,7 @@ def check(wheel):
             port = reservation.getsockname()[1]
         log = root / "server.log"
         with log.open("w") as output:
-            process = subprocess.Popen(command + ["--port", str(port)], cwd=application,
+            process = subprocess.Popen(command + ["--auth", "--port", str(port)], cwd=application,
                                        env=environment, stdout=output, stderr=subprocess.STDOUT)
             try:
                 base = f"http://127.0.0.1:{port}"

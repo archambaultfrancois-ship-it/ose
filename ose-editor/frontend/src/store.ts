@@ -25,6 +25,12 @@ export const useProject = defineStore('project', () => {
     try { return await action() } catch (e) { error.value = (e as Error).message; return undefined } finally { busy.value = false }
   }
   async function load() { return guard(async () => { project.value = await api('project'); if (!selection.value) selection.value = { file: project.value.model, path: [] } }) }
+  async function connect() {
+    return guard(async () => {
+      const auth = await api('auth')
+      if (!auth.auth_required) await load()
+    })
+  }
   async function command(command: any, preview = command.action !== 'workspace') {
     return guard(async () => {
       const prepared = await api('commands/prepare', { revision: project.value.revision, command })
@@ -98,5 +104,5 @@ export const useProject = defineStore('project', () => {
     reconcileEditor()
   }
   function select(file: string, path?: string[], sdl?: string) { portCreation.value = null; selection.value = { file, path, sdl } }
-  return { project, selection, editingComponent, portCreation, editComponent, closeComponent, createPort, token, error, pending, busy, job, sourceDrafts, api, guard, load, command, apply, history, save, validate, cancel, select }
+  return { project, selection, editingComponent, portCreation, editComponent, closeComponent, createPort, token, error, pending, busy, job, sourceDrafts, api, guard, connect, load, command, apply, history, save, validate, cancel, select }
 })

@@ -1,8 +1,11 @@
 # OSE Model Editor API
 
 The local service serves one configured application project under `/api/v1`.
-All API requests require `Authorization: Bearer <access-token>`; obtain the token
-from the file printed by the CLI. Cross-origin browser API access is rejected.
+Local access is direct by default. Starting with `--auth` requires
+`Authorization: Bearer <access-token>`; obtain the token from the file printed
+by the CLI. `GET /api/v1/auth` is available without a token and reports
+`auth_required`, allowing the frontend to open the workspace automatically.
+Cross-origin browser API access is rejected in both modes.
 The compiled English frontend is served from `/` without a CDN.
 
 ## Project and source reads
