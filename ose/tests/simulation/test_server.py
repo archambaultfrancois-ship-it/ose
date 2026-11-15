@@ -159,6 +159,8 @@ class SimulationServerTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(entered.wait(), 2)
         with self.assertRaises(RemoteError):
             await self.submit('step_instants', count=1)
+        with self.assertRaises(RemoteError):
+            await self.submit('workers_set', workers=2)
         paused = await self.submit('pause')
         release.set()
         await self.wait(paused)
@@ -176,6 +178,62 @@ class SimulationServerTests(unittest.IsolatedAsyncioTestCase):
         continuous = Simulation(self.plan, .1)
         summary = await continuous.execute()
         self.assertEqual(digest, summary['trace_sha256'])
+
+    async def test_workers_change_preserves_state_and_survives_reset(self):
+        await self.wait(await self.submit('run_until', time_ns='20000000'))
+        before = self.server.snapshot()
+        processes = dict(self.server.engine.processes)
+        args = dict(epoch=self.server.epoch, command_id='workers-change', action='workers_set', workers=3)
+        operation, _ = await self.client.request('simulation_command', **args)
+        await self.wait(operation)
+        after, _ = await self.client.request('status')
+        self.assertEqual(after['execution']['workers'], 3)
+        self.assertTrue(after['execution']['capabilities']['workers'])
+        self.assertEqual(after['epoch'], before['epoch'])
+        self.assertEqual(after['components']['source']['measurements'], before['components']['source']['measurements'])
+        self.assertEqual(after['simulation_time_ns'], before['simulation_time_ns'])
+        self.assertEqual(self.server.engine.processes, processes)
+        self.assertEqual((await self.client.request('simulation_command', **args))[0]['id'], operation['id'])
+        for value in (0, -1, True, 1.5, '2', None):
+            with self.subTest(value=value), self.assertRaises(RemoteError):
+                await self.submit('workers_set', workers=value)
+        self.assertEqual(self.server.engine.workers, 3)
+        await self.wait(await self.submit('reset'))
+        self.assertEqual(self.server.execution()['workers'], 3)
+        self.assertEqual(self.server.execution()['position_ns'], '0')
+
+    async def test_worker_setting_controls_parallel_callbacks_without_changing_trace(self):
+        import copy
+        plan = copy.deepcopy(self.plan)
+        plan['components']['second'] = copy.deepcopy(plan['components']['source'])
+        server = SimulationServer(plan, .1, keep_alive=True)
+        self.addAsyncCleanup(server.close)
+        await server.start()
+        await asyncio.wait_for(server.ready.wait(), 5)
+        peak = active = 0
+        calculate = server.engine._calculate_input
+        async def tracked(*args):
+            nonlocal peak, active
+            active += 1
+            peak = max(peak, active)
+            try:
+                await asyncio.sleep(.01)
+                return await calculate(*args)
+            finally:
+                active -= 1
+        server.engine._calculate_input = tracked
+        async def command(action, **args):
+            operation = await server.command(dict(epoch=server.epoch, command_id=uuid.uuid4().hex, action=action, **args))
+            result = await server.wait_operation(operation['id'])
+            self.assertEqual(result['status'], 'complete', result)
+        await command('run_until', time_ns='20000000')
+        self.assertEqual(peak, 1)
+        await command('workers_set', workers=2)
+        await command('run_until', time_ns='100000000')
+        self.assertEqual(peak, 2)
+        from ose.execution.simulation import Simulation
+        reference = await Simulation(plan, .1, workers=1).execute()
+        self.assertEqual(server.engine.summary['trace_sha256'], reference['trace_sha256'])
 
     async def test_failed_wave_retains_last_committed_measurements_and_reports_failure(self):
         calculate = self.server.engine._calculate

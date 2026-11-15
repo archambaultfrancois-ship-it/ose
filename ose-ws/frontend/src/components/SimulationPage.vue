@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { can, command } from '../api'
 import { secondsToNanoseconds, simulatedSeconds } from '../simulation'
 const props = defineProps<{ execution: any; connected: boolean }>()
 const emit = defineEmits<{ refresh: [] }>()
 const duration = ref('0.1'), target = ref('1'), breakpoint = ref('1'), count = ref(1)
 const persistentBreakpoint = ref(false)
+const workers = ref<number | string>(1)
+watch([() => props.execution?.epoch, () => props.execution?.workers], () => {
+  workers.value = props.execution?.workers ?? 1
+}, { immediate: true })
+const validWorkers = computed(() => typeof workers.value === 'number' && Number.isSafeInteger(workers.value) && workers.value > 0)
 const pending = ref(0), error = ref('')
 const ready = computed(() => can('simulation.control') && props.connected && !pending.value && props.execution?.state === 'paused' && !props.execution?.active_operation)
 async function send(action: string, extra: any = {}) {
@@ -28,6 +33,12 @@ function timed(action: string, value: string) {
     <p v-if="execution?.error" class="notice error" role="alert">{{ execution.error }}</p>
     <p v-if="error" class="notice error" role="alert">{{ error }}</p>
     <p v-if="!can('simulation.control')" class="notice">Observation only. Simulation control permission is required to issue commands.</p>
+    <div v-if="execution?.capabilities?.workers" class="toolbar">
+      <label>Simulation workers<input v-model.number="workers" type="number" min="1" step="1" :disabled="!ready" /></label>
+      <button :disabled="!ready || !validWorkers || workers === execution?.workers" @click="send('workers_set', { workers })">Apply workers</button>
+      <span class="muted small">Current: {{ execution?.workers }}</span>
+    </div>
+    <p v-if="execution?.capabilities?.workers" class="muted small">Pause to change parallel callback calculations. Virtual time and component state are preserved, and the setting survives reset. Component process count stays the same.</p>
     <div class="toolbar">
       <button :disabled="!ready" @click="send('resume')">Resume simulation</button>
       <button :disabled="!can('simulation.control') || !connected || execution?.state !== 'running'" @click="send('pause')">Pause simulation</button>

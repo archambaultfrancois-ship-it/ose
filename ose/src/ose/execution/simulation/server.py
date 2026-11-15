@@ -148,6 +148,7 @@ class SimulationServer:
             state=self.state if self.state != 'ready' else ('paused' if self.control.paused else 'running'),
             position_ns=self.cached.get('simulation_time_ns', '0'), horizon_ns=str(engine.horizon) if engine.horizon is not None else None,
             microstep=self.cached.get('simulation_microstep', 0), microsteps=engine.microstep_limit is not None,
+            workers=engine.workers,
             pause_reason=self.control.pause_reason,
             stop_reason=engine.reason if terminal else None, error=self.error,
             breakpoints_ns=[str(at) for at in sorted(self.control.breakpoints | self.persistent_breakpoints)],
@@ -156,7 +157,7 @@ class SimulationServer:
             active_operation=self.active,
             operations=[self._public_operation(o) for o in self.operations.values()][-20:],
             snapshot_sequence=str(self.sequence),
-            capabilities={'control': True, 'reset': self.keep_alive, 'persistent_breakpoints': True, 'parameters': True,
+            capabilities={'control': True, 'reset': self.keep_alive, 'workers': True, 'persistent_breakpoints': True, 'parameters': True,
                           'measurements': True, 'logs': True, 'recordings': False, 'live': False},
             semantics={'time_boundary': 'exclusive', 'rates_clock': 'simulated',
                        'measurements': 'latest values at committed wave boundaries'})
@@ -208,7 +209,7 @@ class SimulationServer:
             action = header.get('action')
             allowed = ('pause', 'resume', 'step_instants', 'step_duration', 'run_until',
                        'step_microsteps', 'break_add', 'break_remove', 'break_clear',
-                       'component_set', 'reset', 'stop')
+                       'component_set', 'workers_set', 'reset', 'stop')
             if action not in allowed:
                 raise ValueError('unknown simulation command')
             identity = header.get('command_id')
@@ -269,6 +270,12 @@ class SimulationServer:
                 if (not isinstance(names, list) or not names or type(enabled) is not bool
                         or not all(isinstance(name, str) and name in self.engine.order for name in names)):
                     raise ValueError('select known components and a boolean enabled state')
+            elif action == 'workers_set':
+                workers = header.get('workers')
+                if type(workers) is not int or workers <= 0:
+                    raise ValueError('workers must be a positive integer')
+                if not self.control.paused:
+                    raise ValueError('pause the simulation before changing workers')
             if action.startswith('step_') or action == 'run_until':
                 if not self.control.paused:
                     raise ValueError('pause the simulation before advancing')
@@ -281,6 +288,11 @@ class SimulationServer:
                 try:
                     if action == 'reset':
                         await self._reset()
+                    elif action == 'workers_set':
+                        async with self.control.busy:
+                            self.engine.workers = workers
+                            self.options['workers'] = workers
+                        operation['result'] = {'workers': workers}
                     elif action == 'component_set':
                         self.control.pause()
                         async with self.control.busy:

@@ -9,7 +9,7 @@ class SimulationManager:
         self.connection, self.collector = connection, collector
 
     async def execute(self, data):
-        require(set(data) <= {'epoch', 'action', 'count', 'time_ns', 'components', 'enabled', 'persistent'}, 'Unknown simulation command field.')
+        require(set(data) <= {'epoch', 'action', 'count', 'time_ns', 'components', 'enabled', 'persistent', 'workers'}, 'Unknown simulation command field.')
         require(isinstance(data.get('epoch'), str), 'An execution epoch is required.')
         client = await self.connection.connect()
         try:

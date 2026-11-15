@@ -86,6 +86,10 @@ Observation remains available from the last committed snapshot during a wave.
   its persistence. Persistence lasts for this server process, not across restarts.
 - `component_set`: enable or disable selected components under the wave barrier,
   pausing progression before changing their state.
+- `workers_set`: set `workers` to a positive integer while paused, with no active
+  operation. Changes the maximum parallel callback calculations at the wave barrier,
+  preserving virtual time, component state and epoch. The setting survives reset
+  for this server process. It does not change the number of component processes.
 
 RPC time arguments are unsigned decimal nanosecond **strings**, within uint64;
 the browser uses BigInt when converting decimal seconds. Commands are structured
@@ -102,7 +106,7 @@ path permissions through the shared `ParameterEndpoint`. Functional topology,
 input queues and counters are exposed through the existing observation schema.
 No transport delivery queue is invented for simulation's shared input buffers.
 
-`status.execution` includes capabilities, position/horizon, microstep, pause/stop
+`status.execution` includes capabilities, position/horizon, microstep, workers, pause/stop
 reason, current operation and recent operation outcomes. Epoch-bound commands
 require a command ID; duplicate IDs return the original operation, and conflicting
 reuse is refused. The server retains at most 256 operations. It is an in-memory

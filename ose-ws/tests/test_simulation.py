@@ -154,6 +154,19 @@ class SimulationAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(schema['root'], 'Settings')
         self.assertEqual(self.server.engine.clock.time_ns, 0)
 
+    async def test_worker_setting_through_web_preserves_position_and_survives_reset(self):
+        await self.command('run_until', time_ns='20000000')
+        epoch = self.server.epoch
+        await self.command('workers_set', workers=4)
+        self.assertEqual(self.server.engine.workers, 4)
+        self.assertEqual(self.server.epoch, epoch)
+        self.assertEqual(self.server.engine.clock.time_ns, 20000000)
+        await self.command('reset')
+        await self.collected('0', self.server.epoch)
+        execution = (await self.client.get('/api/v1/simulation')).json()
+        self.assertEqual(execution['workers'], 4)
+        self.assertTrue(execution['capabilities']['workers'])
+
     async def test_terminal_and_web_share_breakpoints_and_component_controls(self):
         from ose.execution.simulation.console import SimulationConsole
         import io

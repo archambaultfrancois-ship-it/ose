@@ -55,6 +55,50 @@ it('adds a time breakpoint with persistence across reset when selected', async (
   expect(JSON.parse(request.body as string)).toEqual({ epoch: 'e1', action: 'break_add', time_ns: '1000000000', persistent: true })
 })
 
+it('applies worker counts only while paused and synchronizes server changes', async () => {
+  Object.assign(account, { actor: 'workers-test', csrf: 'csrf', permissions: { 'simulation.control': ['*'] } })
+  const execution = reactive<any>({ epoch: 'workers-epoch', state: 'paused', workers: 2, capabilities: { workers: true } })
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ status: 'complete', result: { status: 'complete' } })))
+  vi.stubGlobal('fetch', fetch)
+  const root = document.createElement('div'); document.body.append(root)
+  const props = reactive({ execution, connected: true })
+  app = createApp({ render: () => h(SimulationPage, props) }); app.mount(root)
+  const input = [...root.querySelectorAll('label')].find(l => l.textContent?.includes('Simulation workers'))!.querySelector('input')!
+  const button = [...root.querySelectorAll('button')].find(b => b.textContent === 'Apply workers')!
+  expect(input.value).toBe('2')
+  expect(button.disabled).toBe(true)
+  for (const value of ['', '0', '-1', '1.5']) {
+    input.value = value; input.dispatchEvent(new Event('input')); await nextTick()
+    expect(button.disabled).toBe(true)
+  }
+  input.value = '4'; input.dispatchEvent(new Event('input')); await nextTick()
+  expect(button.disabled).toBe(false)
+  button.click()
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+  const [, request] = fetch.mock.calls[0] as unknown as [string, RequestInit]
+  expect(JSON.parse(request.body as string)).toEqual({ epoch: 'workers-epoch', action: 'workers_set', workers: 4 })
+  await vi.waitFor(() => expect(button.disabled).toBe(false))
+  execution.workers = 4; await nextTick()
+  expect(button.disabled).toBe(true)
+  execution.workers = 3; await nextTick()
+  expect(input.value).toBe('3')
+  input.value = '5'; input.dispatchEvent(new Event('input')); await nextTick()
+  props.execution = { ...execution }; await nextTick()
+  expect(input.value).toBe('5')
+  props.execution = execution; await nextTick()
+  execution.active_operation = 'advance'; await nextTick()
+  expect(button.disabled).toBe(true)
+  execution.active_operation = null
+  execution.state = 'running'; await nextTick()
+  expect(input.disabled).toBe(true)
+  execution.state = 'paused'; props.connected = false; await nextTick()
+  expect(button.disabled).toBe(true)
+  props.connected = true; account.permissions = {}; await nextTick()
+  expect(button.disabled).toBe(true)
+  execution.capabilities.workers = false; await nextTick()
+  expect(root.textContent).not.toContain('Apply workers')
+})
+
 it('offers compact epoch-bound actions and keeps pause available during an advance', async () => {
   Object.assign(account, { actor: 'simulation-actions-test', csrf: 'csrf', permissions: { 'simulation.control': ['*'] } })
   const execution = reactive<any>({ epoch: 'compact-epoch', state: 'paused', microsteps: false, capabilities: { reset: true } })

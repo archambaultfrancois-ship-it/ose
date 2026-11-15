@@ -273,6 +273,13 @@ through the usual endpoint file and adds a **Simulation** page: pause/resume,
 instant or duration stepping, absolute targets, time breakpoints, optional
 microsteps and reset. Interactive servers retain the final snapshot until Ctrl+C.
 
+The Simulation page also shows the current worker count. Pause the simulation,
+enter a positive integer under **Simulation workers**, then choose **Apply workers**.
+This changes parallel callback calculations without resetting virtual time or
+component state. The setting survives session resets, but not server restarts.
+It does not reduce the number of component processes. This control requires
+`simulation.control` and a simulation server advertising the `workers` capability.
+
 The common banner distinguishes simulated position from real connection freshness.
 Measurements use a simulated-time chart axis, while CPU, memory and callback
 execution durations use real time. Parameters retain their typed editor and OSE
