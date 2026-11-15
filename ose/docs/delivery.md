@@ -64,8 +64,9 @@ settings are rejected during validation. These settings remain in subscription
 `qos`, including defaults. Transport, ACK and retry settings remain independent
 per subscription, as do sender outboxes and network staging queues.
 
-- **FIFO:** all sources share one bounded queue, consumed in receiver admission
-  order, one message per port per tick. Capacity and overflow apply to the whole
+- **FIFO:** all sources share one bounded queue in receiver admission order.
+  Push selects one origin per callback; passive Pull operations can explicitly
+  consume eligible entries. Capacity and overflow apply to the whole
   port, including any reserved in-flight message. There are no per-source quotas
   or fairness guarantees; a busy source can fill the queue.
 - **Latest:** the port retains one value across all sources. The last valid
@@ -74,11 +75,12 @@ per subscription, as do sender outboxes and network staging queues.
   retry cannot replace another source's newer admission. A new source generation
   may restart its sequence. Retained values do not expire.
 
-Any source can satisfy a required input or its timeout wait; reception does not
-wait for every source. Each connection must satisfy the input's SDL contract.
-Callbacks and SDK protocols are unchanged: a tick supplies at most one message
-per input, without source metadata. These rules apply to local, distributed and
-simulated execution; simulation retains its deterministic admission order.
+Each connection must satisfy the input's SDL contract. Reception does not wait
+for every source: a Push message activates its own callback, while Pull remains
+passive. CH/2 references expose the source topic, technical handle and optional
+application ID. These rules apply to local, distributed and simulated execution;
+simulation retains its deterministic admission order. See
+[input callbacks and Pull access](runtime.md#selecting-one-activation).
 
 ## Network protocol CENV/2
 

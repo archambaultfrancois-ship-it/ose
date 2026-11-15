@@ -11,13 +11,14 @@ the inputs, outputs and declared internal points of a running application and re
 selected samples through SDL's recording service. It needs no model, generated application classes or
 recorder component in the graph. Start and stop files repeatedly in one session.
 It supports the local broker and distributed workers, including direct routes.
-Simulation has no live network endpoint for this separate console. Use the
+The simulation server does not implement dynamic recording/tap RPCs for this
+separate console. Use the
 [batch options](#batch-capture-with-run-and-replay) to capture a simulated run,
 and [recording replay](replay.md) to feed captured messages into external inputs.
 The running broker/workers must also use an OSE version providing recording taps;
 an older application runtime cannot gain them by upgrading only the console.
 Rebuild/restart the application with the updated framework. Vibration Watch in
-`ose/vibration-watch` uses its parent OSE repository by default. To select another
+`vibration-watch/` uses this checkout's OSE framework by default. To select another
 checkout, run `FRAMEWORK_ROOT=/path/to/ose make run DURATION=60` from the
 application directory. Cluster deployments need updated worker images.
 
@@ -273,10 +274,10 @@ to address them separately. Unqualified selection matches both; list numbers
 also identify individual points. Files retain the natural topic name on separate
 channels, distinguished by `ose.kind` metadata.
 
-Input recording observes the value selected at the start of each tick. FIFO
-records the selected message after overflow handling; latest records the state
-used on each tick, including repeated values. Absent inputs and timed-out null
-values emit no SDL sample. Observation does not confirm callback completion.
+Input recording observes the activating message at callback selection, after
+FIFO overflow handling or latest-state selection. Timer and inactivity-timeout
+references have no message and emit no SDL sample. Passive Pull reads are not
+recorded as a combined input snapshot. Observation does not confirm callback completion.
 Compatible producer schemas are projected to the input's catalogue when needed;
 input filters apply to that representation. Output points still capture source
 publications independently. No component SDK or handler change is needed.

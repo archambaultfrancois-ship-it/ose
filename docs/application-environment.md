@@ -156,7 +156,9 @@ checkout, see the [framework release guide](release.md). `make release`
 builds a platform-specific archive with all five SDK languages and all features
 selected by default; missing target compilers produce installation warnings.
 
-Build, validate and simulate use the application's Makefile targets.
+Build and validate use the application's Makefile targets. Plain `ose app simulate`
+uses its simulation target; selecting `--interactive`, `--port`, `--workers` or
+`--microsteps` builds first and launches the shared OSE simulation server directly.
 `ose app distributed` builds first, then OSE supervises a loopback coordinator
 and the workers declared in the compiled distributed plan. This command selects
 the application's `PROFILE=cluster` automatically; a local profile is rejected. Use

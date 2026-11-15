@@ -1,9 +1,11 @@
 # HTTP and live API
 
-The API prefix is `/api/v1`. Except login and minimal `/health/live` /
-`/health/ready`, business routes require a session cookie. Authenticate through
-`POST /auth/login` with `{"token":"..."}` or `{}` behind the configured
-identity proxy. `GET /session` returns actor, web policy, CSRF token and expiry.
+The API prefix is `/api/v1`. Minimal `/health/live` and `/health/ready` are outside
+that prefix. Business routes use a session cookie. In default direct local mode,
+`GET /session` automatically creates a session and sets its cookie. With `--auth`,
+authenticate through `POST /auth/login` with `{"token":"..."}`; use `{}` behind
+the configured identity proxy. `GET /session` returns actor, web policy, CSRF
+token, expiry and `auth_required`.
 Mutations require `X-CSRF-Token`. `POST /session/renew` explicitly renews idle
 time within the eight-hour absolute lifetime; `POST /auth/logout` revokes the
 session. `GET /openapi.json` is available to administrators.
@@ -43,6 +45,7 @@ Observation and log `sequence` fields are decimal order strings.
 | Parameters | `GET /parameters`, `GET /parameters/{id}`, `GET /parameters/{id}/schema`, `POST /parameters/{id}/validate`, `PUT /parameters/{id}`. |
 | Parameter files | `POST /parameter-imports/preview`, `POST /parameter-imports/{id}/apply`, `POST /parameter-exports`. |
 | Operations | `GET /operations` (uncertain), `GET /operations/{id}`, administrative `POST /operations/{id}/close-unknown`. |
+| Simulation | `GET /simulation`, `POST /simulation/commands`: observe/control a simulation server, including stepping, pause, reset, breakpoints, components and workers. Commands require `simulation.control`, CSRF, an idempotency key and the current epoch. |
 | Audit | `GET /audit`. |
 
 `GET /components` includes `topology`, or `null` until compatible observation

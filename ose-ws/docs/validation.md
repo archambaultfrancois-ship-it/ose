@@ -36,6 +36,6 @@ The simulated history test is not a substitute for that load measurement.
 Distributed control/parameter discovery is tested with a real coordinator.
 Production mTLS topology, producer-worker reachability and certificates must be
 qualified with the intended deployment. Source filters reuse the existing native
-OSE implementation and require its optional service to be prepared at both ends.
+OSE implementation and require the filtering service to be available at both ends.
 No general capture-throughput, loss-free delivery or real-time latency guarantee
 is claimed.

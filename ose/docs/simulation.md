@@ -70,11 +70,17 @@ component calculations, using the separate Python, C, Rust, Java and Ada process
 provided by the framework. It does not allocate CPU affinity or parallelize a
 single callback. A sequential graph offers little parallel speedup.
 
-`--scenario`, `--trace`, `--workers`, `--microsteps`, `--max-microsteps` and `--max-tick-output-bytes` are specific to
-simulated execution. `--port` is rejected in simulated mode. No network broker,
-adapter subprocesses or live external clients participate in this engine.
-Only `inspect --last` is available after a simulation; live network inspection
-continues to belong to the real-time engine.
+`--scenario`, `--trace`, `--workers`, `--microsteps`, `--max-microsteps` and
+`--max-tick-output-bytes` are specific to simulated execution. CLI simulated
+`run` hosts a loopback RPC server; `--port` selects its port, or omission selects
+a free port. `build/endpoint.json` enables live status, logs, measurements,
+parameter access and terminal/web simulation control. No network delivery
+broker, real-time adapter subprocesses or live external data publishers
+participate in the functional engine. Scenarios supply external inputs.
+Interactive runs retain the server and final snapshot until stopped; batch runs
+close it on completion. `inspect --last` reads saved final status afterward.
+See the [simulation server guide](simulation-server.md). Simulated replay keeps
+its own CLI controls and does not host this server.
 
 ## Interactive execution controls
 
@@ -281,8 +287,9 @@ metrics, waiting inputs and any pending ticks at the horizon.
 
 For reproducibility, callbacks must not let wall clocks, unseeded randomness,
 live I/O, shared mutable files or internal thread races affect their outputs.
-Standard output remains reserved for CH/2 IPC. Application stderr logs and external
-side effects are outside the deterministic trace contract.
+CH/2 IPC uses a private Unix socketpair. Standard input/output/error remain
+available to application code; their output ordering and external side effects
+are outside the deterministic trace contract.
 
 ## Runnable parallel example
 

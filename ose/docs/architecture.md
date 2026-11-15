@@ -155,8 +155,9 @@ See [runtime execution, ticks and message flow](runtime.md) for a detailed
 walkthrough of startup, input selection, callbacks and delivery confirmations.
 
 The supervisor hosts the broker and launches a Python adapter process per
-component. Each adapter starts its component process. All components initialize
-and send READY before the supervisor enables publication and delivery. Startup
+component. Each adapter starts its enabled component process. Enabled components
+initialize and send READY before the supervisor enables publication and delivery;
+initially disabled components defer handler startup. Startup
 has a 20-second readiness limit. A process failure stops OSE execution.
 The local supervisor waits on READY notifications, child-exit futures and the
 stop event; it does not periodically scan child return codes during execution.

@@ -158,8 +158,9 @@ The application model declares the external topic's input contract:
 
 These fields complement the usual `version`, `schemas` and `components` fields.
 A specific `schema` can be added to the topic contract. The compiler checks SDL
-compatibility with the input. A required input waits for data before processing,
-but does not delay READY. An external session never participates in the component
+compatibility with the input. A Push message activates that input's callback;
+Pull values are accessed explicitly during another activation. Empty inputs do
+not delay READY, and external sessions never participate in the component
 startup barrier.
 
 A producer absent from the model can publish to any ordinary application topic,

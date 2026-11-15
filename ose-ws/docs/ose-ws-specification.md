@@ -560,8 +560,9 @@ parameter editing; recording contracts use the same schema description in a
 read-only explorer. Arbitrary message fields do not become scalar measurements.
 
 The package depends on a compatible OSE Python package and available SDL runtimes.
-The optional recording extra supplies Python capture dependencies; the native
-filter service remains a separate preparation. Frontend dependencies are locked
+Recording dependencies are included in OSE's base installation; SDL filtering
+and recording are required framework services prepared by checkout setup and
+backend test targets, and bundled in offline releases. Frontend dependencies are locked
 at build time. OSE engine users do not acquire FastAPI/Vue dependencies merely
 by installing OSE. Source distributions include `docs/*.md`; the installed wheel
 includes the compiled offline frontend.

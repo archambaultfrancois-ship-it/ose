@@ -7,7 +7,7 @@
 - **[Contract validation](architecture.md#documents)**: check dynamic SDL publisher-to-consumer compatibility and check activation cycles against the selected execution mode.
 - **[Multilanguage components](callbacks.md)**: connect Python, C, Rust, Java and Ada implementations in one application.
 - **[Generated containers](callbacks.md)**: generate typed bindings, wrappers and compilation commands while preserving existing user handlers.
-- **[Local application environment](../../README.md#local-application-environment)**: access application and recording commands with automatic setup of optional recording services.
+- **[Local application environment](../../README.md#local-application-environment)**: access application and recording commands with setup of required SDL filtering/recording services.
 
 ## Callbacks and execution
 
@@ -38,6 +38,8 @@
 - **[Scripted external inputs](simulation.md#external-scenarios)**: inject validated SDL envelopes at scheduled virtual timestamps.
 - **[Queue and timeout behavior](simulation.md#queues-waits-and-transport-semantics)**: exercise bounded admission and input deadlines without simulating physical network delays or losses.
 - **[Logical traces](simulation.md#bounds-failures-and-observations)**: compare timestamped execution traces and hashes without recording message payloads.
+- **[Interactive simulation server](simulation-server.md)**: observe and control a persistent paused session from the terminal or web console, with reset, temporal breakpoints and runtime worker selection.
+- **[Activating feedback](simulation.md#microsteps-and-activating-feedback)**: settle cyclic activations in bounded logical microsteps at one virtual timestamp.
 
 ## Distributed execution and deployment
 
@@ -53,7 +55,8 @@
 ## External integration and inspection
 
 - **[Independent producers](clients.md#feeding-a-model-input)**: share ordinary model output topics with compatible SDL producers, without rewriting the model or reserving a topic for one component.
-- **[Interactive recording](recording.md)**: select live outputs and component-owned internal points by name or message type and record labeled PCAPNG/MCAP sessions without adding a model component.
+- **[Interactive recording](recording.md)**: select live outputs, observed message inputs and component-owned internal points by name or message type and record labeled PCAPNG/MCAP sessions without adding a model component.
+- **[Batch capture](recording.md#batch-capture-with-run-and-replay)**: attach filtered recording and half-open temporal capture windows to real-time/simulated run and replay commands.
 - **[Internal diagnostic points](recording.md#component-owned-internal-points)**: declare namespaced SDL points in Python, C, Rust, Java or Ada; context-owned hash registries cache encoders and skip serialization while disabled.
 - **[Source content filters](recording.md#content-filters)**: filter publications at the broker or producer worker before transfer to the recorder.
 - **[File rotation and retention](recording.md#file-rotation-and-cyclic-retention)**: split captures by size and optionally retain only the latest files.

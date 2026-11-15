@@ -1,7 +1,10 @@
 # Push/Pull and CENV/2 transition
 
-Status: incremental development on `dev-cenv2`. This document separates agreed
-semantics from proposed API syntax and work that is not yet implemented.
+Status: historical migration and qualification record, integrated into the main
+development line. Dated test counts and earlier deferred work below describe
+their recorded scope. For current usage, see [model v2 migration](model-v2-migration.md),
+[CH/2](../sdk/input-protocol.md), [simulation](simulation.md) and the
+[simulation server](simulation-server.md).
 
 ## Decisions
 
@@ -66,7 +69,8 @@ semantics from proposed API syntax and work that is not yet implemented.
 - No mandatory initial value, latest-only policy, periodic-only execution or
   artificial physical delay is introduced to handle feedback.
 - Microsteps extend simulation to activating cycles after the Push/Pull migration.
-  The resolved launch policy and qualification are tracked in [TODO.md](../../TODO.md).
+  The resolved launch policy and qualification are documented in
+  [microstep simulation](simulation.md#microsteps-and-activating-feedback).
 
 ## Implemented scope
 
@@ -256,7 +260,8 @@ Logs: `ose/build/cenv2-release-installer.log`,
 
 ### Managed SDK retirement and fixture migration
 
-- The implemented microstep decisions are recorded in repository [TODO.md](../../TODO.md),
+- The implemented microstep decisions are recorded in
+  [microstep simulation](simulation.md#microsteps-and-activating-feedback),
   including stage visibility, deterministic execution and resolved launch-policy
   choices. Implementation followed the initial retirement work.
 - Java no longer has a CH/1 runner, snapshot callback interface, legacy publication
@@ -629,7 +634,7 @@ simulated/live replay, including repeated loops and both recording containers.
 Full desktop-browser qualification of the editor remains outside the automated
 checks. Step 11 has local package and installed-SDK qualification as documented
 above; it does not qualify every OS/ABI or physical multi-machine deployment.
-Step 12 is reserved in [TODO.md](../../TODO.md).
+The later microstep implementation is recorded in the final section below.
 
 ## Settled migration gates
 
@@ -926,7 +931,7 @@ parallel callbacks, deterministic publication order and per-callback consumption
 commit. Trace metadata and bounded-loop diagnostics expose the logical position;
 SDKs, CENV/2 and dynamic SDL exchange are unchanged. See
 [simulation semantics](simulation.md#microsteps-and-activating-feedback) and the
-[qualified decisions](../../TODO.md). Earlier deferred references describe the
+[feedback example](../examples/feedback-microsteps/README.md). Earlier deferred references describe the
 original migration scope.
 
 Qualification: 318 unit tests, 73 editor Python/API tests and 70 frontend tests

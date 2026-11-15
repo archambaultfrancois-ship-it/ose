@@ -119,9 +119,10 @@ source ./setenv.sh
 ose-ws
 ```
 
-Open **http://127.0.0.1:8080** and enter the token from
-`vibration-watch/.ose-ws/access.token`. The first launch exclusively creates
-`ose-ws.json` and that owner-only token in the application directory. These local
+Open **http://127.0.0.1:8080** for direct local access. Use `ose-ws --auth` to
+require the token from `vibration-watch/.ose-ws/access.token`. The first launch
+exclusively creates `ose-ws.json`; a missing owner-only token is created when
+`--auth` is requested. These local
 files and the capture/database state are ignored by Git. `ose-ws` discovers the
 current `build/endpoint.json` and loads the `operator` parameter token from the
 current `build/plan.json`, falling back to `deployment.json` before a build.
@@ -665,13 +666,13 @@ the coordinator, including when their ordinary component routes are direct.
 Live replay uses the running application's state and ordinary queue policies; increasing speed can cause `drop_oldest` to discard inputs if
 the consumers cannot keep up. Check runtime counters when selecting a rate.
 
-`make test-replay` prepares the optional recording dependency, captures a live
+`make test-replay` prepares the required recording services, captures a live
 two-second signal sequence, and checks that replay reproduces every corresponding
 live observation, including RMS, peak and alarm state. It compares simulation
 traces from one and four workers, then checks live local and distributed replay.
 This test uses temporary captures; it does not consume
-existing recordings or require a cluster. It is separate from `make test` so the
-ordinary suites keep their standard-library-only Python requirements.
+existing recordings or require a cluster. It is a separate target from `make test`;
+the OSE installation includes the recording dependencies in both cases.
 
 ## Cluster deployment
 

@@ -32,7 +32,7 @@ From the repository root, for example:
 make -C sdl/examples/multiformat run
 ```
 
-`make` also defaults to `run`. Python 3.9+ and pip are required. The first
+`make` also defaults to `run`. This checkout requires Python 3.10+ and pip. The first
 invocation installs PyYAML under `build/deps` if it is not already available.
 Only schema conversion needs PyYAML. No C, Rust, Java, Ada or Matlab toolchain is
 needed: bindings are generated and compared in all six languages, and Python

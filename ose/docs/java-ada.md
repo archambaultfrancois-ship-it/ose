@@ -93,7 +93,8 @@ values; `now()` returns seconds as a double. Generated SDL `uint64` message
 fields keep the SDL codec's `long` bit representation.
 
 Typed `publish_<port>` methods are valid only on the active callback thread.
-Use stderr for diagnostics; stdout carries binary IPC. Messages can be retained
+CH/2 uses a private Unix socketpair; stdout and stderr are available for application
+output. Use the structured log API for OSE log collection. Messages can be retained
 as normal Java objects. User-created background threads are the handler's
 responsibility; the generated launcher exits when component execution ends.
 

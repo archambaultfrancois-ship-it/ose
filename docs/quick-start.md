@@ -306,7 +306,7 @@ Try this tour of the interface:
 
 ## Optional workshop: record and replay signals
 
-Prepare the optional services **before** starting the application you will
+Prepare the recording services **before** starting the application you will
 record. Stop terminal A with Ctrl+C first. In terminal B:
 
 ```sh
@@ -389,7 +389,7 @@ the network settings and TLS authentication described in the
 | Vibration Watch file | Purpose |
 | --- | --- |
 | `schemas/*.sdl` | Structure of exchanged messages and parameters |
-| `model.json` | Components, connections, triggers, and message queues |
+| `model.json` | Components, Push/Pull inputs, timers, output activations, connections and reception policies |
 | `deployment.json` | Component implementations and cluster deployment; the launcher derives the local profile |
 | `components/` | Application logic: acquisition, calculation, alarm, and display |
 | `config/` and `scenarios/` | Initial values and signal profiles |
@@ -409,7 +409,7 @@ also provides a smaller exercise that requires neither C nor Rust compilation.
 | `source: not found` | Run `bash`, then repeat the terminal preparation. |
 | C compiler or Cargo missing | Install the build tools and check `cc --version`, `cargo --version`, and `rustc --version`. |
 | A command looks for the wrong plan | Check `pwd` and `ose app env`; return to `~/ose/vibration-watch`. |
-| Connection refused or measurements unavailable | Wait for the build and startup in terminal A to finish, then retry observation. A completed simulation has no active server. |
+| Connection refused or measurements unavailable | Wait for build/startup, then retry. Batch simulations close their server when finished; `--interactive` retains the server and final snapshot until stopped. |
 | The demo stops after three seconds | This is the default duration of `make demo-local`; use `app-run` to continue until Ctrl+C. |
 | The alarm stays active after restoring the threshold | Check that you started with `SCENARIO=normal`; the increasing profile keeps raising vibration levels. |
 | Web dependencies missing | Run `ose-ws setup`, then `ose-ws`, from the application's environment. |

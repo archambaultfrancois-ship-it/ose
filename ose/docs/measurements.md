@@ -3,7 +3,7 @@
 Components may declare named scalar measurements and replace their current values
 during callbacks. `ose measure` reads those values through the same read-only
 status RPC as `top`, locally or through the distributed coordinator. No graph
-ports, subscriptions, SDL application types or optional recording dependencies
+ports, subscriptions, SDL application types or recording sessions
 are required.
 
 Each component generation owns at most 128 measurements. Names follow the internal
@@ -90,8 +90,11 @@ Old component binaries remain valid without measurements. Rebuild generated
 containers and update the application runtime before using the new APIs.
 
 Simulation accepts the same declarations and emissions in volatile process
-registries. It has no live status endpoint; measurements are excluded from the
-logical trace and saved simulation summary.
+registries. CLI simulated runs expose current values through their
+[simulation server](simulation-server.md), allowing `ose measure` and the web
+console to observe them. Charts use virtual time and can skip intermediate
+emissions between reads. Measurements remain excluded from the logical trace
+and saved simulation summary.
 
 ## CLI readings
 

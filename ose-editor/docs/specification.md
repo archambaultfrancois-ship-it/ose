@@ -70,7 +70,8 @@ model. ELK provides layout calculations, not OSE validation.
 
 Dependencies MUST be pinned in reproducible frontend/backend dependency records
 at implementation time. Installed use MUST require neither Node.js nor a CDN.
-SDL's optional YAML dependency is required only for projects using YAML sources.
+The editor includes PyYAML for YAML source inspection and editing; SDL's standalone
+generator can also use its own optional YAML dependency.
 Python web dependencies belong to this subproject, not the OSE engine.
 
 References: [Vue Flow](https://vueflow.dev/guide/),
@@ -83,8 +84,9 @@ References: [Vue Flow](https://vueflow.dev/guide/),
 ## 3. Language authority and compatibility
 
 The initial inventory was reviewed against repository commit
-`d4ccf89f0c21182aac27aec2f14aee35202dcc79`. It covers OSE model/deployment
-document version 1 and the SDL source language described by the current
+`d4ccf89f0c21182aac27aec2f14aee35202dcc79`. The current inventory covers OSE
+application model version 2, deployment version 1 and the SDL source language
+described by the current
 [formal syntax](../../sdl/docs/formal_syntax.md) and
 [source format reference](../../sdl/docs/schema_formats.md).
 
@@ -155,14 +157,16 @@ parameter values in URLs.
 
 ## 5. Graph workspace
 
-Component nodes MUST show their name, input/output handles, logical port types
-and trigger summary. The graph MUST include external topic publishers and
-support fan-out. Required and optional inputs MUST be distinguishable without
-color alone. An unconnected required input MUST remain visible as a draft error.
+Component nodes MUST show their name, input/output handles, logical message port
+types and input activation summary. The graph MUST include external topic
+publishers and support fan-out and multiple producers per input. Push, Pull and
+timer inputs MUST be distinguishable without color alone. Timer inputs have no
+SDL contract and cannot be subscription targets.
 
-Selecting a component opens ports, trigger, free parameters, parameter bindings,
-recording type declarations and selected deployment implementation. Selecting a
-port opens its root, source schema, requirement and timeout properties. Selecting
+Selecting a component opens ports, timer/activation declarations, free parameters,
+parameter bindings, recording type declarations and selected deployment implementation. Selecting a
+port opens its applicable root, source schema, Push/Pull mode, timer, timeout and
+per-event output permissions. Selecting
 a subscription opens its endpoints, QoS, effective policy, transport, routing
 and directional contract compatibility report.
 
@@ -172,10 +176,13 @@ MUST give immediate structural feedback. Invalid completed connections SHOULD
 be prevented, while existing invalid sources remain editable with diagnostics.
 An unresolved compatibility check MUST display a pending or unknown state.
 
-Connections MUST enforce or diagnose the actual OSE rules: a single producer
-per input, required-input connectivity, no component cycles, matching logical
-roots and publisher-to-consumer SDL compatibility under OSE's required-field
-policy. Source/consumer contracts can differ through schema overrides.
+Connections MUST enforce or diagnose the actual OSE rules: consistent shared
+reception settings for producers feeding one input, valid message endpoints,
+matching logical roots and publisher-to-consumer SDL compatibility under OSE's
+required-field policy. Activation cycles remain editable and compilable, with
+execution requiring simulated `--microsteps`; real-time execution rejects them.
+Passive Pull feedback need not create an activating cycle. Source/consumer
+contracts can differ through schema overrides.
 
 The graph MUST provide pan, zoom, fit, minimap, search, multi-selection and
 keyboard-accessible alternatives for connection and deletion. A low-zoom view
@@ -549,7 +556,7 @@ desktop performance targets MUST NOT be presented as mobile guarantees.
 | A05 | Rename a component/port/subscription and update all indexed model/deployment references as one reversible command. |
 | A06 | Edit an alias, package, constant, anonymous structure and wire clause; retain declaration intent and report affected uses. |
 | A07 | Insert/reorder implicit-ID fields and expose all identity changes or explicit-ID stabilization before applying. |
-| A08 | Diagnose cycles, competing producers, missing required connections and incompatible publisher-to-consumer contracts. |
+| A08 | Diagnose invalid activation references, execution restrictions on activating cycles, conflicting shared reception settings and incompatible publisher-to-consumer contracts; allow multiple producers and passive Pull feedback. |
 | A09 | Explain QoS defaults and invalid transport/routing/retry combinations using matching OSE validation. |
 | A10 | Validate unsaved snapshots, retain source inputs/path bases, discard stale results and never run application build/handler code. |
 | A11 | Edit shared initial values containing uint64 maxima, optionals, complex numbers, arrays and sequences without precision loss. |

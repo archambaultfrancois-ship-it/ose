@@ -33,7 +33,7 @@ Components may declare Kubernetes constraints in `placement`:
 `build --component NAME` compiles only that executable while emitting the complete
 plan, supporting separate component images. Registration checks a fingerprint of
 the application/execution-model versions, contracts, parameters, environment,
-triggers and routes. Build images with fixed
+input activation declarations and routes. Build images with fixed
 internal paths such as `/app`, since commands in resolved plans are absolute.
 
 ## Model v2 callbacks and Pull feedback

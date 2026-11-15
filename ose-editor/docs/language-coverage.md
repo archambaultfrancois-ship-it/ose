@@ -1,6 +1,7 @@
 # OSE Model Editor: language coverage inventory
 
-Status: required coverage baseline, version 0.1, 7 November 2026.
+Status: required coverage baseline, updated for application model v2 on
+15 November 2026.
 
 This inventory is part of the [editor specification](specification.md). Every
 row is required for the complete initial authoring release. Current implementation
@@ -18,7 +19,7 @@ At implementation time a machine-readable manifest MUST map these IDs to
 controls, adapters and fixture/test IDs; a missing mapping blocks a claim of
 complete coverage. Grammar/version changes require an inventory review.
 
-## 1. OSE application model JSON, version 1
+## 1. OSE application model JSON, version 2
 
 Authorities: [loader](../../ose/src/ose/modeling/model.py),
 [structural validator](../../ose/src/ose/modeling/validation.py),
@@ -30,16 +31,16 @@ Authorities: [loader](../../ose/src/ose/modeling/model.py),
 | M01 | Root `version`, `schemas`, `components`, `subscriptions`, `external_topics`, `shared_parameters` | Project properties; distinguish required/optional keys, source input files/directories and absent/empty objects. |
 | M02 | Component names and maps | Graph/explorer commands; portable-name guidance and exact OSE constraints; identity-preserving rename. |
 | M03 | Component `inputs`, `outputs` | Port tables and graph handles; empty collections, naming, direction and endpoint references. |
-| M04 | Port `root`, `schema` | Type picker scoped to the correct source input, explicit override/inherited input and resolved logical name. |
-| M05 | Port `required`, `timeout` | Declared/effective values; required defaults, optional presence, finite positive fractional seconds and timeout applicability. Preserve validator-accepted fields even where they have no scheduling effect on outputs. |
-| M06 | `trigger.mode`, `trigger.period_ms` | `on_change`/`periodic`, positive integer period and source-component requirement. |
+| M04 | Message port `root`, `schema` | Type picker scoped to the correct source input, explicit override/inherited input and resolved logical name. Timers have no message contract. |
+| M05 | Input `kind`, `mode`, `timeout`, `activates.message`, `activates.timeout` | Push/Pull/timer controls, positive Push inactivity timeout and per-event output permissions. Pull is passive; required-input/joint-readiness flags are obsolete. |
+| M06 | Input `timer.mode`, `.delay`, `.start` | Periodic/one-shot, positive delay and automatic/manual start. Timer callbacks replace component triggers and `on_tick`. |
 | M07 | Component `parameters` | Free, lossless JSON tree, including nested objects/arrays, null, booleans, strings and exact numbers. |
 | M08 | `parameter_bindings.<alias>.path`, `.access` | Shared block selector, alias controls, `read`/`write`/`read_write` and usage relations. |
 | M09 | `recording_types.<alias>.root`, `.schema` | Component diagnostic contract declarations and scoped schema navigation; does not create runtime recording points. |
 | M10 | Subscription `id`, `from`, `from_topic`, `to` | Link inspector; exactly one source form, endpoint/topic pickers and refactoring across deployments. |
 | M11 | External topic names, `root`, `schema` | External publisher nodes, scoped contracts, reserved-name/collision validation. |
 | M12 | Shared parameter paths, `root`, `schema`, `initial` | Path tree, scoped contract and complete SDL-typed initial-value editor. |
-| M13 | Graph invariants | One producer per input, required connectivity, component acyclicity, root identity and directional SDL compatibility. |
+| M13 | Graph invariants | Multiple producers with shared input reception, message-only subscription targets, valid output activation references, matching logical roots and directional SDL compatibility. Activation cycles are authorable/compilable but require simulated `--microsteps` at execution. |
 | M14 | JSON source rules | Duplicate-key detection, exact numbers, version/type/size checks, unknown-key preservation with diagnostics; source order/spacing retained. |
 
 ## 2. QoS and effective policies
