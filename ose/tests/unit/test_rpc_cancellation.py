@@ -12,6 +12,7 @@ class RequestCancellationTests(unittest.IsolatedAsyncioTestCase):
         client.tcp = SimpleNamespace(send=send)
         client.pending, client.sequence = {}, 0
         client.request_timeout = 1
+        client.task = asyncio.get_running_loop().create_future()
         return client
 
     async def test_simultaneous_reply_and_cancellation_propagates_cancellation(self):

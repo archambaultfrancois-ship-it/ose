@@ -106,6 +106,11 @@ class Client:
         return cls(TCP(reader, writer, limit), on_data, request_timeout)
 
     async def request(self, op, payload=b"", *, timeout=None, **arguments):
+        # No response can arrive once the reader has stopped, including when
+        # EOF preceded this request and there were no pending futures to fail.
+        if self.task.done():
+            error = None if self.task.cancelled() else self.task.exception()
+            raise ConnectionError("connection closed") from error
         self.sequence += 1
         identity = self.sequence
         future = asyncio.get_running_loop().create_future()

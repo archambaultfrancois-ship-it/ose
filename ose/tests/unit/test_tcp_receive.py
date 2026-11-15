@@ -2,14 +2,28 @@
 import asyncio
 import struct
 import unittest
+from unittest.mock import AsyncMock, Mock
 
 from ose.transport.protocol import encode
-from ose.transport.tcp import TCP, _FrameReader, open_connection, start_server
+from ose.transport.tcp import Client, TCP, _FrameReader, open_connection, start_server
 
 
 def wire(header, body=b''):
     packet = encode(header, body)
     return struct.pack('>I', len(packet)) + packet
+
+
+class ClientDisconnectTests(unittest.IsolatedAsyncioTestCase):
+    async def test_request_after_reader_eof_fails_without_waiting_for_rpc_timeout(self):
+        reader = _FrameReader()
+        writer = Mock(drain=AsyncMock())
+        client = Client(TCP(reader, writer))
+        reader.feed_eof()
+        await asyncio.gather(client.task, return_exceptions=True)
+        with self.assertRaises(ConnectionError):
+            await asyncio.wait_for(client.request('parameters_list'), .1)
+        self.assertEqual(client.pending, {})
+        writer.write.assert_not_called()
 
 
 class FrameReaderTests(unittest.IsolatedAsyncioTestCase):

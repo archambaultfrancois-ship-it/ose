@@ -182,8 +182,8 @@ class BackpressureTests(unittest.IsolatedAsyncioTestCase):
     async def test_only_activating_push_is_reserved_before_first_ipc_write(self):
         policy = Policy(capacity=1, overflow="drop_oldest")
         adapter = self.adapter(self.plan({"left": policy, "right": policy}))
-        for buffer in adapter.buffers.values():
-            buffer.admit(self.record(1))
+        for port in adapter.buffers:
+            adapter.scheduler.admit(port, self.record(1), 0)
         adapter.component_active = True  # This fixture bypasses supervisor enablement.
         entered, release = asyncio.Event(), asyncio.Event()
         adapter.process = SimpleNamespace(ipc_writer=object())
