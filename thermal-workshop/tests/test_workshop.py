@@ -1,7 +1,9 @@
 """Exercise the real component graph, variable SDL payloads and OSE web services."""
 import asyncio
 import copy
+import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -30,6 +32,30 @@ class WorkshopTests(unittest.IsolatedAsyncioTestCase):
         subprocess.run([sys.executable, str(ROOT / 'tools/workshop.py'), 'build', '--build-dir', str(cls.build_dir)], cwd=ROOT, check=True,
                        stdout=subprocess.DEVNULL)
         cls.plan = read_plan(cls.build_dir / 'plan.json')
+
+    async def test_native_workload_kernels_and_bounds(self):
+        binary, = (self.build_dir / 'native').glob('_thermal_native*.so')
+        spec = importlib.util.spec_from_file_location('_thermal_native', binary)
+        native = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(native)
+        for count in (1, 1024, 8192):
+            actual = native.samples(22.75, 191, 3, count)
+            expected = [22.75 + .2 * math.sin(k * .11 + 191 + 3) for k in range(count)]
+            self.assertEqual(len(actual), count)
+            self.assertTrue(all(math.isclose(a, b, abs_tol=1e-12) for a, b in zip(actual, expected)))
+        for iterations in (0, 1, 5000, 200000):
+            expected = 22.75
+            for n in range(iterations):
+                expected = math.sin(expected + n * .001) * .5
+            self.assertAlmostEqual(native.burn(iterations, 22.75), expected, places=12)
+        for count in (0, 8193):
+            with self.assertRaises(ValueError):
+                native.samples(22.75, 191, 3, count)
+        self.assertEqual(len(native.samples(22.75, 2**64-1, 3, 1)), 1)
+        with self.assertRaises(OverflowError):
+            native.samples(22.75, -1, 3, 1)
+        with self.assertRaises(ValueError):
+            native.burn(200001, 22.75)
 
     async def start_server(self):
         temporary = tempfile.TemporaryDirectory()

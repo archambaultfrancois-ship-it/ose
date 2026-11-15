@@ -12,8 +12,8 @@
     },
     "analyzer_1": {
       "container": {
-        "language": "python",
-        "handler": "components/analyzer.py"
+        "language": "c",
+        "handler": "components/analyzer.c"
       }
     },
     "controller_1": {
@@ -36,8 +36,8 @@
     },
     "analyzer_2": {
       "container": {
-        "language": "python",
-        "handler": "components/analyzer.py"
+        "language": "c",
+        "handler": "components/analyzer.c"
       }
     },
     "controller_2": {
@@ -60,8 +60,8 @@
     },
     "analyzer_3": {
       "container": {
-        "language": "python",
-        "handler": "components/analyzer.py"
+        "language": "c",
+        "handler": "components/analyzer.c"
       }
     },
     "controller_3": {
@@ -84,8 +84,8 @@
     },
     "analyzer_4": {
       "container": {
-        "language": "python",
-        "handler": "components/analyzer.py"
+        "language": "c",
+        "handler": "components/analyzer.c"
       }
     },
     "controller_4": {

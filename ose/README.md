@@ -319,3 +319,40 @@ See [batch recording](docs/recording.md#batch-capture-with-run-and-replay).
 Simulated replay does not require `--duration`: after the requested input passes,
 it processes remaining events until quiescence or interruption. Periodic timers
 may keep it running indefinitely; provide `--duration` for a virtual time limit.
+
+The Python runtime caches catalogue identities and immutable parameter versions,
+returning an independent parameter tree on every read. Component callbacks group
+their IPC writes into bounded 64 KiB batches and flush before synchronous requests
+and callback completion. All publications, measurements and logs retain their
+order; telemetry within a callback can arrive later than the corresponding API
+call. Simulation observation refreshes at most once per 50 ms during continuous
+execution, with an exact committed snapshot on pause, operation completion,
+breakpoint and termination. Log collection continues at every wave boundary.
+
+Optional C kernels accelerate SDL validation, CH/2 encoding, size checks without
+body copies and grouped frame parsing. In a source checkout, build them with
+`make native` (C compiler, matching Python development headers and `SDL_ROOT`
+required). Wheels build the same extension when those dependencies are available;
+source distributions also need the SDL checkout via `SDL_ROOT` to build it.
+The Python fallback is used when the extension is unavailable. Set
+`OSE_PYTHON_NO_NATIVE=1` to exercise that fallback explicitly. No Rust toolchain
+is needed for these kernels. Native binaries are specific to the Python ABI and
+must be rebuilt when switching interpreters.
+See [integration measurements and validation](docs/performance.md).
+
+The real-time broker checks frame sizes by encoding metadata only, and retains
+that immutable prefix per queued route for TCP sends and retries. Compact CENV/2
+metadata use the optional C extension, with generic messages handled in Python.
+TCP delivery groups up to 32 frames and 256 KiB per write/drain (a larger valid
+frame travels alone). Non-waiting fan-out admissions run inline; waiting routes
+retain independent concurrent admission. These changes preserve CENV/2 wire
+bytes and acknowledgment/retry policies. After updating native sources, rebuild
+with `make native` to activate the new C kernels.
+
+TCP framing now joins the length, metadata and immutable body directly, avoiding
+an intermediate packet copy. The broker clears its own delivery notifications
+before deciding whether to sleep, while queued deadlines keep new work runnable.
+On Python 3.12+, publications with immediate admission and writable output can
+complete eagerly; blocked requests remain independent tasks. Earlier Python
+versions and custom loop task factories use the ordinary task path. Buffered
+connections yield after 32 frames to keep other clients progressing.

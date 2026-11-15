@@ -1,6 +1,6 @@
 import math
 from messages import Header, Tag, Diagnostic, Channel, SensorFrame
-from common import start, observe, clamp
+from common import start, observe, clamp, samples
 
 
 def on_start(ctx):
@@ -25,7 +25,7 @@ def on_clock(ctx, input):
         sequence = ctx.sequence
         count = minimum + (sequence * 127 + ctx.cell * 31) % (maximum - minimum + 1)
         channels = [Channel(name=f'thermocouple-{j}',
-            samples=[ctx.temperature + .2 * math.sin(k * .11 + sequence + j) for k in range(max(1, count // (j + 1)))],
+            samples=samples(ctx.temperature, sequence, j, max(1, count // (j + 1))),
             tags=[Tag(key='unit', value='C'), Tag(key='zone', value=f'cell-{ctx.cell}/probe-{j}')])
             for j in range(1 + sequence % 4)]
         frame = SensorFrame(header=Header(cell=ctx.cell, sequence=sequence, time_ns=ctx.time_ns),

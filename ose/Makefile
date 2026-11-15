@@ -7,6 +7,9 @@ DEPLOYMENT := examples/acquisition/deployment.json
 PROFILE_OPTIONS = $(if $(PROFILE),--profile "$(PROFILE)")
 
 .PHONY: validate build demo check test test-unit test-integration test-sdk test-simulated test-distributed
+.PHONY: native
+native:
+	"$(PYTHON)" tools/build_native.py --sdl-root "$(SDL_ROOT)"
 validate:
 	"$(PYTHON)" -m ose.cli validate --model $(MODEL) --deployment $(DEPLOYMENT) $(PROFILE_OPTIONS) --sdl-root "$(SDL_ROOT)"
 build:

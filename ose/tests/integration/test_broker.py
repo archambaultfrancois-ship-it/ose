@@ -6,6 +6,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 from ose.codec.sdl2 import SDL2
 from ose.delivery.buffers import Buffer
 from ose.delivery.policies import SubscriptionPolicy as Policy
@@ -79,6 +80,44 @@ class BrokerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([self.codec.validate(CATALOGUE, "Measurement", body).fields["sequence"] for _, body in records], [3, 1, 2])
         _, text = await client.request("catalogue", catalogue_id=self.codec.identity(CATALOGUE))
         self.assertEqual(text.decode(), CATALOGUE)
+
+    async def test_publication_without_eager_task_support_keeps_delivery_progress(self):
+        with patch.object(asyncio, 'eager_task_factory', None, create=True):
+            await self.start(Policy())
+            received = []
+            async def receive(header, body, address):
+                received.append(body)
+            await self.consumer(receive)
+            publisher = await Client.connect('127.0.0.1', self.broker.port)
+            self.clients.append(publisher)
+            await publisher.request('hello', node='source', udp_port=12345)
+            for number in range(5):
+                result, _ = await publisher.request('publish', self.envelope(number), topic='source.output')
+                self.assertEqual(result['delivery'], {'link':'accepted'})
+            await eventually(lambda: len(received) == 5)
+            self.assertEqual(received, [self.envelope(n) for n in range(5)])
+
+    async def test_publication_respects_a_custom_loop_task_factory(self):
+        await self.start(Policy())
+        received = []
+        async def receive(header, body, address): received.append(body)
+        await self.consumer(receive)
+        publisher = await Client.connect('127.0.0.1', self.broker.port)
+        self.clients.append(publisher)
+        await publisher.request('hello', node='source', udp_port=12345)
+        loop = asyncio.get_running_loop()
+        original, scheduled = loop.get_task_factory(), []
+        def factory(loop, coroutine, **options):
+            scheduled.append(coroutine.cr_code.co_name)
+            return asyncio.Task(coroutine, loop=loop, **options)
+        try:
+            loop.set_task_factory(factory)
+            result, _ = await publisher.request('publish', self.envelope(1), topic='source.output')
+            await eventually(lambda: len(received) == 1)
+            self.assertEqual(result['delivery'], {'link':'accepted'})
+            self.assertIn('_publish_reply', scheduled)
+        finally:
+            loop.set_task_factory(original)
 
     async def test_obsolete_cenv_is_rejected_on_tcp_and_udp(self):
         await self.start(Policy())

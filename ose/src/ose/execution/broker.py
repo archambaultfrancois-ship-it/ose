@@ -12,7 +12,7 @@ from ose.delivery.stores import MemoryStore
 from ose.delivery.messages import validate_app_id
 from ose.transport.tcp import TCP, start_server
 from ose.transport.udp import UDP
-from ose.transport.protocol import encode
+from ose.transport.protocol import encode_prefix
 from ose.parameters.service import ParameterEndpoint, OPERATIONS as PARAMETER_OPERATIONS
 from ose.recording.taps import TapHub, OPERATIONS as RECORDING_OPERATIONS
 from ose.execution.observation import describe, ObservationDemand, subscription_schema
@@ -167,6 +167,9 @@ class Broker(Sessions):
 
     async def _connection(self, reader, writer):
         task = asyncio.current_task()
+        loop = asyncio.get_running_loop()
+        eager_publication = getattr(asyncio, 'eager_task_factory', None)
+        frames = 0
         self.connections.add(task)
         peer, node = TCP(reader, writer, self.plan["max_frame"]), None
         data_subscription = None
@@ -178,6 +181,10 @@ class Broker(Sessions):
         try:
             while not self.closing:
                 header, body = await peer.receive()
+                frames += 1
+                if frames >= 32:
+                    frames = 0
+                    await asyncio.sleep(0)  # Bound work from a fully buffered peer.
                 op = header["op"]
                 if op in PARAMETER_OPERATIONS:
                     try:
@@ -220,9 +227,17 @@ class Broker(Sessions):
                     if len(publications) >= 32:
                         await self._reply(peer, header.get("request"), error="too many pending publications")
                     else:
-                        publication = asyncio.create_task(self._publish_reply(peer, node, header, body, session))
-                        publications.add(publication)
-                        publication.add_done_callback(publications.discard)
+                        work = self._publish_reply(peer, node, header, body, session)
+                        # Python 3.12+ can finish immediate admission/reply in
+                        # this turn, while a blocked admission or drain remains
+                        # an independent task and never holds up reading ACKs.
+                        publication = (eager_publication(loop, work) if eager_publication is not None and loop.get_task_factory() is None
+                                       else asyncio.create_task(work))
+                        if publication.done():
+                            publication.result()
+                        else:
+                            publications.add(publication)
+                            publication.add_done_callback(publications.discard)
                     continue
                 if op in ('component_status', 'component_set', 'component_poll', 'component_ack'):
                     if len(status_reads) >= 32:
@@ -502,6 +517,7 @@ class Broker(Sessions):
                 descriptor = self.producers.members[session.identity, topic] if session else self.topics[topic]
                 result = await self.publish(header["topic"], body, descriptor=descriptor,
                     producer=session.identity if session else self.generations.get(node, self.epoch),
+                    _yield_for_delivery=False,
                     **({"app_id": header["app_id"]} if "app_id" in header else {}))
                 await self._reply(peer, header["request"], result)
             except (ValueError, KeyError) as error:
@@ -530,7 +546,8 @@ class Broker(Sessions):
                 return
         raise ValueError("unknown UDP peer")
 
-    async def publish(self, topic, envelope, *, app_id=None, descriptor=None, producer=None):
+    async def publish(self, topic, envelope, *, app_id=None, descriptor=None, producer=None,
+                      _yield_for_delivery=True):
         if app_id is not None:
             validate_app_id(app_id)
         port = descriptor or self.topics[topic]
@@ -557,7 +574,8 @@ class Broker(Sessions):
             target = sub['to'].split('.')[0]
             if target in self.components.observed and self.components.observed[target] is False:
                 return identity, 'disabled'
-            value = dict(record, target_version=self.components.desired[target]['version']) if target in self.components.desired else record
+            value = (dict(record, target_version=self.components.desired[target]['version'])
+                     if target in self.components.desired else dict(record))
             if not self._fits(identity, value, envelope):
                 return identity, "oversize"
             deadline = time.monotonic() + engine.policy.wait_timeout_ms / 1000
@@ -578,11 +596,15 @@ class Broker(Sessions):
                     return identity, "full"
         # Snapshot only this topic's routes before admission can suspend.
         matching = list(self.subscriptions_by_topic.get(topic, {}).items())
-        if len(matching) == 1:
-            identity, result = await admit(*matching[0])
-            results[identity] = result
+        if len(matching) <= 1 or all(self.engines[key].policy.overflow != 'wait' for key, _ in matching):
+            # Non-waiting admissions cannot suspend. Avoid creating one task
+            # per route for the usual FIFO/drop and latest-value policies.
+            for pair in matching:
+                identity, result = await admit(*pair)
+                results[identity] = result
             # Keep delivery and ACK tasks running when admission completes inline.
-            await asyncio.sleep(0)
+            if _yield_for_delivery:
+                await asyncio.sleep(0)
         else:
             for identity, result in await asyncio.gather(*(admit(*pair) for pair in matching)):
                 results[identity] = result
@@ -598,7 +620,9 @@ class Broker(Sessions):
         engine = self.engines[identity]
         limit = self.plan["max_datagram"] if engine.policy.transport == "udp" else self.plan["max_frame"]
         try:
-            encode(self._header(identity, record), envelope, limit)
+            # The route/version/body are immutable for this queued delivery.
+            # Keep only its small prefix; never serialize the payload for sizing.
+            record['_wire_prefix'] = encode_prefix(self._header(identity, record), len(envelope), limit)
         except ValueError:
             engine.metrics["failed"] += 1
             return False
@@ -607,8 +631,8 @@ class Broker(Sessions):
     async def _send_loop(self, identity, engine):
         sub = self.subscriptions[identity]
         node = sub["to"].split(".")[0]
+        changed = engine.store.changed
         while not self.closing and not sub.get("closing", False):
-            engine.store.changed.clear()
             available, failed = False, False
             external = self.sessions.get(sub.get("session"))
             if self.enabled and sub.get("active", True) and (external is not None or node in self.peers):
@@ -616,30 +640,69 @@ class Broker(Sessions):
                 tcp = self.data_peers.get(identity) if external or node in self.dedicated_data else control
                 if engine.policy.transport == "udp" or tcp is not None:
                     available = True
+                    batch, batch_bytes = [], 0
+
+                    async def flush():
+                        nonlocal batch_bytes
+                        if not batch:
+                            return
+                        # Never cancel/rewrite a backpressured write. Keep the
+                        # batch pending until drain completes, including retries.
+                        await tcp._send_parts([parts for _, parts in batch])
+                        for identity, _ in batch:
+                            engine.sent(identity)
+                        batch.clear()
+                        batch_bytes = 0
+                        await asyncio.sleep(0)
+
                     for record in list(engine.due(limit=32)):
                         if not engine.store.has_pending(record["id"]):
                             continue
                         try:
-                            header, body = self._header(identity, record), record["body"]
+                            body = record["body"]
                             if engine.policy.transport == "tcp":
-                                # Preserve the one pending write while drain is backpressured.
-                                # Cancelling and rewriting would append duplicates to the transport buffer.
-                                await tcp.send(header, body)
+                                prefix = record.get('_wire_prefix')
+                                if prefix is None:
+                                    prefix = encode_prefix(self._header(identity, record), len(body), self.plan['max_frame'])
+                                size = len(prefix) + len(body) + 4
+                                if batch and batch_bytes + size > 256 * 1024:
+                                    await flush()
+                                if not engine.store.has_pending(record['id']):
+                                    continue  # ACK/eviction while the previous batch drained.
+                                batch.append((record['id'], (prefix, body)))
+                                batch_bytes += size
+                                if batch_bytes >= 256 * 1024:
+                                    await flush()
                             else:
-                                await self.udp.send(header, body, udp_address)
-                            engine.sent(record["id"])
-                            await asyncio.sleep(0)
+                                await self.udp.send(self._header(identity, record), body, udp_address)
+                                engine.sent(record["id"])
+                                await asyncio.sleep(0)
                         except (ConnectionError, asyncio.TimeoutError):
                             failed = True
                             break
                         except ValueError as error:
                             engine.fail(record["id"], str(error))
+                    if batch and not failed:
+                        try:
+                            await flush()
+                        except (ConnectionError, asyncio.TimeoutError):
+                            failed = True
+            # Enqueue/ACK activity while drain awaited is reflected in the
+            # current heap. Clear our own sent/remove notifications before
+            # reading it, so they do not trigger a redundant empty iteration.
+            # No await separates this clear, deadline read and waiter setup.
+            changed.clear()
             deadline = engine.store.next_deadline() if available and not failed else None
             timeout = max(0, deadline - engine.clock()) if deadline is not None else None
-            try:
-                await asyncio.wait_for(engine.store.changed.wait(), timeout)
-            except asyncio.TimeoutError:
-                pass
+            if timeout is None:
+                await changed.wait()
+            elif timeout == 0:
+                await asyncio.sleep(0)
+            else:
+                try:
+                    await asyncio.wait_for(changed.wait(), timeout)
+                except asyncio.TimeoutError:
+                    pass
 
     def snapshot(self):
         from ose.execution.identity import describe

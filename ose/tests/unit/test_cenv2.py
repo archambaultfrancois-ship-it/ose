@@ -5,8 +5,10 @@ from pathlib import Path
 import random
 import struct
 import unittest
+from unittest.mock import patch
 
-from ose.transport.protocol import decode, encode, MAGIC, MAX_METADATA
+from ose.transport.protocol import decode, encode, encode_prefix, MAGIC, MAX_METADATA
+from ose.transport import protocol
 
 VECTORS = Path(__file__).resolve().parents[2] / "sdk/client/rust/tests/fixtures/cenv2.json"
 
@@ -16,6 +18,58 @@ def packet(code, metadata, body=b""):
 
 
 class Cenv2Tests(unittest.TestCase):
+    @unittest.skipIf(protocol.native is None, 'build OSE native extension')
+    def test_native_compact_encoder_matches_python_shapes_boundaries_and_errors(self):
+        rng = random.Random(194)
+        cases = [v['header'] for v in json.loads(VECTORS.read_text())]
+        base = dict(op='data', subscription='link-é水', id='epoch:1', epoch='epoch',
+                    sequence=2**64-1, topic='source.out')
+        for _ in range(200):
+            header = dict(base, sequence=rng.randrange(2**64), id=str(rng.randrange(2**64)))
+            if rng.randrange(2):
+                header['app_id'] = rng.randrange(2**64)
+            if rng.randrange(2):
+                header['target_version'] = rng.randrange(10)
+            cases.append(header)
+        for field in base:
+            if field == 'op':
+                continue
+            for value in (None, True, -1, 2**64, 1.5, '', 'é'*32768, '\ud800', [], {}):
+                cases.append(dict(base, **{field:value}))
+            missing = dict(base)
+            del missing[field]
+            cases.append(missing)
+        for header in cases:
+            for limit in (64, 1024*1024):
+                outcomes = []
+                for kernel in (None, protocol.native):
+                    with patch.object(protocol, 'native', kernel):
+                        try:
+                            outcomes.append(('ok', encode(header, b'\x00\xffbody', limit)))
+                        except (ValueError, TypeError) as error:
+                            outcomes.append(('error', type(error)))
+                self.assertEqual(outcomes[0], outcomes[1], repr(header)[:200])
+
+    def test_prefix_size_and_wire_bytes_match_for_compact_and_generic_metadata(self):
+        headers = [v['header'] for v in json.loads(VECTORS.read_text())]
+        headers += [dict(op='data', subscription='é', id='id', epoch='epoch',
+                         sequence=2**64-1, topic='source.out', target_version=1)]
+        for header in headers:
+            for size in (0, 1, 8192):
+                payload = b'x' * size
+                expected = encode(header, payload)
+                prefix = encode_prefix(header, size)
+                self.assertEqual(prefix + payload, expected)
+                self.assertEqual(encode_prefix(header, size, len(expected)), prefix)
+                with self.assertRaises(ValueError):
+                    encode_prefix(header, size, len(expected)-1)
+        # A size-only check must not need a corresponding body allocation.
+        with self.assertRaises(ValueError):
+            encode_prefix({'op': 'state'}, 1 << 40)
+        for invalid in (-1, True, 1.5):
+            with self.assertRaises(ValueError):
+                encode_prefix({'op': 'state'}, invalid)
+
     def test_shared_python_rust_wire_vectors_and_buffer_ownership(self):
         for fixture in json.loads(VECTORS.read_text()):
             with self.subTest(name=fixture["name"]):

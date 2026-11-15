@@ -9,6 +9,7 @@ import struct
 from ose.delivery.messages import validate_app_id
 from ose.execution.ipc import MAX_SIZE, frame
 from ose.timing import MAX_NS
+from ose.acceleration import native
 
 READY = b"\x02"
 EVENTS = {"message": 1, "timeout": 2}
@@ -70,6 +71,8 @@ class Reader:
 
 
 def record_data(record):
+    if native is not None and (record is None or isinstance(record['body'], bytes)):
+        return native.record_data(record)
     if record is None:
         return b"\0"
     body = bytes(record["body"])
@@ -113,6 +116,8 @@ class Activation:
 
 
 def activation_data(reference, index):
+    if native is not None and (reference.record is None or isinstance(reference.record['body'], bytes)):
+        return native.activation_data(reference, index)
     if not index or not reference.elapsed or reference.due_ns > reference.time_ns:
         raise ValueError("invalid CH/2 activation context")
     return (uint64(reference.time_ns) + uint64(index) + uint64(reference.due_ns) + uint64(reference.elapsed)
@@ -192,8 +197,20 @@ def unpack_request(data):
 
 
 def check_record_size(port, record):
+    if native is not None and (record is None or isinstance(record['body'], bytes)):
+        return native.check_record_size(port, record)
     # Account for the larger activation message even for a passive inbox.
-    size = 33 + len(text(port)) + len(record_data(record))
+    size = 33 + len(text(port))
+    if record is None:
+        size += 1
+    else:
+        body = record['body']
+        length = len(body) if isinstance(body, bytes) else len(bytes(body))
+        if not length:
+            raise ValueError('empty CH/2 message envelope')
+        size += (1 + len(text(record['id'])) + len(text(record['topic']))
+                 + len(optional_id(record.get('app_id'))) + len(uint64(record.get('received_ns', 0)))
+                 + len(text(record['catalogue'], wide=True)) + length)
     if size + 1 > MAX_SIZE:
         raise ValueError("message exceeds CH/2 input reference limit")
 

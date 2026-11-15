@@ -124,7 +124,7 @@ class Sessions:
         self.subscriptions[identity], self.engines[identity] = sub, engine
         session.subscriptions.add(identity)
         if policy.buffer == "latest" and topic in self.retained:
-            record = self.retained[topic]
+            record = dict(self.retained[topic])
             if not self._fits(identity, record, record["body"]):
                 session.subscriptions.remove(identity)
                 del self.subscriptions[identity], self.engines[identity]

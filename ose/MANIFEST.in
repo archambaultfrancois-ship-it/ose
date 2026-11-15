@@ -8,3 +8,6 @@ prune build
 prune examples/shared_parameters/build
 prune sdk/rust/target
 global-exclude *.pyc
+include native/runtime.c
+include tools/build_native.py
+include tools/bench_broker.py

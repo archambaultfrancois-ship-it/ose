@@ -1,6 +1,7 @@
 """Runtime-only SDL operations; no model, generator or checkout is required."""
 import importlib
 from functools import lru_cache
+from ose.acceleration import native
 
 
 class Runtime:
@@ -8,9 +9,11 @@ class Runtime:
         self.api = api or importlib.import_module("sdl_runtime")
         # Per-instance, bounded, and keyed by full text rather than the short wire ID.
         self._prepare_validation = lru_cache(maxsize=64)(self.api.prepare)
+        self._identity = lru_cache(maxsize=64)(self.api.catalogue_id)
+        self._native_validation = lru_cache(maxsize=64)(native.prepare) if native else None
 
     def identity(self, text):
-        return self.api.catalogue_id(text)
+        return self._identity(text)
 
     def compare(self, publisher, consumer, root):
         report = self.api.compare_catalogues(publisher, consumer, root=root, require_required=True)
@@ -31,6 +34,16 @@ class Runtime:
 
     def validate_only(self, text, root, envelope):
         """Check an envelope and every payload field without building a message."""
+        if native is not None and getattr(self.api, '__name__', None) == 'sdl_runtime':
+            if not isinstance(envelope, (bytes, bytearray, memoryview)):
+                raise ValueError('invalid envelope input')
+            try:
+                native.validate(self._native_validation(text, root), bytes(envelope))
+                return
+            except ValueError:
+                # Keep the public Python diagnostics on malformed input. The
+                # ordinary successful path does not repeat validation.
+                pass
         identity, payload = self.api.unpack_envelope(envelope)
         if identity != self.identity(text):
             raise ValueError("catalogue identity mismatch")

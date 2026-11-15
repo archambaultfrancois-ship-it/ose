@@ -1,6 +1,6 @@
 # Thermal Workshop — OSE Web Console load application
 
-Twenty Python components model four independently heated cells, with four local
+Sixteen Python components and four C analyzers model four independently heated cells, with four local
 feedback loops and four supervisory feedback paths. This is a synthetic workload
 for **ose-ws**, not a physical plant model or a performance benchmark result.
 It uses the actual SDL generated codecs, OSE processes, queues and parameter RPCs.
@@ -159,9 +159,30 @@ make build LOAD=busy
 make test
 ```
 
+The complete analyzer uses the generated C SDK for decoding, shared parameters,
+callbacks, publishing and measurements. A C99 compiler and libm are required.
+`components/analyzer.py` remains the reference implementation; select it with
+`make build LOAD=stress ANALYZER=python`, or `--analyzer python` on
+`tools/workshop.py`. The default is `ANALYZER=c`.
+
+Normal application builds also compile `native/workload.c` into `build/native/`
+with the selected Python's development headers. Generated component environments
+load this module directly: plant sample generation and the optional Python
+analyzer's burn loop run in C. The callback code uses ordinary imports and calls,
+without source transformations. The helpers have a Python
+fallback for running handlers independently of an application build. Runtime IPC,
+parameter caching and simulation observation optimizations are provided by OSE;
+build its optional extension with `make -C ../ose native`.
+
+The C analyzer uses ordinary double accumulation and multiplication for squared
+deviations. Tests check numerical agreement within tolerance, message structure,
+and measurements. Rounding and simulation trace hashes can differ from Python.
+Workload logs retain their fields and cadence; C formats floating values with
+17 significant digits instead of Python's shortest representation.
+
 `model.json` and `deployment.json` are editable source files. The preparation
 script selects a load profile and resolves paths into ignored `build/prepared/`;
-generated containers and SDL Python types are in `build/components/`.
+generated containers and SDL bindings are in `build/components/`.
 Tests build the actual application in an isolated temporary directory, exercise
 all 20 subprocesses and feedback, round-trip changing nested messages through
 SDL, and verify ose-ws graph, parameter, log and measurement APIs. A real-time

@@ -1,7 +1,7 @@
 import asyncio
 import json
 import struct
-from ose.transport.protocol import encode, decode, PREFIX_SIZE
+from ose.transport.protocol import encode_prefix, decode, PREFIX_SIZE
 
 
 class RemoteError(ValueError):
@@ -68,9 +68,46 @@ class TCP:
         self.lock = asyncio.Lock()
 
     async def send(self, header, payload=b""):
-        packet = encode(header, payload, self.limit)
+        if isinstance(payload, (bytearray, memoryview)):
+            payload = bytes(payload)  # Freeze mutable buffers before waiting for the lock.
+        prefix = encode_prefix(header, len(payload), self.limit)
         async with self.lock:
-            self.writer.write(struct.pack(">I", len(packet)) + packet)
+            self.writer.write(b''.join((struct.pack('>I', len(prefix) + len(payload)), prefix, payload)))
+            await self.writer.drain()
+
+    async def _send_parts(self, messages):
+        """Frame metadata/body pairs in one copy, within the caller's batch bound."""
+        parts = []
+        for prefix, payload in messages:
+            if isinstance(prefix, (bytearray, memoryview)):
+                prefix = bytes(prefix)
+            if isinstance(payload, (bytearray, memoryview)):
+                payload = bytes(payload)
+            size = len(prefix) + len(payload)
+            if len(prefix) < PREFIX_SIZE or size > self.limit:
+                raise ValueError('invalid TCP frame length')
+            parts.extend((struct.pack('>I', size), prefix, payload))
+        if not parts:
+            return
+        async with self.lock:
+            self.writer.write(b''.join(parts))
+            await self.writer.drain()
+
+    async def _send_packets(self, packets):
+        """Write a broker-bounded batch of already encoded CENV/2 packets.
+
+        Hold the connection lock through drain, exactly as for a single send.
+        Callers mark deliveries sent only after this returns successfully.
+        """
+        parts = []
+        for packet in packets:
+            if not PREFIX_SIZE <= len(packet) <= self.limit:
+                raise ValueError('invalid TCP frame length')
+            parts.extend((struct.pack('>I', len(packet)), packet))
+        if not parts:
+            return
+        async with self.lock:
+            self.writer.write(b''.join(parts))
             await self.writer.drain()
 
     async def receive(self):

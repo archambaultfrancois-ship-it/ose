@@ -14,7 +14,7 @@ from ose.codec.sdl2 import SDL2
 from ose.delivery.policies import SubscriptionPolicy as Policy
 from ose.execution.adapter import Adapter
 from ose.execution.broker import Broker
-from ose.transport.protocol import encode
+from ose.transport.protocol import encode, decode
 from ose.transport.tcp import Client, TCP
 
 SDL_ROOT = os.environ.get("SDL_ROOT")
@@ -98,6 +98,107 @@ class DeliveryLimitTests(unittest.IsolatedAsyncioTestCase):
             await eventually(lambda: broker.engines["link"].store.size() == 0)
             self.assertEqual(len(writer.writes), 1)
             self.assertEqual(broker.engines["link"].metrics["retries"], 0)
+        finally:
+            release.set()
+
+    async def test_blocked_batch_preserves_acks_and_retries_without_resurrecting_records(self):
+        self.plan['subscriptions'][0]['policy'] = Policy(
+            capacity=8, ack='received', ack_timeout_ms=30, max_retries=1).to_dict()
+        broker = await self.start()
+        engine = broker.engines['link']
+        entered, release = asyncio.Event(), asyncio.Event()
+        writes = []
+        class Writer:
+            def write(self, packet): writes.append(packet)
+            async def drain(self):
+                entered.set()
+                await release.wait()
+        for n in range(3):
+            await broker.publish('source.output', self.envelope(n))
+        identities = [r['id'] for r in engine.store.records()]
+        broker.peers['sink'] = (TCP(None, Writer()), ('127.0.0.1', 1))
+        broker.enabled = True
+        try:
+            await asyncio.wait_for(entered.wait(), 1)
+            await asyncio.sleep(.1)
+            self.assertEqual(len(writes), 1)
+            self.assertEqual(engine.metrics['sent'], 0)
+            # ACKs can arrive before a blocked drain returns.
+            engine.acknowledge(identities[0])
+            release.set()
+            await eventually(lambda: engine.metrics['failed'] == 2)
+            self.assertEqual(engine.store.size(), 0)
+            self.assertEqual(engine.metrics['retries'], 2)
+            received = []
+            for packet in writes:
+                offset = 0
+                while offset < len(packet):
+                    size = struct.unpack_from('>I', packet, offset)[0]
+                    header, _ = decode(packet, start=offset+4, end=offset+4+size)
+                    received.append(header['id'])
+                    offset += size+4
+            self.assertEqual(received, identities + identities[1:])
+        finally:
+            release.set()
+
+    async def test_tcp_batches_bound_bytes_and_preserve_fifo_across_batches(self):
+        text = 'SDL2|Large{1:uint8[10000]:data;}'
+        port = dict(root='Large', catalogue=text, catalogue_id=self.codec.identity(text))
+        self.plan['components']['source']['outputs']['output'] = port
+        self.plan['components']['sink']['inputs']['input'] = copy.deepcopy(port)
+        self.plan['subscriptions'][0]['policy'] = Policy(capacity=64).to_dict()
+        broker = await self.start()
+        writes = []
+        class Writer:
+            def write(self, packet): writes.append(packet)
+            async def drain(self): pass
+        envelope = self.codec.wrap(text, b'\x01' + b'\0' * 10000)
+        for _ in range(40):
+            await broker.publish('source.output', envelope)
+        expected = [r['id'] for r in broker.engines['link'].store.records()]
+        broker.peers['sink'] = (TCP(None, Writer()), ('127.0.0.1', 1))
+        broker.enabled = True
+        await eventually(lambda: broker.engines['link'].store.size() == 0)
+        received = []
+        for packet in writes:
+            self.assertLessEqual(len(packet), 256 * 1024)
+            offset, count = 0, 0
+            while offset < len(packet):
+                size = struct.unpack_from('>I', packet, offset)[0]
+                header, body = decode(packet, start=offset+4, end=offset+4+size)
+                self.assertEqual(body, envelope)
+                received.append(header['id'])
+                offset += size+4
+                count += 1
+            self.assertLessEqual(count, 32)
+        self.assertEqual(len(writes), 3)
+        self.assertEqual(received, expected)
+
+    async def test_enqueue_during_blocked_drain_needs_no_later_notification(self):
+        broker = await self.start()
+        entered, release = asyncio.Event(), asyncio.Event()
+        writes = []
+        class Writer:
+            def write(self, packet): writes.append(packet)
+            async def drain(self):
+                entered.set()
+                await release.wait()
+        await broker.publish('source.output', self.envelope(1))
+        broker.peers['sink'] = (TCP(None, Writer()), ('127.0.0.1', 1))
+        broker.enabled = True
+        try:
+            await asyncio.wait_for(entered.wait(), 1)
+            await broker.publish('source.output', self.envelope(2))
+            self.assertEqual(broker.engines['link'].store.size(), 2)
+            release.set()
+            # No publication/ACK or other notification follows. The current
+            # queue deadline must keep the newly enqueued delivery runnable.
+            await eventually(lambda: broker.engines['link'].store.size() == 0)
+            self.assertEqual(len(writes), 2)
+            for number, packet in enumerate(writes, 1):
+                size = struct.unpack_from('>I', packet)[0]
+                _, body = decode(packet, start=4, end=4+size)
+                self.assertEqual(body, self.envelope(number))
         finally:
             release.set()
 

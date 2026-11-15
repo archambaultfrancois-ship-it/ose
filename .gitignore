@@ -1,4 +1,5 @@
 /build/
+*.so
 __pycache__/
 .ose-ws/
 .ose-editor/

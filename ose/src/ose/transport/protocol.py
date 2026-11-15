@@ -1,8 +1,10 @@
 """CENV/2: bounded binary metadata and an unchanged opaque message body."""
 import math
 import struct
+import sys
 
 from ose.delivery.messages import validate_app_id
+from ose.acceleration import native
 
 MAGIC = b"CE\x02"
 PREFIX_SIZE = 8
@@ -173,8 +175,17 @@ class _Reader:
         raise ValueError("unknown CENV/2 value tag")
 
 
-def encode(header, payload=b"", limit=1024 * 1024):
+def encode_prefix(header, payload_size=0, limit=1024 * 1024):
+    """Validate metadata/total size without copying or inspecting the body."""
+    if type(payload_size) is not int or payload_size < 0:
+        raise ValueError('invalid transport payload size')
     _header(header)
+    if (native is not None and hasattr(native, 'cenv_prefix')
+            and type(limit) is int and -sys.maxsize <= limit <= sys.maxsize
+            and payload_size <= sys.maxsize):
+        prefix = native.cenv_prefix(header, payload_size, limit)
+        if prefix is not None:
+            return prefix
     schema = _COMPACT.get(header["op"])
     compact = _compact(header, schema) if schema is not None else None
     if compact is None:
@@ -185,9 +196,13 @@ def encode(header, payload=b"", limit=1024 * 1024):
         code, metadata = compact
     if len(metadata) > MAX_METADATA:
         raise ValueError("metadata exceeds 64 KiB")
-    if PREFIX_SIZE + len(metadata) + len(payload) > limit:
+    if PREFIX_SIZE + len(metadata) + payload_size > limit:
         raise ValueError("transport message exceeds configured size limit")
-    return MAGIC + bytes([code]) + _U32.pack(len(metadata)) + metadata + payload
+    return MAGIC + bytes([code]) + _U32.pack(len(metadata)) + metadata
+
+
+def encode(header, payload=b"", limit=1024 * 1024):
+    return encode_prefix(header, len(payload), limit) + payload
 
 
 def _read_compact(schema, data, offset, end):

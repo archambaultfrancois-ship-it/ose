@@ -4,7 +4,7 @@ import struct
 import unittest
 from unittest.mock import AsyncMock, Mock
 
-from ose.transport.protocol import encode
+from ose.transport.protocol import encode, encode_prefix
 from ose.transport.tcp import Client, TCP, _FrameReader, open_connection, start_server
 
 
@@ -14,6 +14,72 @@ def wire(header, body=b''):
 
 
 class ClientDisconnectTests(unittest.IsolatedAsyncioTestCase):
+    async def test_batch_writes_complete_frames_once_and_holds_lock_through_drain(self):
+        entered, release = asyncio.Event(), asyncio.Event()
+        writes = []
+        async def drain():
+            entered.set()
+            await release.wait()
+        peer = TCP(None, Mock(write=writes.append, drain=drain))
+        packets = [encode({'op': 'state', 'request': n}, b'x' * n) for n in (1, 2)]
+        messages = [(encode_prefix({'op':'state', 'request':n}, n), b'x'*n) for n in (1, 2)]
+        batch = asyncio.create_task(peer._send_parts(messages))
+        await entered.wait()
+        single = asyncio.create_task(peer.send({'op': 'state', 'request': 3}))
+        await asyncio.sleep(0)
+        self.assertEqual(writes, [b''.join(struct.pack('>I', len(p)) + p for p in packets)])
+        self.assertFalse(batch.done())
+        self.assertFalse(single.done())
+        release.set()
+        await asyncio.gather(batch, single)
+        self.assertEqual(writes[1], wire({'op': 'state', 'request': 3}))
+
+    async def test_batch_validates_every_frame_before_writing(self):
+        writer = Mock(drain=AsyncMock())
+        peer = TCP(None, writer, limit=1024)
+        for invalid in (b'', b'x'*1025):
+            with self.assertRaises(ValueError):
+                await peer._send_packets([encode({'op':'state'}), invalid])
+        await peer._send_packets([])
+        writer.write.assert_not_called()
+        writer.drain.assert_not_called()
+
+    async def test_metadata_body_parts_match_wire_and_validate_before_writing(self):
+        writes = []
+        writer = Mock(write=writes.append, drain=AsyncMock())
+        peer = TCP(None, writer, limit=1024)
+        header = {'op':'publish','request':1,'topic':'é.input','app_id':0}
+        body = b'\0\xffbody'
+        prefix = encode_prefix(header, len(body), 1024)
+        await peer._send_parts([(prefix, body), (prefix, memoryview(body))])
+        self.assertEqual(writes, [wire(header, body)*2])
+        self.assertEqual(writer.drain.await_count, 1)
+        writes.clear()
+        for invalid in ((b'x'*7, b''), (prefix, b'x'*1024)):
+            with self.assertRaises(ValueError):
+                await peer._send_parts([(prefix, body), invalid])
+        await peer._send_parts([])
+        self.assertEqual(writes, [])
+        self.assertEqual(writer.drain.await_count, 1)
+
+    async def test_mutable_bodies_are_frozen_before_waiting_for_the_write_lock(self):
+        for method in ('send', 'parts'):
+            writes = []
+            peer = TCP(None, Mock(write=writes.append, drain=AsyncMock()), limit=1024)
+            header, payload = {'op':'state'}, bytearray(b'body')
+            prefix = bytearray(encode_prefix(header, len(payload)))
+            await peer.lock.acquire()
+            if method == 'send':
+                task = asyncio.create_task(peer.send(header, payload))
+            else:
+                task = asyncio.create_task(peer._send_parts([(prefix, payload)]))
+            await asyncio.sleep(0)
+            payload[:] = b'x' * 2048
+            prefix[:] = b'corrupted'
+            peer.lock.release()
+            await task
+            self.assertEqual(writes, [wire(header, b'body')])
+
     async def test_request_after_reader_eof_fails_without_waiting_for_rpc_timeout(self):
         reader = _FrameReader()
         writer = Mock(drain=AsyncMock())

@@ -6,6 +6,7 @@ import importlib.util
 import inspect
 from pathlib import Path
 import sys
+import copy
 from ose.execution.component_io import RecordResult
 
 
@@ -28,6 +29,7 @@ class ComponentContext:
         if set(self.parameter_types) != set(self.config.get('parameter_bindings', {})):
             raise ValueError('generated parameter bindings differ from INIT; rebuild the container')
         self._parameter_codecs = {}
+        self._parameter_cache = {}
         for alias, cls in self.parameter_types.items():
             binding = self.config['parameter_bindings'][alias]
             if codec.api.message_name(cls) != binding['root']:
@@ -92,10 +94,14 @@ class ComponentContext:
         if binding is None or 'read' not in binding['access']:
             raise ValueError('parameter read access denied')
         catalogue, payload = self.session.parameter_values[alias]
-        value = self.codec.api.decode(self._parameter_codecs[alias], payload)
-        if not isinstance(value, self.parameter_types[alias]):
-            raise ValueError('wrong parameter message root')
-        return value
+        previous = self._parameter_cache.get(alias)
+        if previous is None or previous[0] != payload:
+            value = self.codec.api.decode(self._parameter_codecs[alias], payload)
+            if not isinstance(value, self.parameter_types[alias]):
+                raise ValueError('wrong parameter message root')
+            previous = payload, value
+            self._parameter_cache[alias] = previous
+        return copy.deepcopy(previous[1])
 
     def set_parameter(self, alias, value):
         if not self._parameter_writes:

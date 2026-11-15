@@ -34,6 +34,7 @@ class SessionIO:
             reader = self.channel.makefile('rb', buffering=0)
             writer = self.channel.makefile('wb', buffering=0)
         self.reader, self.writer = reader, writer
+        self._pending = bytearray()
         try:
             self._initialize()
         except BaseException:
@@ -47,6 +48,12 @@ class SessionIO:
         self.close()
 
     def close(self):
+        try:
+            self.flush()
+        finally:
+            self._close_streams()
+
+    def _close_streams(self):
         # Explicit streams are owned by the caller (including in-memory tests).
         if self.channel is not None:
             self.reader.close()
@@ -80,6 +87,7 @@ class SessionIO:
         self.time_ns, self.tick_index = 0, 0
 
     def receive(self):
+        self.flush()  # A synchronous request must reach the adapter before reading.
         size = struct.unpack(">I", read_exact(self.reader, 4))[0]
         if not 1 <= size <= MAX_SIZE:
             raise ValueError("invalid IPC size")
@@ -87,13 +95,28 @@ class SessionIO:
         return chr(body[0]), body[1:]
 
     def send(self, op, data=b""):
-        data = memoryview(frame(op, data))
-        while data:
-            written = self.writer.write(data)
-            if not written:
-                raise EOFError('component IPC disconnected')
-            data = data[written:]
-        self.writer.flush()
+        packet = frame(op, data)
+        if len(self._pending) + len(packet) > 65536:
+            self.flush()
+        self._pending.extend(packet)
+        if (len(self._pending) >= 65536 or op not in ('P', 'V', 'C', 'L')
+                or not getattr(self, '_in_callback', False)):
+            self.flush()
+
+    def flush(self):
+        if not self._pending:
+            return
+        data = memoryview(self._pending)
+        try:
+            while data:
+                written = self.writer.write(data)
+                if not written:
+                    raise EOFError('component IPC disconnected')
+                data = data[written:]
+            self.writer.flush()
+        finally:
+            data.release()
+        self._pending.clear()
 
     def log(self, level, message, logger=''):
         from ose.execution.logs import log_body

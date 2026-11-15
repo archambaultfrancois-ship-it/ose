@@ -10,6 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 import signal
+import time
 import uuid
 
 from ose.execution.plan import read_plan
@@ -50,6 +51,7 @@ class SimulationServer:
         self.ready = asyncio.Event()
         self.state, self.error = 'preparing', None
         self.cached = {}
+        self._next_observation = 0
         self.sequence = 0
 
     async def start(self, port=0):
@@ -87,14 +89,24 @@ class SimulationServer:
         self.state, self.error = 'preparing', None
         self.ready.clear()
         self.cached = {}
+        self._next_observation = 0
         self.engine = Simulation(self.plan, self.duration, controller=self.control,
                                  observer=self._observe, **options)
         from ose.execution.telemetry import ProcessResources
         self.resources = {name: ProcessResources() for name in self.engine.order}
         self.parameters = ParameterEndpoint(self.plan, self.engine.codec, service=self.engine.parameter_service)
 
-    def _observe(self, engine):
+    def _observe(self, engine, *, force=False):
         self._drain_logs(engine)
+        now = time.monotonic()
+        control = self.control
+        boundary = control.boundary()
+        if not (force or self.state == 'preparing' or control.paused
+                or boundary is not None and engine.clock.time_ns >= boundary
+                or control.micro_quota is not None or control.instant_quota is not None
+                or engine.reason != 'failed' or now >= self._next_observation):
+            return
+        self._next_observation = now + .05
         observation = describe(self.plan)
         rows = {}
         for name in engine.order:
@@ -160,7 +172,7 @@ class SimulationServer:
             capabilities={'control': True, 'reset': self.keep_alive, 'workers': True, 'persistent_breakpoints': True, 'parameters': True,
                           'measurements': True, 'logs': True, 'recordings': False, 'live': False},
             semantics={'time_boundary': 'exclusive', 'rates_clock': 'simulated',
-                       'measurements': 'latest values at committed wave boundaries'})
+                       'measurements': 'committed wave snapshots, refresh throttled to 20 Hz while running'})
 
     def snapshot(self):
         result = copy.deepcopy(self.cached) | {'mode': 'simulated', 'epoch': self.epoch, 'execution': self.execution()}
@@ -330,6 +342,12 @@ class SimulationServer:
                 except Exception as error:
                     operation.update(status='failed', error=str(error)[:1000])
                 finally:
+                    # Paused operations expose an exact committed snapshot.
+                    # Commands issued during a running wave must never publish
+                    # its partially received measurements.
+                    if (self.engine.initialized and self.control.paused and not self.control.busy.locked()
+                            and operation['status'] != 'failed' and self.state != 'failed'):
+                        self._observe(self.engine, force=True)
                     if self.active == identity:
                         self.active = None
             task = asyncio.create_task(perform())

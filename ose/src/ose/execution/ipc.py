@@ -1,5 +1,10 @@
 """Shared component framing and named service fields on a private socketpair."""
 import struct
+from collections import deque
+from weakref import WeakKeyDictionary
+from ose.acceleration import native
+
+_receivers = WeakKeyDictionary()
 
 MAX_SIZE = 1024 * 1024
 def frame(op, data=b""):
@@ -38,6 +43,25 @@ def unpack_port(data, with_catalogue=False):
 
 
 async def receive(reader):
+    if native is not None:
+        import asyncio
+        if reader not in _receivers:
+            _receivers[reader] = bytearray(), deque()
+        buffer, pending = _receivers[reader]
+        while not pending:
+            if buffer:
+                frames, consumed = native.unpack_frames(buffer)
+                pending.extend(frames)
+                del buffer[:consumed]
+                if pending:
+                    break
+            data = await reader.read(65536)
+            if not data:
+                if len(buffer) < 4:
+                    raise asyncio.IncompleteReadError(bytes(buffer), 4)
+                raise asyncio.IncompleteReadError(bytes(buffer[4:]), int.from_bytes(buffer[:4], 'big'))
+            buffer.extend(data)
+        return pending.popleft()
     size = struct.unpack(">I", await reader.readexactly(4))[0]
     if not 1 <= size <= MAX_SIZE:
         raise ValueError("invalid IPC size")

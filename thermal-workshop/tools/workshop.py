@@ -15,7 +15,7 @@ PROFILES = {
 }
 
 
-def prepare(load='nominal'):
+def prepare(load='nominal', analyzer=None, native_dir=None):
     profile = PROFILES[load]
     model = json.loads((ROOT / 'model.json').read_text())
     deployment = json.loads((ROOT / 'deployment.json').read_text())
@@ -29,9 +29,16 @@ def prepare(load='nominal'):
             component['inputs']['clock']['timer']['delay'] = profile['period'] * 2
         elif name == 'historian':
             component['inputs']['clock']['timer']['delay'] = profile['period'] * 5
-    for component in deployment['components'].values():
+    for name, component in deployment['components'].items():
+        if analyzer is not None and name.startswith('analyzer_'):
+            suffix = 'c' if analyzer == 'c' else 'py'
+            component['container'] = dict(language=analyzer, handler=f'components/analyzer.{suffix}')
         component['container']['handler'] = str(ROOT / component['container']['handler'])
         component['cwd'] = str(ROOT)
+        if native_dir is not None:
+            environment = component.setdefault('env', {})
+            inherited = environment.get('PYTHONPATH', os.environ.get('PYTHONPATH', ''))
+            environment['PYTHONPATH'] = os.pathsep.join(filter(None, (str(Path(native_dir).resolve()), inherited)))
     return model, deployment
 
 
@@ -41,12 +48,17 @@ def main():
     parser.add_argument('--load', choices=tuple(PROFILES), default='nominal')
     parser.add_argument('--duration', type=float, default=10)
     parser.add_argument('--workers', type=int, default=1)
+    parser.add_argument('--analyzer', choices=('python', 'c'), help='override the deployed analyzer implementation')
     parser.add_argument('--build-dir', type=Path, default=ROOT / 'build')
     args = parser.parse_args()
     build_dir = args.build_dir.resolve()
+    native_dir = build_dir / 'native'
+    if args.action != 'validate':
+        from build_native import build as build_native
+        build_native(native_dir)
     prepared = build_dir / 'prepared'
     prepared.mkdir(parents=True, exist_ok=True)
-    for name, value in zip(('model', 'deployment'), prepare(args.load)):
+    for name, value in zip(('model', 'deployment'), prepare(args.load, args.analyzer, native_dir)):
         (prepared / (name + '.json')).write_text(json.dumps(value, indent=2) + '\n')
     environment = dict(os.environ)
     framework = ROOT.parent

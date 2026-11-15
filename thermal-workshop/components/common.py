@@ -1,5 +1,12 @@
 """Bounded, deterministic workload shared by the workshop handlers."""
 import math
+try:
+    from _thermal_native import samples, burn as _burn
+except ImportError:
+    _burn = None
+
+    def samples(temperature, sequence, channel, count):
+        return [temperature + .2 * math.sin(k * .11 + sequence + channel) for k in range(count)]
 
 
 def clamp(value, low, high):
@@ -25,6 +32,8 @@ def observe(ctx, **metrics):
 
 
 def burn(iterations, seed):
+    if _burn is not None:
+        return _burn(clamp(iterations, 0, 200000), seed)
     value = seed
     for n in range(clamp(iterations, 0, 200000)):
         value = math.sin(value + n * .001) * .5
