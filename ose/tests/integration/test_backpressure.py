@@ -3,6 +3,7 @@ import asyncio
 import copy
 import os
 from pathlib import Path
+import socket
 import struct
 import sys
 import tempfile
@@ -14,6 +15,8 @@ from ose.codec.sdl2 import SDL2
 from ose.delivery.policies import SubscriptionPolicy as Policy
 from ose.execution.adapter import Adapter
 from ose.execution.broker import Broker
+from ose.transport.protocol import decode
+from ose.transport.tcp import TCP
 
 SDL_ROOT = os.environ.get("SDL_ROOT")
 CATALOGUE = "SDL2|Measurement{1:uint64:sequence;2:fl64:value;}"
@@ -157,6 +160,8 @@ class BackpressureTests(unittest.IsolatedAsyncioTestCase):
         blocked = asyncio.Event()
         async def fill_pipe():
             from ose.execution import ipc
+            # Force backpressure even on hosts with large socketpair buffers.
+            adapter.process.ipc_writer.get_extra_info("socket").setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
             blocked.set()
             await ipc.send(adapter.process.ipc_writer, "D", b"x" * 900000)
         adapter._work = fill_pipe
@@ -233,18 +238,32 @@ class BackpressureTests(unittest.IsolatedAsyncioTestCase):
         broker = await self.broker(plan)
         slow_entered, release = asyncio.Event(), asyncio.Event()
         sent = []
-        class Peer:
-            async def send(self, header, payload=b""):
-                if header["subscription"] == "slow":
+        class Writer:
+            def __init__(self, slow=False):
+                self.slow = slow
+
+            def write(self, packet):
+                if self.slow:
+                    return
+                offset = 0
+                while offset < len(packet):
+                    size = struct.unpack_from(">I", packet, offset)[0]
+                    header, _ = decode(packet, start=offset + 4, end=offset + 4 + size)
+                    sent.append(header)
+                    offset += 4 + size
+
+            async def drain(self):
+                if self.slow:
                     slow_entered.set()
-                    # Hold the whole slow flush even when its send timeout cancels this write.
+                    # Hold the slow connection's flush while the other
+                    # subscription continues sending and retrying.
                     try:
                         await release.wait()
                     except asyncio.CancelledError:
                         await release.wait()
-                else:
-                    sent.append(header)
-        broker.peers["sink"] = (Peer(), ("127.0.0.1", 1))
+        broker.peers["sink"] = (SimpleNamespace(), ("127.0.0.1", 1))
+        broker.dedicated_data.add("sink")
+        broker.data_peers.update({port: TCP(None, Writer(slow=port == "slow")) for port in ("slow", "fast")})
         try:
             broker.engines["slow"].enqueue(dict(self.record(1), topic="source.slow"))
             broker.engines["fast"].enqueue(dict(self.record(1), topic="source.fast"))
