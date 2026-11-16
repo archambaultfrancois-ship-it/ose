@@ -3,6 +3,7 @@ import { createApp, h, nextTick, ref } from 'vue'
 import { layout, inputSummary, inputDetails, nodeHeight, nodeWidth, type Topology } from '../src/flow-graph'
 import ComponentsPage from '../src/components/ComponentsPage.vue'
 import model from '../../../vibration-watch/model.json'
+import thermalModel from '../../../thermal-workshop/model.json'
 import { portY } from '../src/flow-graph'
 
 const topology: Topology = {
@@ -27,6 +28,50 @@ it('lays out the real vibration model in producer order without overlapping node
   expect(signal.root).toBe('SignalBlock')
   expect(signal.policy?.capacity).toBe(4)
   expect(layout(JSON.parse(JSON.stringify(topology)))).toEqual(graph)
+})
+
+it.each([false, true])('keeps the real thermal processing chains horizontal with passive feedback (ports=%s)', ports => {
+  const thermal: Topology = {
+    version: 1, components: thermalModel.components,
+    subscriptions: Object.fromEntries(thermalModel.subscriptions.map(sub => [sub.id, { ...sub, policy: sub.qos }])),
+  }
+  const graph = layout(thermal, ports)
+  const nodes = new Map(graph.nodes.map(node => [node.name, node]))
+  expect([...nodes.keys()].sort()).toEqual(Object.keys(thermal.components).sort())
+  expect(graph.edges.map(edge => edge.id).sort()).toEqual(thermalModel.subscriptions.map(sub => sub.id).sort())
+
+  const rows: number[] = []
+  const feedback: string[] = []
+  for (let cell = 1; cell <= 4; cell++) {
+    const chain = ['plant', 'analyzer', 'controller', 'actuator'].map(role => nodes.get(`${role}_${cell}`)!)
+    const centers = chain.map(node => node.y + node.height / 2)
+    expect(new Set(centers).size).toBe(1)
+    rows.push(centers[0])
+    for (let i = 1; i < chain.length; i++) expect(chain[i - 1].x + nodeWidth).toBeLessThan(chain[i].x)
+    feedback.push(`actuator_${cell}-plant_${cell}-feedback`, `supervisor-controller_${cell}-policy`)
+  }
+  expect(new Set(rows).size).toBe(4)
+  expect(graph.edges.filter(edge => edge.feedback).map(edge => edge.id).sort()).toEqual(feedback.sort())
+  expect(graph.edges.filter(edge => edge.mode === 'pull').map(edge => edge.id).sort()).toEqual([...feedback, 'fusion-historian-input'].sort())
+  expect(graph.edges.find(edge => edge.id === 'fusion-historian-input')).toMatchObject({ mode: 'pull', feedback: false })
+  expect(nodes.get('fusion')!.x + nodeWidth).toBeLessThan(nodes.get('historian')!.x)
+
+  for (const edge of graph.edges) {
+    expect(edge.path).toMatch(/^M /)
+    expect(edge.path).not.toMatch(/NaN|Infinity/)
+    if (edge.mode === 'push') {
+      expect(nodes.get(edge.from.split('.')[0])!.x + nodeWidth).toBeLessThan(nodes.get(edge.to.split('.')[0])!.x)
+    }
+  }
+  for (const a of graph.nodes) {
+    expect(a.x).toBeGreaterThanOrEqual(0)
+    expect(a.y).toBeGreaterThanOrEqual(0)
+    expect(a.x + nodeWidth).toBeLessThanOrEqual(graph.width)
+    expect(a.y + a.height).toBeLessThanOrEqual(graph.height)
+    for (const b of graph.nodes) {
+      if (a !== b) expect(a.x + nodeWidth <= b.x || b.x + nodeWidth <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y).toBe(true)
+    }
+  }
 })
 
 it('preserves isolated nodes, parallel links, direct routes and external topics with component prefixes', () => {
@@ -62,7 +107,7 @@ it('describes independent activations and keeps passive feedback links visible',
   expect(inputDetails(inputs)).toContain('feedback: Pull')
   expect(graph.edges).toHaveLength(2)
   expect(graph.edges.every(edge => !edge.path.includes('NaN'))).toBe(true)
-  expect(graph.nodes[0].y).not.toBe(graph.nodes[1].y)
+  expect(graph.nodes[0].x).toBeLessThan(graph.nodes[1].x)
   expect(inputSummary({})).toBe('No activating inputs')
   expect(inputSummary()).toBe('Inputs unavailable')
 })
