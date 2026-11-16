@@ -1,8 +1,10 @@
 """Build and run the real C -> Rust -> Python OSE example from an extracted project."""
+import asyncio
 import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -26,9 +28,45 @@ class OseTests(unittest.TestCase):
         args = ["--model", "examples/acquisition/model.json", "--deployment", "examples/acquisition/deployment.json"]
         subprocess.run(cls.cli + ["build", *args], cwd=cls.project, env=cls.env, check=True, capture_output=True, timeout=120)
 
+    async def observe_until(self, predicate):
+        process = await asyncio.create_subprocess_exec(*self.cli, "run", cwd=self.project, env=self.env,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        observations, output = [], []
+
+        def collect(line):
+            if line.startswith(b'{"observer"'):
+                observations.append(json.loads(line))
+
+        async def observe():
+            while line := await process.stderr.readline():
+                output.append(line)
+                collect(line)
+                if predicate(observations):
+                    return
+            self.fail("OSE stopped before the expected observations:\n" + b"".join(output).decode())
+
+        try:
+            await asyncio.wait_for(observe(), 30)
+        finally:
+            if process.returncode is None:
+                process.send_signal(signal.SIGINT)
+            try:
+                _, remaining = await asyncio.wait_for(process.communicate(), 10)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.communicate()
+                raise
+        self.assertEqual(process.returncode, 0, (b"".join(output) + remaining).decode())
+        for line in remaining.splitlines():
+            collect(line)
+        return observations
+
     def test_multilanguage_ose_and_restart(self):
-        run = subprocess.run(self.cli + ["run", "--duration", "1.2"], cwd=self.project, env=self.env, check=True, capture_output=True, timeout=30)
-        observations = [json.loads(line) for line in run.stderr.decode().splitlines() if line.startswith('{"observer"')]
+        def enough_observations(rows):
+            return (sum(row["observer"] == "observation" for row in rows) >= 20
+                    and sum(row["observer"] == "affichage" for row in rows) >= 3)
+
+        observations = asyncio.run(self.observe_until(enough_observations))
         values = [row for row in observations if row["observer"] == "observation"]
         display = [row for row in observations if row["observer"] == "affichage"]
         self.assertGreater(len(values), 10)
@@ -39,8 +77,7 @@ class OseTests(unittest.TestCase):
         status = json.loads((self.build / "last-status.json").read_text())
         self.assertGreater(status["subscriptions"]["analyse-observation"]["acknowledged"], 10)
         self.assertGreater(status["components"]["affichage"]["inputs"]["input"]["replaced"], 0)
-        second = subprocess.run(self.cli + ["run", "--duration", ".4"], cwd=self.project, env=self.env, check=True, capture_output=True, timeout=30)
-        restarted = [json.loads(line) for line in second.stderr.decode().splitlines() if line.startswith('{"observer"')]
+        restarted = asyncio.run(self.observe_until(lambda rows: len(rows) > 2))
         self.assertGreater(len(restarted), 2)
         self.assertEqual(min(row["sequence"] for row in restarted), 1)
         self.assertFalse((self.build / "state").exists())
