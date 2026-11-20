@@ -10,7 +10,8 @@ jobs:
     env:
       SDL_ROOT: ${{ github.workspace }}/sdl
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    # Toolchain downloads can consume most of ten minutes on hosted mirrors.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
