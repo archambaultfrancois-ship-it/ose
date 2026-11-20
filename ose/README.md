@@ -28,7 +28,7 @@ Install with `python3 -m pip install .`, then use `ose --help` or
 `python3 -m ose.cli --help`. Rebuild application plans and generated containers
 after upgrading from an earlier package layout.
 
-Enable Bash completion with `source <(ose completion bash)` (also suitable
+Enable Bash completion with `source <(ose --completion bash)` (also suitable
 for `~/.bashrc`). The framework's `setenv.sh` enables it automatically in
 interactive Bash terminals. Completion covers commands, nested parameter actions,
 options and option choices, with Bash's usual filename fallback.

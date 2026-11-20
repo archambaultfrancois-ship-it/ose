@@ -28,7 +28,7 @@ def check(wheel):
         environment["PYTHONPATH"] = os.pathsep.join(filter(None, (str(target), environment.get("PYTHONPATH"))))
         for name in ("OSE_WS_STATE_DIR", "OSE_WS_HOST", "OSE_WS_PORT"):
             environment.pop(name, None)
-        command = [str(target / "bin" / "ose-ws")]
+        command = [sys.executable, '-m', 'ose.cli', 'ws']
 
         def cli(*arguments):
             return subprocess.run(command + list(arguments), cwd=application, env=environment,

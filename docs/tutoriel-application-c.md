@@ -634,12 +634,12 @@ depuis `~/calculatrice-ose` et après la préparation `make setup` ci-dessus :
 
 ```sh
 source ~/ose/setenv.sh
-ose-ws init --config ose-ws.json
-ose-ws check --config ose-ws.json
-ose-ws --config ose-ws.json
+ose ws init --config ose-ws.json
+ose ws check --config ose-ws.json
+ose ws --config ose-ws.json
 ```
 
-`setenv.sh` fournit directement la commande `ose-ws` et les chemins nécessaires.
+`setenv.sh` fournit directement la commande `ose ws` et les chemins nécessaires.
 `init` crée la configuration : ne le relancez pas si ce fichier
 existe déjà. Aux lancements suivants, seule la dernière commande
 est nécessaire après la préparation de l'environnement. `check` vérifie la
@@ -647,7 +647,7 @@ configuration sans se connecter au moteur. Le serveur utilise par défaut
 `build/endpoint.json` pour retrouver l'application.
 
 Ouvrez **http://127.0.0.1:8080** pour accéder directement à la console locale.
-Pour exiger un jeton, lancez `ose-ws --auth --config ose-ws.json`, puis
+Pour exiger un jeton, lancez `ose ws --auth --config ose-ws.json`, puis
 lisez le jeton dans un **terminal C** :
 
 ```sh
@@ -665,7 +665,7 @@ Les `printf` du tutoriel restent dans le terminal A. Pour alimenter la page
 Cette application ne déclare pas de mesures ni de paramètres partagés.
 
 **Ctrl+C** dans le terminal B arrête le serveur web ; l'application continue.
-Si le port est occupé, utilisez `ose-ws --config ose-ws.json --port 8081` et
+Si le port est occupé, utilisez `ose ws --config ose-ws.json --port 8081` et
 ouvrez **http://127.0.0.1:8081**. La console observe une application existante ;
 elle ne lance pas le moteur.
 
@@ -673,7 +673,7 @@ elle ne lance pas le moteur.
 restaurez le bloc d'origine avec `ose_disarm`, puis relancez `ose build` pour
 retrouver le parcours à trois résultats.
 
-## 14. Modifier le modèle avec ose-editor
+## 14. Modifier le modèle avec ose editor
 
 Vous pouvez aussi modifier les fichiers de l'application avec l'éditeur
 graphique. Arrêtez le moteur avant cet exercice. Depuis un terminal Bash :
@@ -681,13 +681,13 @@ graphique. Arrêtez le moteur avant cet exercice. Depuis un terminal Bash :
 ```sh
 cd ~/calculatrice-ose
 source ~/ose/setenv.sh
-ose-editor --model model.json --deployment deployment.json
+ose editor --model model.json --deployment deployment.json
 ```
 
 La préparation `make setup` de la section 12 inclut déjà l'éditeur. Si vous
 avez suivi seulement le parcours C, le premier lancement prépare automatiquement
 les dépendances manquantes ; vous pouvez aussi le faire explicitement avec
-`ose-editor setup`. Cette préparation nécessite les outils et l'accès réseau
+`ose editor setup`. Cette préparation nécessite les outils et l'accès réseau
 décrits en section 12. Le frontend est fourni.
 
 Ouvrez **http://127.0.0.1:8082** pour accéder directement à l'éditeur local.
@@ -699,7 +699,7 @@ cat ~/calculatrice-ose/.ose-editor/access.token
 ```
 
 L'éditeur travaille sur `model.json`, `deployment.json` et `messages.sdl`.
-Il fonctionne sans moteur en cours d'exécution. La console `ose-ws` de la section
+Il fonctionne sans moteur en cours d'exécution. La console `ose ws` de la section
 précédente sert, elle, à observer l'application lancée.
 
 ### Ralentir le timer depuis le graphe
@@ -736,7 +736,7 @@ pas une exécution déjà lancée.
 
 Pour revenir au parcours initial, remettez **Delay (seconds)** à `0.5`, appliquez,
 validez et sauvegardez, puis reconstruisez. **Ctrl+C** arrête le serveur de
-l'éditeur. Si le port est occupé, lancez `ose-editor --port 8083` et ouvrez
+l'éditeur. Si le port est occupé, lancez `ose editor --port 8083` et ouvrez
 **http://127.0.0.1:8083**.
 
 ## 15. En cas de problème

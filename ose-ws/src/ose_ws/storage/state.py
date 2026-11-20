@@ -43,7 +43,7 @@ class StateStore:
         except BlockingIOError:
             owner = self.lock.readline(32).strip()
             process = f" (PID {owner})" if owner.isascii() and owner.isdecimal() else ""
-            raise APIError(409, "STATE_IN_USE", f"Another ose-ws process{process} is already using this state directory. Stop that console before starting another instance.") from None
+            raise APIError(409, "STATE_IN_USE", f"Another ose ws process{process} is already using this state directory. Stop that console before starting another instance.") from None
         self.lock.seek(0)
         self.lock.truncate()
         self.lock.write(f"{os.getpid()}\n")

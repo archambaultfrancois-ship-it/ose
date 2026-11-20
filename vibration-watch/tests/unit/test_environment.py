@@ -27,7 +27,7 @@ class EnvironmentTests(unittest.TestCase):
             script = '''set -eu
 shopt -s expand_aliases
 source "$APP_ENV"
-type ose ose-ws app-build app-run app-cd >/dev/null
+type ose app-build app-run app-cd >/dev/null
 for name in params-list params-get params-get-all params-set params-watch params-sync record-inspect; do
     if alias "$name" >/dev/null 2>&1; then exit 1; fi
 done
@@ -56,8 +56,8 @@ done
             python.write_text('#!' + sys.executable + '\nimport json, sys\nif len(sys.argv) > 2 and sys.argv[1] == "-c" and "sys.version_info" in sys.argv[2]:\n    exec(sys.argv[2])\nelse:\n    print(json.dumps(sys.argv[1:]))\n')
             python.chmod(0o755)
             env = dict(os.environ, APP_ENV=str(ROOT / 'setenv.sh'), PATH=temporary + os.pathsep + os.environ['PATH'])
-            script = 'set -eu\nsource "$APP_ENV"\nose-ws --port 8081 --config "my console.json"\n'
+            script = 'set -eu\nshopt -s expand_aliases\nsource "$APP_ENV"\nose ws --port 8081 --config "my console.json"\n'
             result = subprocess.run(['bash', '--noprofile', '--norc', '-c', script],
                                     cwd=temporary, env=env, capture_output=True, text=True, check=True)
-            self.assertEqual(json.loads(result.stdout), [str(ROOT.parent / 'ose-ws/tools/console.py'),
+            self.assertEqual(json.loads(result.stdout), ['-m', 'ose.cli', 'ws',
                 '--port', '8081', '--config', 'my console.json'])

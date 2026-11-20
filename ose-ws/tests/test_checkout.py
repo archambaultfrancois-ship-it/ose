@@ -131,8 +131,8 @@ class CheckoutTests(unittest.TestCase):
                            FRAMEWORK_ENV=str(framework / 'setenv.sh'),
                            PATH=str(self.root) + os.pathsep + os.environ['PATH'])
         result = subprocess.run(['bash', '--noprofile', '--norc', '-c',
-            'set -eu\nsource "$FRAMEWORK_ENV"\nose-ws --port 8081 --config "my console.json"\n'],
+            'set -eu\nshopt -s expand_aliases\nsource "$FRAMEWORK_ENV"\nose ws --port 8081 --config "my console.json"\n'],
             cwd=self.root, env=environment, check=True, text=True, capture_output=True)
-        self.assertEqual(json.loads(result.stdout), [str(framework / 'ose-ws/tools/console.py'),
+        self.assertEqual(json.loads(result.stdout), ['-m', 'ose.cli', 'ws',
                          '--port', '8081', '--config', 'my console.json'])
         self.assertFalse((application / 'tools').exists())

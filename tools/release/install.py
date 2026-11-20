@@ -190,10 +190,6 @@ def write_commands(prefix, bin_dir, python, features, warnings):
     commands = {'ose': 'ose', 'sdl-recording': 'recording'}
     if (prefix / 'framework/sdl/sdlc/generator.py').is_file():
         commands['sdlc'] = 'sdlc'
-    if 'web' in features:
-        commands['ose-ws'] = 'web'
-    if 'editor' in features:
-        commands['ose-editor'] = 'editor'
     # Use a real shell on the target; /bin/sh does not exist on every Android host.
     shell = str(Path(shutil.which('sh') or '/bin/sh').resolve())
     for name in ('ose', 'ose-ws', 'ose-editor', 'sdlc', 'sdl-recording'):

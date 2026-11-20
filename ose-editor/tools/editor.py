@@ -35,14 +35,14 @@ def main(argv=None):
     try:
         require_python()
         if arguments and arguments[0] == 'setup':
-            parser = argparse.ArgumentParser(prog='ose-editor setup',
+            parser = argparse.ArgumentParser(prog='ose editor setup',
                 description='Install editor dependencies with the detected Python from PATH.')
             parser.parse_args(arguments[1:])
             setup()
             return 0
         if any(option in arguments for option in ('-h', '--help', '--check')):
             if '-h' in arguments or '--help' in arguments:
-                print('Checkout setup: ose-editor setup (also automatic on first launch).', flush=True)
+                print('Checkout setup: ose editor setup (also automatic on first launch).', flush=True)
         elif not dependencies_ready(FRAMEWORK, ['fastapi', 'uvicorn', 'yaml']):
             print('Preparing the OSE Model Editor dependencies...', flush=True)
             setup()

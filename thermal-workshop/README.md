@@ -2,7 +2,7 @@
 
 Sixteen Python components and four C analyzers model four independently heated cells, with four local
 feedback loops and four supervisory feedback paths. This is a synthetic workload
-for **ose-ws**, not a physical plant model or a performance benchmark result.
+for **ose ws**, not a physical plant model or a performance benchmark result.
 It uses the actual SDL generated codecs, OSE processes, queues and parameter RPCs.
 
 ## Graph
@@ -52,10 +52,10 @@ The run is unlimited until Ctrl+C. In a second Bash terminal:
 ```sh
 cd thermal-workshop
 source ./setenv.sh
-ose-ws
+ose ws
 ```
 
-Open **http://127.0.0.1:8080** for direct local access. Use `ose-ws --auth`
+Open **http://127.0.0.1:8080** for direct local access. Use `ose ws --auth`
 to require the browser token in `thermal-workshop/.ose-ws/access.token`.
 The application environment selects this
 application's plan, parameter client and endpoint; it does not reuse Vibration
@@ -115,7 +115,7 @@ possible parameter document a fixed-size workload.
 ```sh
 source ./setenv.sh
 ose app simulate --duration 60 --interactive LOAD=nominal
-# Second terminal: source ./setenv.sh; ose-ws
+# Second terminal: source ./setenv.sh; ose ws
 ```
 
 The server starts paused. The Simulation page supports stepping, pause/resume,
@@ -185,8 +185,8 @@ script selects a load profile and resolves paths into ignored `build/prepared/`;
 generated containers and SDL bindings are in `build/components/`.
 Tests build the actual application in an isolated temporary directory, exercise
 all 20 subprocesses and feedback, round-trip changing nested messages through
-SDL, and verify ose-ws graph, parameter, log and measurement APIs. A real-time
+SDL, and verify ose ws graph, parameter, log and measurement APIs. A real-time
 test also checks Live message previews and concurrent API reads. Tests stop
 their component processes and leave the application's selected build untouched.
 The web integration tests require the
-optional ose-ws dependencies (`source ./setenv.sh; ose-ws setup`).
+optional ose ws dependencies (`source ./setenv.sh; ose ws setup`).

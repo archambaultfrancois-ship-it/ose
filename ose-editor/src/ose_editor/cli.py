@@ -1,8 +1,6 @@
 """Run the independent editor against an application source directory."""
 import argparse
 from contextlib import contextmanager
-import os
-from pathlib import Path
 import secrets
 import signal
 import sys
@@ -10,16 +8,9 @@ import threading
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog='ose-editor', description=__doc__)
-    parser.add_argument('--root', default='.', help='application source directory (default: current directory)')
-    parser.add_argument('--model', default='model.json')
-    parser.add_argument('--deployment', action='append', default=[])
-    parser.add_argument('--source-root', action='append', default=[], help='additional allowed schema/deployment root')
-    parser.add_argument('--sdl-root', default=os.environ.get('SDL_ROOT', str(Path(__file__).resolve().parents[3] / 'sdl')))
-    parser.add_argument('--port', type=int, default=8082)
-    parser.add_argument('--auth', action='store_true', help='require a browser access token (default: direct local access)')
-    parser.add_argument('--create', action='store_true', help='create model/deployment drafts if missing')
-    parser.add_argument('--check', action='store_true', help='inspect project and report syntax errors without starting HTTP')
+    from ose.web_cli import configure
+    parser = argparse.ArgumentParser(prog='ose editor', description=__doc__)
+    configure(parser, 'editor')
     args = parser.parse_args(argv)
     from .project import Project, atomic_write
     project = None

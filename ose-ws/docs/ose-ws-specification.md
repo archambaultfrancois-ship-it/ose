@@ -2,7 +2,7 @@
 
 Status: implementation specification, version 0.4, 3 November 2026.
 
-This document defines the independent `ose-ws` console in the OSE repository.
+This document defines the independent `ose ws` console in the OSE repository.
 Version 0.4 includes component logs, workspace navigation, capture deletion and
 field-level parameter validation feedback. Source, documentation and frontend
 are in English. The console uses existing OSE services and accepts concurrent
@@ -35,7 +35,7 @@ Message contracts and parameter declarations are not editable at runtime.
 
 | Subject | Decision |
 | --- | --- |
-| Distribution | Independent Python package/command `ose-ws`, namespace `ose_ws`. |
+| Distribution | Independent Python package `ose-ws`, command `ose ws`, namespace `ose_ws`. |
 | Execution | One process, one asynchronous loop, one owner per stateful service. |
 | Backend | FastAPI/Uvicorn, JSON HTTP and WebSocket. |
 | Frontend | Vue 3, TypeScript, ECharts, compiled assets included in the package. |
@@ -102,10 +102,10 @@ OSE/SDL runtimes. Node.js is a frontend build dependency, never an installed
 runtime requirement. No CDN or browser plugin is required.
 
 ```sh
-ose-ws init --config ./ose-ws.json
-ose-ws check --config ./ose-ws.json
-ose-ws --config ./ose-ws.json
-ose-ws --config ./ose-ws.json --endpoint ./build/endpoint.json --port 8080
+ose ws init --config ./ose-ws.json
+ose ws check --config ./ose-ws.json
+ose ws --config ./ose-ws.json
+ose ws --config ./ose-ws.json --endpoint ./build/endpoint.json --port 8080
 ```
 
 `init` creates configuration exclusively; `init --auth` also creates a random local token. Secrets are

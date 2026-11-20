@@ -112,7 +112,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', navigationShortcut
 </script>
 <template>
   <main v-if="!store.project" class="login-shell">
-    <form class="login-card" @submit.prevent="store.load"><div class="brand-mark">◇</div><p class="eyebrow">OSE / AUTHORING</p><h1>Model Editor</h1><p>Compose your application.<br>Keep its sources in your hands.</p><label>Access token<InputText v-model="store.token" type="password" autofocus autocomplete="off" /></label><small>Read the token from the file printed by <code>ose-editor</code>.</small><Button type="submit" label="Open workspace" :loading="store.busy" /><p v-if="store.error" role="alert" class="error">{{ store.error }}</p></form>
+    <form class="login-card" @submit.prevent="store.load"><div class="brand-mark">◇</div><p class="eyebrow">OSE / AUTHORING</p><h1>Model Editor</h1><p>Compose your application.<br>Keep its sources in your hands.</p><label>Access token<InputText v-model="store.token" type="password" autofocus autocomplete="off" /></label><small>Read the token from the file printed by <code>ose editor</code>.</small><Button type="submit" label="Open workspace" :loading="store.busy" /><p v-if="store.error" role="alert" class="error">{{ store.error }}</p></form>
   </main>
   <div v-else class="app-shell">
     <header class="app-header"><div class="brand"><span class="brand-mark">◇</span><div><strong>OSE <span>Model Editor</span></strong><small>{{ store.project.name }} <span v-if="store.project.dirty || dirtySource">● Unsaved changes</span></small></div></div>

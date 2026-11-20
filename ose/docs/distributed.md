@@ -136,7 +136,7 @@ publishes its active connection in `BUILD/endpoint.json`, including `host`, `por
 `distributed` and `insecure`. Local execution publishes the same file with
 `distributed: false` and `insecure: false`. Each launch atomically replaces it.
 `ose top`, `ose measure`, `ose record`, `ose logs`, `ose component`,
-`ose params`, live `ose replay` and `ose-ws` read this file and infer the connection mode; no distributed flags are needed
+`ose params`, live `ose replay` and `ose ws` read this file and infer the connection mode; no distributed flags are needed
 for this loopback cluster. Explicit security options override the file hints;
 TLS credentials remain supplied by the caller. Tools that reconnect reread the
 connection settings. `cluster-status` still accepts an explicit

@@ -52,13 +52,13 @@ def main(argv=None):
     try:
         require_python()
         if arguments and arguments[0] == 'setup':
-            parser = argparse.ArgumentParser(prog='ose-ws setup',
+            parser = argparse.ArgumentParser(prog='ose ws setup',
                 description='Install console dependencies with the detected Python from PATH.')
             parser.parse_args(arguments[1:])
             setup()
             return 0
         if any(option in arguments for option in ('-h', '--help')):
-            print('Checkout setup: ose-ws setup (also automatic on first launch).', flush=True)
+            print('Checkout setup: ose ws setup (also automatic on first launch).', flush=True)
         elif selected_command(arguments) not in ('init', 'check') and not dependencies_ready(
                 FRAMEWORK, ['fastapi', 'uvicorn', 'websockets']):
             print('Preparing the OSE Web Console dependencies...', flush=True)

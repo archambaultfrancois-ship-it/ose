@@ -17,7 +17,7 @@ class CompletionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.environment = dict(os.environ, PYTHONPATH=str(OSE_ROOT / 'src'))
-        result = subprocess.run([sys.executable, '-m', 'ose.cli', 'completion', 'bash'],
+        result = subprocess.run([sys.executable, '-m', 'ose.cli', '--completion', 'bash'],
                                 env=cls.environment, capture_output=True, text=True, check=True)
         cls.script = result.stdout
         subprocess.run(['bash', '-n'], input=cls.script, text=True, check=True)
@@ -37,7 +37,16 @@ printf '%s\\n' "${COMPREPLY[@]}"
 
     def test_commands_options_and_nested_parameter_actions(self):
         for words, expected in [
-            (('',), 'completion'),
+            (('',), '--completion'),
+            (('w',), 'ws'),
+            (('ed',), 'editor'),
+            (('ws', ''), 'setup'),
+            (('ws', ''), 'init'),
+            (('ws', 'check', '--co'), '--config'),
+            (('ws', '--config', 'check', '--wo'), '--working-directory'),
+            (('editor', ''), 'setup'),
+            (('editor', '--de'), '--deployment'),
+            (('editor', '--source-root', 'setup', '--ch'), '--check'),
             (('pa',), 'parameter'),
             (('parameter', ''), 'sync'),
             (('parameter', 'g'), 'get'),
@@ -66,7 +75,9 @@ printf '%s\\n' "${COMPREPLY[@]}"
             (('run', '--mode', '=', 'simulated', '--du'), ['--duration']),
             (('parameter', 'sync', '--initial', 'a'), ['app']),
             (('top', '--format', 'j'), ['jsonl']),
-            (('completion', 'b'), ['bash']),
+            (('--completion', 'b'), ['bash']),
+            (('--completion=b',), ['--completion=bash']),
+            (('--completion', '=', 'b'), ['bash']),
             (('app', 'parameter', 'sync', '--initial', 'a'), ['app']),
             (('app', 'record', 'inspect', '--format', 'j'), ['json']),
         ]:
@@ -75,9 +86,26 @@ printf '%s\\n' "${COMPREPLY[@]}"
 
     def test_file_values_and_end_of_options_leave_bash_fallback(self):
         self.assertEqual(self.complete('build', '--model', ''), [])
+        self.assertEqual(self.complete('ws', '--config', ''), [])
+        self.assertEqual(self.complete('editor', '--source-root', ''), [])
         self.assertEqual(self.complete('replay', 'capture'), [])
         self.assertEqual(self.complete('parameter', 'get', '--', '--ex'), [])
         self.assertIn('complete -o bashdefault -o default', self.script)
+
+    def test_global_option_exits_before_command_validation_and_replaces_old_command(self):
+        for arguments in (['--completion', 'bash'], ['--completion=bash'], ['--completion', 'bash', 'validate']):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run([sys.executable, '-m', 'ose.cli', *arguments],
+                                        env=self.environment, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, self.script)
+        for arguments in ([], ['completion', 'bash'], ['--completion'], ['--completion', 'zsh']):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run([sys.executable, '-m', 'ose.cli', *arguments],
+                                        env=self.environment, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, '')
+        self.assertNotIn('completion', self.complete(''))
 
     @unittest.skipUnless((FRAMEWORK / 'setenv.sh').is_file(), 'requires framework checkout')
     def test_setenv_activates_completion_for_alias_and_can_be_sourced_again(self):

@@ -12,7 +12,7 @@ From an application environment:
 source ./setenv.sh
 ose app simulate --duration 60 --interactive
 # Another terminal, with the same application environment:
-ose-ws
+ose ws
 ```
 
 Open the console and select **Simulation**. The application is built first;
@@ -47,7 +47,7 @@ ose run --mode simulated --plan build/plan.json --duration 60 --interactive
 
 `--port` selects the RPC port; omission selects a free port. The server atomically
 publishes `build/endpoint.json`, with `mode: "simulated"` and an execution epoch.
-ose-ws discovers it using its existing reconnect path. Its HTTP port is separate.
+ose ws discovers it using its existing reconnect path. Its HTTP port is separate.
 The simulation RPC listener binds only to `127.0.0.1`; remote web access uses the
 console's existing authenticated HTTPS proxy configuration.
 
@@ -134,7 +134,7 @@ Dynamic recording/tap RPCs and Live message previews are not yet implemented for
 the simulation server. The console hides those live controls. Launch-time
 `--record`, `--record-file`, `--record-from` and `--record-until` remain available
 on `ose run --mode simulated`; use offline recording tools for those artifacts.
-Existing recordings held by ose-ws remain accessible.
+Existing recordings held by ose ws remain accessible.
 
 ## Web authorization and operations
 

@@ -53,13 +53,15 @@ def create_parser():
         description="Build, run and observe SDL applications with OSE.",
         epilog="""Typical application development workflow:
   ose app env
+  ose editor
   ose app validate
   ose app build
   ose app simulate --duration 3
   ose app run
   ose logs -f
+  ose ws
   ose app record
-  ose replay capture.mcap
+  ose replay capture.pcapng
 
 Explicit model/plan workflow:
   ose validate --model model.json --deployment deployment.json
@@ -77,6 +79,9 @@ Use ose parameter ACTION --help for parameter operations.
 Local observation commands use build/endpoint.json by default.
 For a loopback development cluster, use distributed-local.
 For remote distributed execution, start serve and worker instead of run.""")
+    from ose.completion import CompletionAction
+    parser.add_argument('--completion', choices=('bash',), action=CompletionAction,
+                        help='print shell completion and exit; load with source <(ose --completion bash)')
     commands = parser.add_subparsers(dest="action", required=True, title="commands", metavar="COMMAND")
     from ose.logs import add_parser as log_parser
     log_parser(commands)
@@ -183,11 +188,11 @@ For remote distributed execution, start serve and worker instead of run.""")
         "Simulation starts an application with --mode simulated; no time limit by default.\n"
         "Interactive and scripted controls start paused in both modes.\n"
         "Connection options and --speed require --mode realtime.",
-        ["ose replay capture.mcap --interactive",
+        ["ose replay capture.pcapng --interactive",
          "ose replay inputs.mcap --record 'analyzer_*.vibration' --record-file results.mcap",
-         "ose replay capture.mcap --map recorded.topic=external.topic --interactive",
-         "ose replay capture.mcap --map recorded.topic=external.topic --mode simulated --duration 30",
-         "ose replay capture.mcap --map recorded.topic=external.topic --command 'step 100ms' --command status"])
+         "ose replay capture.pcapng --map recorded.topic=external.topic --interactive",
+         "ose replay capture.pcapng --map recorded.topic=external.topic --mode simulated --duration 30",
+         "ose replay capture.pcapng --map recorded.topic=external.topic --command 'step 100ms' --command status"])
     command.add_argument("recording", help="SDL PCAPNG or MCAP capture")
     command.add_argument('--disable-component', action='append', default=[], metavar='NAME', help='leave this component inactive at startup (simulated replay only); repeat')
     command.add_argument("--plan", default="build/plan.json", help="target deployment plan (default: build/plan.json)")
@@ -267,7 +272,7 @@ For remote distributed execution, start serve and worker instead of run.""")
         "Type help in the console for commands, filters and output-file settings.\n"
         "Repeat --command to execute console commands in order.",
         ["ose record", "ose record --command list --command quit",
-         "ose record --command 'select all' --command 'start capture.mcap' --command 'wait 10' --command quit",
+         "ose record --command 'select all' --command 'start capture.pcapng' --command 'wait 10' --command quit",
          "ose record --distributed --host 127.0.0.1 --port 7000 --insecure"])
     command.add_argument("-l", "--label", type=session_label, default=DEFAULT_LABEL,
                          help="informational session label (default: recorder)")
@@ -295,11 +300,6 @@ For remote distributed execution, start serve and worker instead of run.""")
     command.add_argument("--port", type=int, required=True, help="TCP port of the already running local broker")
     from ose.parameters import cli as parameter_cli
     parameter_cli.parser(commands)
-    command = _command(commands, "completion", "generate shell completion",
-        "Print a Bash completion script for commands, options and option choices.\n"
-        "Load it in the current Bash terminal or add it to ~/.bashrc.",
-        ["source <(ose completion bash)"])
-    command.add_argument("shell", choices=("bash",), help="target shell")
     command = commands.add_parser('component', help='enable, disable or inspect components at callback boundaries')
     command.add_argument('operation', choices=('enable', 'disable', 'status'))
     command.add_argument('components', nargs='*', metavar='NAME')
@@ -313,9 +313,11 @@ For remote distributed execution, start serve and worker instead of run.""")
     command.add_argument('--tls-key')
     from ose.app import add_parser
     add_parser(commands)
+    from ose.web_cli import add_parsers
+    add_parsers(commands)
     from ose.cli_help import group_commands
     group_commands(parser, commands, [
-        ('1. Application environment', ('app', 'completion')),
+        ('1. Application environment', ('app', 'ws', 'editor')),
         ('2. Validation and build', ('validate', 'build')),
         ('3. Local execution and simulation', ('run', 'distributed-local')),
         ('4. Observation and control', ('top', 'logs', 'measure', 'inspect', 'parameter', 'component', 'cluster-status')),
@@ -327,8 +329,13 @@ For remote distributed execution, start serve and worker instead of run.""")
 
 
 def main(argv=None):
+    arguments = list(sys.argv[1:] if argv is None else argv)
     parser = create_parser()
-    return execute(parser.parse_args(argv), parser)
+    args = parser.parse_args(arguments)
+    if args.action in ('ws', 'editor'):
+        from ose.web_cli import launch
+        return launch(args.action, arguments[1:])
+    return execute(args, parser)
 
 
 def execute(args, parser=None):
@@ -336,9 +343,6 @@ def execute(args, parser=None):
         if args.action == 'app':
             from ose.app import run
             return run(args)
-        elif args.action == 'completion':
-            from ose.completion import bash_completion
-            print(bash_completion(parser), end='')
         elif args.action == 'logs':
             from ose.logs import run
             try:

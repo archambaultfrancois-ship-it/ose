@@ -3,6 +3,14 @@ import argparse
 import shlex
 
 
+class CompletionAction(argparse.Action):
+    """Print completion and exit before argparse requires a subcommand."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print(bash_completion(parser), end='')
+        parser.exit()
+
+
 def bash_completion(parser):
     """Return a standalone script; completing never runs a CLI command."""
     transitions, values, suggestions = [], [], []
@@ -30,7 +38,7 @@ def bash_completion(parser):
         suggestions.append(f'        {shlex.quote(context)}) candidates={shlex.quote(" ".join(words))} ;;')
 
     visit(parser, 'root')
-    return '''# Bash completion for ose. Load with: source <(ose completion bash)
+    return '''# Bash completion for ose. Load with: source <(ose --completion bash)
 _ose_complete() {
     local context=root expecting= candidates= word option current prefix= candidate
     local i

@@ -49,7 +49,8 @@ Deployment documents and handler references remain fully editable.
 
 | Responsibility | Decision |
 | --- | --- |
-| Subproject, distribution and CLI name | `ose-editor` |
+| Subproject and distribution | `ose-editor` |
+| CLI command | `ose editor` |
 | Python import namespace | `ose_editor` |
 | Browser frontend | Vue 3, TypeScript, Vite |
 | Interactive graph | Vue Flow with custom component nodes and port handles |
@@ -569,7 +570,7 @@ desktop performance targets MUST NOT be presented as mobile guarantees.
 | A18 | Reuse OSE/SDL accepted/rejected fixtures, report target-language restrictions and fail unsupported-capability checks explicitly. |
 | A19 | Meet the measured thirty-component workload targets and publish the qualification record. |
 | A20 | Complete the authoring journey below and validate the saved result through the independent OSE CLI. |
-| A21 | Build the standard framework bundle with the editor backend, compiled frontend, complete offline dependencies and licenses; install and launch `ose-editor` outside the checkout without system Python, Node.js, a CDN or network access. |
+| A21 | Build the standard framework bundle with the editor backend, compiled frontend, complete offline dependencies and licenses; install and launch `ose editor` outside the checkout without system Python, Node.js, a CDN or network access. |
 | A22 | Verify editor feature/profile selection, upgrade/deselection, command conflicts, relocation and shell-fallback behavior; open, edit, save and independently validate an external application using only installed resources. |
 
 The principal end-to-end journey is: open a copy of Vibration Watch, understand
@@ -599,7 +600,7 @@ installed payload. The release builder MUST reject a missing or incomplete
 editor frontend once editor inclusion is enabled.
 
 The planned installed resource directory is `framework/ose-editor/`, with an
-`ose-editor` launcher in the configured command directory. The launcher MUST use
+`ose` launcher providing the `editor` subcommand in the configured command directory. The launcher MUST use
 the bundle's private Python and installed framework paths, preserve the caller's
 working directory and work without a source checkout or `setenv.sh`. The
 manifest MUST cover editor assets, dependencies and hashes; the installation
@@ -615,7 +616,7 @@ the SDK profile. Language selections MUST distinguish editable deployment
 languages from the installed resources available for backend validation.
 
 Dependency collection MUST include the editor's locked requirements and resolve
-shared web dependencies consistently with `ose-ws`. All advertised source-format
+shared web dependencies consistently with `ose ws`. All advertised source-format
 capabilities, including YAML, MUST be usable offline in the default SDK bundle.
 Selection changes and upgrades MUST refresh/remove owned editor resources and
 launchers while preserving external application files and authoring state.
@@ -667,6 +668,6 @@ complete initial release MUST satisfy every inventory row and acceptance
 criterion. A partial prototype MUST NOT be described as covering the full OSE
 and SDL languages.
 
-The installed entry point is `ose-editor`, with project root, model, deployment
+The installed entry point is `ose editor`, with project root, model, deployment
 selection and SDL tool path options documented in [the README](../README.md).
 The [API reference](api.md) describes the implemented revisioned service.

@@ -2,7 +2,7 @@
 
 The OSE Model Editor is the graphical authoring application for OSE
 application models, deployment documents and SDL source schemas. It is an
-independent subproject named `ose-editor`, alongside `ose`, `sdl` and `ose-ws`.
+independent subproject named `ose editor`, alongside `ose`, `sdl` and `ose ws`.
 
 Its interface combines an editable component graph, a declaration explorer,
 property inspectors, comparison tables and synchronized source editors. The
@@ -39,25 +39,25 @@ such as `python3.12`, detected automatically). From the repository root:
 make python-info
 make setup
 source vibration-watch/setenv.sh
-ose-editor
+ose editor
 ```
 
 `make setup` installs the Python dependencies for the application, editor, console
 and backend tests into `build/python-deps`. The same PATH Python runs every tool.
 The bundled frontend needs no Node.js build.
 
-Alternatively, `ose-editor setup` prepares just the editor dependencies, and
-`ose-editor` does this automatically if they are missing. Initial setup needs
-pip/network access. Sourcing `setenv.sh`, `ose-editor --help`, and
-`ose-editor --check` never install dependencies. All editor options are forwarded:
+Alternatively, `ose editor setup` prepares just the editor dependencies, and
+`ose editor` does this automatically if they are missing. Initial setup needs
+pip/network access. Sourcing `setenv.sh`, `ose editor --help`, and
+`ose editor --check` never install dependencies. All editor options are forwarded:
 
 ```sh
-ose-editor --port 8083
-ose-editor --root /path/to/application
+ose editor --port 8083
+ose editor --root /path/to/application
 ```
 
 Open `http://127.0.0.1:8082`: the workspace opens directly by default.
-Use `ose-editor --auth` to require an access token from the file printed by the
+Use `ose editor --auth` to require an access token from the file printed by the
 command, normally `<application>/.ose-editor/access.token`. The token is generated
 only when authentication is requested, reused across launches, and never placed
 in the URL. Existing token files are ignored without `--auth`. Both modes listen
@@ -265,7 +265,7 @@ runtime responsibilities.
 
 The standard offline framework bundle produced by `make release` includes the
 editor backend, compiled frontend, dependencies, runtime license notices and
-installed `ose-editor` launcher. The `editor` feature is independent of the
+installed `ose editor` launcher. The `editor` feature is independent of the
 console's `web` feature and is included by default in the SDK profile.
 Runtime-only `all` selections omit the editor; explicitly requesting it with
 `--profile runtime` is rejected with instructions to select the SDK profile.

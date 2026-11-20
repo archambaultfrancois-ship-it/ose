@@ -27,7 +27,7 @@ class CliTests(unittest.TestCase):
                 listener.bind(('127.0.0.1', 0))
                 port = listener.getsockname()[1]
             output = tempfile.TemporaryFile()
-            process = subprocess.Popen([sys.executable, '-m', 'ose_editor.cli', '--root', str(project), '--sdl-root', str(root / 'sdl'), '--port', str(port), *(['--auth'] if auth else [])], stdout=output, stderr=subprocess.STDOUT)
+            process = subprocess.Popen([sys.executable, '-m', 'ose.cli', 'editor', '--root', str(project), '--sdl-root', str(root / 'sdl'), '--port', str(port), *(['--auth'] if auth else [])], stdout=output, stderr=subprocess.STDOUT)
             try:
                 deadline = time.monotonic() + 15
                 while time.monotonic() < deadline:
