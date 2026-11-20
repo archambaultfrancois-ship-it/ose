@@ -5,6 +5,34 @@ import { account } from '../src/api'
 
 let app: ReturnType<typeof createApp> | undefined
 
+it('groups points by component and keeps selections and filters when branches collapse or discovery refreshes', async () => {
+  const points = ref([
+    { id: 'signal', component: 'sensor', name: 'signal', topic: 'sensor.signal', kind: 'output', root: 'Signal', available: true },
+    { id: 'hidden', component: 'sensor', name: 'hidden', topic: 'sensor.hidden', kind: 'internal', root: 'Signal', available: false },
+    { id: 'result', topic: 'analyzer.result', kind: 'output', root: 'Result', available: true },
+  ])
+  const root = document.createElement('div'); document.body.append(root)
+  app = createApp({ render: () => h(RecordingsPage, { points: points.value, captures: [] }) }); app.mount(root)
+  const groups = () => [...root.querySelectorAll<HTMLDetailsElement>('.recording-component')]
+  expect(groups().map(group => group.querySelector('summary')?.textContent?.trim())).toEqual(['analyzer 1', 'sensor 2'])
+  expect([...groups()[1].querySelectorAll('.point-title strong')].map(title => title.textContent)).toEqual(['signal', 'hidden'])
+  expect((root.querySelector('[aria-label="Record sensor.hidden (internal)"]') as HTMLInputElement).disabled).toBe(true)
+  ;(root.querySelector('[aria-label="Record sensor.signal (output)"]') as HTMLInputElement).click(); await nextTick()
+  const filter = root.querySelector('.filter-row input') as HTMLInputElement
+  filter.value = 'value > 10'; filter.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+  groups()[1].open = false
+  points.value = points.value.map(point => ({ ...point }))
+  await nextTick()
+  expect(groups()[1].open).toBe(false)
+  const search = root.querySelector('.search input') as HTMLInputElement
+  search.value = 'ANALYZER'; search.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+  expect(groups()).toHaveLength(1)
+  expect(groups()[0].querySelector('summary')?.textContent).toContain('analyzer')
+  search.value = ''; search.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+  expect((root.querySelector('[aria-label="Record sensor.signal (output)"]') as HTMLInputElement).checked).toBe(true)
+  expect((root.querySelector('.filter-row input') as HTMLInputElement).value).toBe('value > 10')
+})
+
 it('selects and filters same-named inputs and outputs independently by point identity', async () => {
   const points = [
     { id: 'point-in', topic: 'node.value', kind: 'input', root: 'Value', available: true, sources: ['a.out', 'b.out'], reception: { buffer: 'fifo', capacity: 8 } },

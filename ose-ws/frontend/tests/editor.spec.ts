@@ -113,8 +113,18 @@ describe('typed SDL interactions', () => {
     const props = reactive({ report: { components: [{ name: 'source', state: 'ACTIVE', severity: 'ok', generation: 'one',
       rates: { in: 1, out: 2, ticks: 3 }, queues: [], tick_p95_ms: 4, report_age_ms: 5 }] } })
     const element = mount(() => h(ComponentsPage, props))
+    button(element, 'source').click(); await nextTick()
+    const graph = element.querySelector('.flow-panel')
+    const showTable = element.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(showTable.checked).toBe(true)
+    showTable.click(); await nextTick()
+    expect(element.querySelector('table[aria-label="Component measurements"]')).toBeNull()
+    expect(element.querySelector('.flow-panel')).toBe(graph)
+    expect(element.querySelector('.detail h2')?.textContent).toBe('source')
     button(element, 'Freeze view').click(); await nextTick()
     props.report.components[0].name = 'replacement'; await nextTick()
+    showTable.click(); await nextTick()
+    expect(element.querySelector('table[aria-label="Component measurements"]')?.textContent).toContain('source')
     expect(element.textContent).toContain('source')
     expect(element.textContent).not.toContain('replacement')
     button(element, 'Resume view').click(); await nextTick()

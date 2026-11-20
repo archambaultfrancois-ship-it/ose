@@ -119,6 +119,8 @@ an exclusive lock refuses another console using the same state directory.
 
 - **Components:** shared `status` sampling, the same diagnostics as `ose top`,
   sliding-window rates, freshness, FIFO occupancy, alerts and queue details.
+  **Show component table** hides or restores the measurements table while keeping
+  the application flow graph and selected component details available.
   A directed application flow graph shows components, external topics and
   declared subscriptions, with live component states and admission/publication
   rates. A metric selector adds component CPU, RSS, worst-port timer/input-wait
@@ -172,6 +174,8 @@ They capture the activating message at callback start, after FIFO overflow or
 latest-state selection. Timer/timeout activations carry no message; passive Pull
 reads are not combined into a callback snapshot. Input/output points with the same name can be selected, filtered and
 duplicated independently; counters remain separate in the capture details.
+Recording points are grouped in collapsible component branches, with local point
+names and a count for each component, like the measurement catalogue.
 The category selector filters the catalogue and additional name/type/glob patterns;
 explicitly checked points remain selected across categories. Source names and
 reception settings are shown for input points. Existing captures remain readable.

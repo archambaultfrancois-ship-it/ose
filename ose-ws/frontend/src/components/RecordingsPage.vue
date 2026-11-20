@@ -11,6 +11,18 @@ const files = ref<Record<string, any[]>>({})
 const deleting = ref<string | null>(null), deleteFiles = ref(false)
 const settings = ref({ label: 'recorder', format: 'pcapng', capacity: 256, byte_budget: 8388608, max_size: null as number | null, cycle: null as number | null })
 const visible = computed(() => props.points.filter(p => p.topic.toLowerCase().includes(search.value.toLowerCase()) && (!kind.value || p.kind === kind.value)))
+const groups = computed(() => {
+  const groups = new Map<string, any[]>()
+  for (const point of visible.value) {
+    const component = point.component || point.topic.split('.')[0]
+    if (!groups.has(component)) groups.set(component, [])
+    groups.get(component)!.push(point)
+  }
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))
+})
+function pointName(point: any, component: string) {
+  return point.name || (point.topic.startsWith(component + '.') ? point.topic.slice(component.length + 1) : point.topic)
+}
 async function act(effect: () => Promise<any>) {
   error.value = ''; message.value = ''; busy.value = true
   try { await effect(); emit('refresh') } catch (e: any) { error.value = e.message } finally { busy.value = false }
@@ -55,7 +67,21 @@ function duplicate(capture: any) {
 <template>
   <p v-if="error" class="notice error" role="alert">{{ error }}</p><p v-if="message" class="notice" role="status">{{ message }}</p>
   <div class="workspace recording-layout"><section class="panel"><div class="section-title"><h2>Recording points</h2><span class="count">{{ points.length }}</span></div><div class="toolbar"><label class="search">Find points<input v-model="search" placeholder="Topic contains…" /></label><label>Kind<select v-model="kind"><option value="">All points</option><option>input</option><option>output</option><option>internal</option><option>external</option></select></label></div>
-    <div class="points-list"><article v-for="point in visible" :key="point.id" class="point"><div class="point-title"><label class="inline"><input type="checkbox" :checked="selected.includes(point.id)" :disabled="!point.available" @change="pick(point.id, ($event.target as HTMLInputElement).checked)" /><strong>{{ point.topic }}</strong></label><button class="quiet small" @click="showSchema(point)">Schema</button></div><p class="muted small"><code>{{ point.root }}</code> · {{ point.kind }} · {{ point.available ? 'Available' : 'Unavailable' }}</p><p v-if="point.kind === 'input'" class="muted small">Value selected at tick start<span v-if="point.reception"> · {{ point.reception.buffer }}<span v-if="point.reception.buffer === 'fifo'"> · capacity {{ point.reception.capacity }}</span></span><span v-if="point.sources?.length"> · Sources: {{ point.sources.join(', ') }}</span></p><p v-if="point.description" class="small">{{ point.description }}</p><div v-if="selected.includes(point.id)" class="filter-row"><input v-model="filters[point.id]" :aria-label="`Source filter for ${point.topic} (${point.kind})`" placeholder="Optional SDL predicate, e.g. value > 10" /><button class="quiet" :disabled="!filters[point.id] || busy" @click="validate(point)">Validate</button></div></article><p v-if="!visible.length" class="empty">No matching recording points. Refresh discovery when OSE is connected.</p></div>
+    <div class="points-list">
+      <details v-for="[component, items] in groups" :key="component" class="recording-component" open>
+        <summary class="catalogue-group">{{ component }} <span class="muted">{{ items.length }}</span></summary>
+        <div class="path-children">
+          <article v-for="point in items" :key="point.id" class="point">
+            <div class="point-title"><label class="inline"><input type="checkbox" :checked="selected.includes(point.id)" :disabled="!point.available" :aria-label="`Record ${point.topic} (${point.kind})`" @change="pick(point.id, ($event.target as HTMLInputElement).checked)" /><strong :title="point.topic">{{ pointName(point, component) }}</strong></label><button class="quiet small" @click="showSchema(point)">Schema</button></div>
+            <p class="muted small"><code>{{ point.root }}</code> · {{ point.kind }} · {{ point.available ? 'Available' : 'Unavailable' }}</p>
+            <p v-if="point.kind === 'input'" class="muted small">Value selected at tick start<span v-if="point.reception"> · {{ point.reception.buffer }}<span v-if="point.reception.buffer === 'fifo'"> · capacity {{ point.reception.capacity }}</span></span><span v-if="point.sources?.length"> · Sources: {{ point.sources.join(', ') }}</span></p>
+            <p v-if="point.description" class="small">{{ point.description }}</p>
+            <div v-if="selected.includes(point.id)" class="filter-row"><input v-model="filters[point.id]" :aria-label="`Source filter for ${point.topic} (${point.kind})`" placeholder="Optional SDL predicate, e.g. value > 10" /><button class="quiet" :disabled="!filters[point.id] || busy" @click="validate(point)">Validate</button></div>
+          </article>
+        </div>
+      </details>
+      <p v-if="!visible.length" class="empty">No matching recording points. Refresh discovery when OSE is connected.</p>
+    </div>
   </section>
   <p v-if="available === false" class="notice">Live capture controls are unavailable for this simulation. Configure captures at launch with --record. Existing console captures remain accessible below.</p><section v-if="available !== false" class="panel configuration"><h2>New capture</h2><p class="muted">Build a draft, inspect its resolved points, then start it explicitly.</p><label>Label<input v-model="settings.label" maxlength="200" /></label><p v-if="kind" class="muted small">Additional patterns use the {{ kind }} category. Checked points remain selected across categories.</p><label>Additional names, types or globs<input v-model="patterns" placeholder="sensor_*.signal Value*" /></label><div class="form-grid"><label>Format<select v-model="settings.format"><option value="pcapng">PCAPNG</option><option value="mcap">MCAP</option></select></label><label>Source queue capacity<input type="number" v-model.number="settings.capacity" min="1" max="4096" /></label><label>Source queue bytes<input type="number" v-model.number="settings.byte_budget" min="1024" /></label><label>Rotate after bytes<input type="number" :value="settings.max_size ?? ''" min="1" placeholder="Off" @input="settings.max_size = ($event.target as HTMLInputElement).value ? Number(($event.target as HTMLInputElement).value) : null" /></label><label>Retain files<input type="number" :value="settings.cycle ?? ''" min="1" placeholder="Unlimited" @input="settings.cycle = ($event.target as HTMLInputElement).value ? Number(($event.target as HTMLInputElement).value) : null" /></label></div><p v-if="settings.cycle" class="notice warning">Cyclic retention removes older capture files automatically. The rotation threshold may be exceeded by one message and closing metadata.</p><button class="primary" :disabled="busy || (!selected.length && !patterns)" @click="create">Create capture draft</button>
   </section></div>
