@@ -57,7 +57,8 @@ def launch(name, arguments):
                   'For an installed release, rerun the installer to repair dependencies.', file=sys.stderr)
             return 2
         application = importlib.import_module(module)
-        return application.main(['--root', os.environ.get('OSE_APP_ROOT', os.getcwd()), *arguments])
+        root = os.environ.get('OSE_APP_ROOT')
+        return application.main(['--root', root, *arguments] if root else arguments)
     except ModuleNotFoundError as error:
         print(f'Cannot start ose {name}: missing Python module {error.name}. '
               f'Install {project} or include the {feature} feature in the OSE release.', file=sys.stderr)
