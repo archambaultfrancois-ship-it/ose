@@ -188,7 +188,8 @@ reception settings are shown for input points. Existing captures remain readable
 Capture cards show the current file's size on disk, refreshed every second, in
 decimal KB, MB or GB with three significant digits (for example, `12.3 MB`).
 The value follows the current file after rotation; finalized file lists use the
-same units. Buffered data appears when the recording writer writes it to disk.
+same units. Before each size sample, the console flushes the writer's buffered
+output (including MCAP chunks) without forcing an `fsync`.
 Expanding a capture's point list also shows each point's recorded message count
 and cumulative encoded SDL data size, refreshed every second. These totals span
 rotations and include only messages successfully written; data sizes exclude

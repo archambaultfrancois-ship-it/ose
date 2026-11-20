@@ -61,8 +61,13 @@ class RotationTests(unittest.IsolatedAsyncioTestCase):
             base = self.root / ("all." + format)
             capture = await self.recorder.start(base, format=format)
             session = capture.feeds[0]["session"]
-            payloads = [await self.publish(number) for number in range(100)]
+            payloads = []
+            for number in range(100):
+                payloads.append(await self.publish(number))
+                if number % 10 == 0:
+                    await self.recorder.flush()
             await self.recorder.stop()
+            await self.recorder.flush()
             self.assertIsNone(capture.error)
             paths = sorted(self.root.glob("all_*." + format))
             self.assertGreater(len(paths), 1)
