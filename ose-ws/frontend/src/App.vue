@@ -30,6 +30,8 @@ const points = ref<any[]>([]), captures = ref<any[]>([]), blocks = ref<any[]>([]
 const runtimeMode = computed(() => application.value.execution?.mode || application.value.mode)
 const pages = computed(() => pageDefinitions.filter(item => item.id !== 'simulation' || runtimeMode.value === 'simulated'))
 const activePage = computed(() => pageDefinitions.find(item => item.id === page.value)!)
+const compactPage = computed(() => ['components', 'logs', 'measurements', 'recordings', 'parameters'].includes(page.value))
+const pageHelp = ref(false)
 watch(() => [runtimeMode.value, application.value.connected] as const, ([mode, connected]) => { if (connected && mode && mode !== 'simulated' && page.value === 'simulation') page.value = 'components' })
 const activeCaptures = computed(() => captures.value.filter(c => ['STARTING','RECORDING','STOPPING'].includes(c.state)).length)
 const unresolved = ref<any[]>([]), audit = ref<any[]>([]), adminOpen = ref(false), socketConnected = ref(false)
@@ -107,6 +109,7 @@ function connect() {
   }
 }
 watch(page, async () => {
+  pageHelp.value = false
   window.history.replaceState(window.history.state, '', '#' + page.value)
   await refresh(true); subscribe()
 })
@@ -139,7 +142,16 @@ onBeforeUnmount(() => { stopped = true; flowStream.connected = false; clearInter
 <template>
   <div v-if="!account.actor" class="login-shell"><section class="login-card"><div class="brand"><img class="brand-mark" :src="consoleMark" alt="" width="42" height="42" /><span>OSE <small>WEB CONSOLE</small></span></div><p class="eyebrow">APPLICATION OBSERVATORY</p><h1>A clear view of your runtime.</h1><p class="muted">Components, measurements, message captures and typed parameters in one place.</p><form @submit.prevent="signIn"><label>Local access token<input v-model="token" type="password" autocomplete="current-password" placeholder="Paste the token from your local token file" /></label><p class="muted small">Behind an authenticated proxy, leave this field empty.</p><p v-if="error" class="notice error" role="alert">{{ error }}</p><button class="primary" :disabled="busy">{{ busy ? 'Signing in…' : 'Open console →' }}</button></form><p class="small muted login-note">Connects to an application that is already running. Closing this console leaves OSE running.</p></section></div>
   <div v-else class="app-shell"><aside class="sidebar"><div class="brand"><img class="brand-mark" :src="consoleMark" alt="" width="42" height="42" /><span>OSE <small>WEB CONSOLE</small></span></div><p class="sidebar-label">OBSERVE & CONFIGURE</p><nav aria-label="Main navigation"><button v-for="item in pages" :key="item.id" :class="{ active: page === item.id }" @click="page = item.id"><span class="nav-icon">{{ item.icon }}</span><span>{{ item.label }}</span><span v-if="item.id === 'recordings' && activeCaptures" class="nav-count">{{ activeCaptures }}</span><span v-if="item.id === 'parameters' && parameterDirty" class="draft-dot" aria-label="Unsaved draft"></span></button></nav><div class="sidebar-bottom"><p class="sidebar-label">APPLICATION</p><strong>{{ application.name || 'OSE application' }}</strong><small>{{ runtimeMode || 'Local' }} runtime</small><span class="connection" :class="{ connected: application.connected }"><i></i>{{ application.connected ? 'Connected to OSE' : 'OSE unavailable' }}</span><button v-if="can('admin')" class="sidebar-admin" @click="admin">{{ adminOpen ? 'Close administration' : 'Operations & audit' }}</button><div class="user"><span class="avatar">{{ account.actor[0]?.toUpperCase() }}</span><span>{{ account.actor }}<small>{{ account.auth_required ? 'Authenticated session' : 'Local session' }}</small></span><button v-if="account.auth_required" title="Sign out" aria-label="Sign out" @click="signOut">↪</button></div></div></aside>
-    <main><header class="topbar"><span><i :class="['status-dot', { online: application.connected }]"></i>{{ application.name || 'OSE application' }}<span class="separator">/</span>{{ activePage.label }}</span><div><span v-if="activeCaptures" class="recording-indicator">● {{ activeCaptures }} active captures</span><span class="live-indicator">{{ socketConnected ? 'Live channel' : 'Reconnecting live channel' }}</span></div></header><div class="content"><div class="page-heading"><div><p class="eyebrow">RUNTIME WORKSPACE</p><h1>{{ activePage.label }}</h1><p class="muted">{{ activePage.description }}</p></div><button class="quiet" :disabled="busy" @click="refresh(true)">↻ Refresh</button></div><div v-if="!application.connected" class="notice warning" role="status"><strong>OSE is unavailable.</strong> {{ application.error || 'Waiting for a connection.' }}<span v-if="application.observed_at"> Last successful observation: {{ application.observed_at }}.</span></div><p v-if="application.storage_available === false" class="notice error">Metadata storage is unavailable. New mutations are blocked; active captures can still be stopped.</p><p v-if="error" class="notice error" role="alert">{{ error }}</p>
+    <main><header class="topbar">
+      <div class="topbar-location"><i :class="['status-dot', { online: application.connected }]"></i>{{ application.name || 'OSE application' }}<span class="separator">/</span>
+        <div v-if="compactPage" class="page-help" @mouseenter="pageHelp = true" @mouseleave="pageHelp = false">
+          <h1 class="page-title"><button type="button" aria-describedby="page-description" @focus="pageHelp = true" @blur="pageHelp = false" @click="pageHelp = true" @keydown.esc.stop="pageHelp = false">{{ activePage.label }}</button></h1>
+          <div v-show="pageHelp" id="page-description" class="page-tooltip" role="tooltip"><strong>{{ activePage.label }}</strong><span>{{ activePage.description }}</span></div>
+        </div>
+        <span v-else>{{ activePage.label }}</span>
+      </div>
+      <div><button v-if="compactPage" class="quiet topbar-refresh" :disabled="busy" @click="refresh(true)">↻ Refresh</button><span v-if="activeCaptures" class="recording-indicator">● {{ activeCaptures }} active captures</span><span class="live-indicator">{{ socketConnected ? 'Live channel' : 'Reconnecting live channel' }}</span></div>
+    </header><div class="content" :class="{ 'content-compact': compactPage }"><div v-if="!compactPage" class="page-heading"><div><p class="eyebrow">RUNTIME WORKSPACE</p><h1 class="page-title">{{ activePage.label }}</h1><p class="muted">{{ activePage.description }}</p></div><button class="quiet" :disabled="busy" @click="refresh(true)">↻ Refresh</button></div><div v-if="!application.connected" class="notice warning" role="status"><strong>OSE is unavailable.</strong> {{ application.error || 'Waiting for a connection.' }}<span v-if="application.observed_at"> Last successful observation: {{ application.observed_at }}.</span></div><p v-if="application.storage_available === false" class="notice error">Metadata storage is unavailable. New mutations are blocked; active captures can still be stopped.</p><p v-if="error" class="notice error" role="alert">{{ error }}</p>
     <div v-if="runtimeMode === 'simulated'" class="notice simulation-summary"><div><div role="status"><strong>Simulation · {{ application.execution?.state || 'Preparing' }}<template v-if="application.execution?.state === 'paused' && application.execution?.pause_reason"> ({{ application.execution.pause_reason }})</template></strong> · Simulated time {{ simulatedSeconds(application.execution?.position_ns) }} s / {{ simulatedSeconds(application.execution?.horizon_ns) }} s<span v-if="application.execution?.microsteps"> · microstep {{ application.execution.microstep }}</span></div><p v-if="['finished','failed'].includes(application.execution?.state)" class="small">Final logical snapshot retained; component processes have stopped.</p></div><SimulationActions :execution="application.execution" :connected="application.connected" @refresh="refresh(true)" /></div>
     <SimulationPage v-if="page === 'simulation' && runtimeMode === 'simulated'" :execution="application.execution" :connected="application.connected" @refresh="refresh(true)" />
     <section v-if="adminOpen" class="panel administration"><div class="section-title"><h2>Uncertain operations</h2><button class="quiet" @click="adminOpen = false">Close</button></div><p class="muted">Closing an operation records an undetermined outcome. It sends no command to OSE.</p><p v-if="!unresolved.length">No unresolved operations.</p><div v-for="operation in unresolved" :key="operation.id" class="operation"><code>{{ operation.id }}</code><span>{{ operation.target }}</span><button class="quiet" @click="closeUnknown(operation)">Close as undetermined</button></div><h3>Recent audit events</h3><div class="table-scroll"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Result</th></tr></thead><tbody><tr v-for="entry in audit" :key="entry.id"><td>{{ entry.at }}</td><td>{{ entry.actor }}</td><td>{{ entry.action }}</td><td class="mono">{{ entry.target }}</td><td>{{ entry.result }}</td></tr></tbody></table></div></section>
@@ -152,5 +164,20 @@ onBeforeUnmount(() => { stopped = true; flowStream.connected = false; clearInter
 </template>
 
 <style scoped>
+.topbar > .topbar-location { gap: 10px; }
+.page-help { position: relative; }
+.topbar .page-title { margin: 0; font-size: inherit; line-height: inherit; letter-spacing: 0; }
+.page-title button { padding: 0; border: 0; border-radius: 2px; background: transparent; color: #263c4b; font-size: inherit; cursor: help; }
+.page-tooltip { position: absolute; top: calc(100% + 8px); left: 0; z-index: 40; width: 300px; max-width: calc(100vw - 36px); padding: 10px 12px; border: 1px solid #d5dfe5; border-radius: 7px; background: white; box-shadow: 0 6px 20px #17334820; color: #536879; font-size: 12px; line-height: 1.5; }
+.page-tooltip strong, .page-tooltip span { display: block; }
+.page-tooltip strong { color: #263c4b; margin-bottom: 4px; }
+.topbar-refresh { padding: 5px 9px; font-size: 11px; }
+.content.content-compact { padding-top: 16px; }
+.stats-grid { gap: 10px; margin-bottom: 14px; }
+.stats-grid .stat { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 8px 12px; }
+.stats-grid .stat > span { grid-column: 1; font-size: 11px; line-height: 16px; }
+.stats-grid .stat strong { grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 0; font-size: 20px; line-height: 26px; letter-spacing: 0; }
+.stats-grid .stat em { font-size: 11px; }
+.stats-grid .stat small { grid-column: 1; font-size: 9px; line-height: 14px; }
 .simulation-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 </style>

@@ -243,7 +243,7 @@ ose editor --root .
 L'éditeur charge les définitions, modèles, déploiements et schémas référencés.
 Un sous-système apparaît comme un bloc avec ses seuls ports publics. Les
 connexions graphiques et **Connect ports** utilisent ces ports comme ceux d'un
-composant local. **Open definition**, ou un double-clic sur le bloc, ouvre le
+composant local. **Open definition** ouvre le
 modèle interne ; le fil d'Ariane permet de remonter. Le bandeau indique que
 l'édition modifie la définition partagée, donc toutes ses instances. Chaque
 modèle conserve sa disposition séparément.
@@ -280,6 +280,31 @@ Ces opérations restent dans le brouillon jusqu'à **Save** et sont annulables.
 sauvegardées des définitions imbriquées, sans exécuter les handlers. Les
 répertoires de dépendances extérieurs au projet doivent être enregistrés par
 `--source-root` au lancement de l'éditeur.
+
+Les instances des modèles existants sont relues comme des groupes repliés.
+Leur en-tête porte le libellé « subsystem » ; seuls les noms des ports publics
+sont affichés, en deux colonnes centrées verticalement.
+Un double-clic déplie toute la définition du sous-système dans le graphe,
+y compris les niveaux imbriqués, les composants isolés, les liens internes et
+les connexions traversant sa frontière. Le cadrage s’adapte au contenu affiché.
+Le clic-glissé sur un cadre déplié déplace tout son contenu, y compris les
+cadres imbriqués. Un double-clic sur le cadre replie le sous-système.
+
+Un cadre visible entoure la définition dépliée et affiche son fichier source,
+ses entrées, ses sorties et ses paramètres publics. Les alias publics sont
+aussi indiqués sur les ports internes correspondants.
+Les cadres ont un fond teinté et quatre poignées de redimensionnement, aux coins
+uniquement. Pendant le redimensionnement, les composants se replacent automatiquement
+sur plusieurs lignes selon les dimensions du cadre. Les cadres imbriqués se déplacent
+avec leur contenu. Les dimensions et les positions sont conservées dans le workspace. **Auto layout** rétablit des dimensions compactes et tient
+compte des cadres des sous-systèmes et des niveaux imbriqués. Il regroupe les
+composants de chaque définition avec des espacements compacts, puis place les
+cadres selon les liens qui les relient. **Open definition** (↗), dans l’en-tête de la carte repliée,
+ouvre sa définition partagée. Les sous-systèmes
+imbriqués se déplient indépendamment. Sélectionner un groupe visuel permet de
+le convertir avec **Convert group to subsystem** ; la conversion conserve sa
+position et reste annulable. **Add component** est disponible dans la barre du
+graphe, y compris dans une définition et quand l'explorateur est masqué.
 
 ## Observer la hiérarchie dans la console
 

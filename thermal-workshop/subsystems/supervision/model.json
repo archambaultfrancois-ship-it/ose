@@ -101,7 +101,7 @@
   },
   "subscriptions": [
     {
-      "id": "fusion-supervisor-input",
+      "id": "report",
       "from": "fusion.report",
       "to": "supervisor.input",
       "qos": {

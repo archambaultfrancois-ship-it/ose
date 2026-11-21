@@ -17,9 +17,9 @@ const arrows = computed(() => (props.data.activations || []).flatMap((link: any,
 function inspect(port: any) { emit('input-select', port.component, port.port) }
 </script>
 <template>
-  <div class="component-node" :class="[data.kind, { selected, 'execution-component': component }]">
-    <header><span class="node-icon">{{ data.kind === 'external' ? '↗' : data.kind === 'group' ? '▣' : '◇' }}</span><strong>{{ data.name }}</strong><small>{{ data.kind }}</small><button v-if="component" class="nodrag nopan edit-component" :aria-label="'Edit component ' + data.name" title="Edit component" @click.stop="emit('edit-component', data.name)" @dblclick.stop>✎</button></header>
-    <div class="node-trigger">{{ component ? 'Per-input callbacks · ' + data.activations.length + ' activation link(s)' : data.kind === 'group' ? 'Visual group · double-click to expand' : data.kind === 'subsystem' ? 'Public interface' : 'External publisher' }}<button v-if="data.kind === 'subsystem'" class="nodrag nopan" :disabled="data.definition?.unresolved" @click.stop="emit('open-subsystem', data.name)">Open definition</button></div>
+  <div class="component-node" :class="[data.kind, { selected, 'execution-component': component, 'folded-subsystem': data.subsystem }]">
+    <header><span class="node-icon">{{ data.kind === 'external' ? '↗' : data.kind === 'group' ? '▣' : '◇' }}</span><strong>{{ data.name }}</strong><button v-if="data.subsystem" class="nodrag nopan open-definition" :aria-label="'Open definition ' + data.name" title="Open definition" :disabled="data.definition?.unresolved" @click.stop="emit('open-subsystem', data.name)" @dblclick.stop>↗</button><small>{{ data.subsystem ? 'subsystem' : data.kind }}</small><button v-if="component" class="nodrag nopan edit-component" :aria-label="'Edit component ' + data.name" title="Edit component" @click.stop="emit('edit-component', data.name)" @dblclick.stop>✎</button></header>
+    <div v-if="!data.subsystem" class="node-trigger">{{ component ? 'Per-input callbacks · ' + data.activations.length + ' activation link(s)' : data.kind === 'group' ? 'Visual group · double-click to expand' : 'External publisher' }}</div>
     <div v-if="component" class="execution-ports" :style="{ minHeight: rows * 64 + 'px' }">
       <svg v-if="data.showActivations" class="activation-arrows" :viewBox="'0 0 400 ' + rows * 64" aria-label="Input event to output activation links">
         <defs><marker :id="marker" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto-start-reverse"><path d="M 0 0 L 6 3 L 0 6 z" fill="context-stroke" /></marker></defs>
@@ -29,15 +29,23 @@ function inspect(port: any) { emit('input-select', port.component, port.port) }
         <div v-for="port in data.inputs" :key="port.endpoint" class="node-port input execution-port" :data-mode="port.mode" :data-connection-status="port.assistance?.status" :title="port.assistance?.message" @pointerenter="port.assistance && emit('port-hover', port.endpoint + ' · ' + port.assistance.message)">
           <Handle v-if="port.connectable" :id="port.endpoint" type="target" :position="Position.Left" />
           <button class="nodrag nopan inspect-input" :aria-label="'Edit input ' + port.endpoint" @click.stop="inspect(port)">{{ port.name }}</button>
-          <small class="mode-label">{{ port.label }}</small><code v-if="port.root">{{ port.root }}</code>
+          <small class="mode-label">{{ port.label }}</small><small v-if="port.publicAliases?.length" class="public-port">Public · {{ port.publicAliases.join(', ') }}</small><code v-if="port.root">{{ port.root }}</code>
           <small v-if="port.assistance" class="connection-marker">{{ statusLabel[port.assistance.status as keyof typeof statusLabel] }}</small>
           <small v-else-if="port.reception?.subscriptions.length">{{ port.reception.subscriptions.length }} link(s) · {{ port.reception.policy.buffer }}</small>
         </div>
       </div>
       <div class="execution-outputs">
         <div v-for="port in data.outputs" :key="port.endpoint" class="node-port output execution-port" :data-connection-status="port.assistance?.status" :title="port.assistance?.message" @pointerenter="port.assistance && emit('port-hover', port.endpoint + ' · ' + port.assistance.message)">
-          <span>{{ port.name }}</span><code>{{ port.root }}</code><small v-if="port.assistance">{{ statusLabel[port.assistance.status as keyof typeof statusLabel] }}</small>
+          <span>{{ port.name }}<small v-if="port.publicAliases?.length" class="public-port">Public · {{ port.publicAliases.join(', ') }}</small></span><code>{{ port.root }}</code><small v-if="port.assistance">{{ statusLabel[port.assistance.status as keyof typeof statusLabel] }}</small>
           <Handle :id="port.endpoint" type="source" :position="Position.Right" />
+        </div>
+      </div>
+    </div>
+    <div v-else-if="data.subsystem" class="subsystem-ports" :style="{ minHeight: rows * 34 + 'px' }">
+      <div v-for="direction in ['inputs', 'outputs']" :key="direction" class="subsystem-port-column">
+        <div v-for="port in data[direction]" :key="port.endpoint" class="node-port" :class="direction === 'inputs' ? 'input' : 'output'" :data-connection-status="port.assistance?.status" :title="port.assistance?.message" @pointerenter="port.assistance && emit('port-hover', port.endpoint + ' · ' + port.assistance.message)">
+          <Handle v-if="direction === 'outputs' || port.connectable !== false" :id="port.endpoint" :type="direction === 'inputs' ? 'target' : 'source'" :position="direction === 'inputs' ? Position.Left : Position.Right" />
+          <span>{{ port.name }}</span>
         </div>
       </div>
     </div>
@@ -47,11 +55,18 @@ function inspect(port: any) { emit('input-select', port.component, port.port) }
         <span>{{ port.name }}<small v-if="port.mode"> {{ port.mode === 'timer' ? port.label : port.mode === 'pull' ? 'Pull · passive' : 'Push' }}</small></span>
         <code>{{ port.root }}</code><small v-if="port.assistance" class="connection-marker">{{ statusLabel[port.assistance.status as keyof typeof statusLabel] }}</small><small v-else-if="port.reception?.subscriptions.length">{{ port.reception.subscriptions.length }} link(s) · {{ port.reception.conflict ? 'QoS conflict' : port.reception.policy.buffer }}</small>
       </div>
-      <div v-for="port in data.outputs" :key="'o' + port.endpoint" class="node-port output" :data-connection-status="port.assistance?.status" :title="port.assistance?.message" @pointerenter="port.assistance && emit('port-hover', port.endpoint + ' · ' + port.assistance.message)"><span>{{ port.name }}</span><code>{{ port.root }}</code><small v-if="port.assistance" class="connection-marker">{{ statusLabel[port.assistance.status as keyof typeof statusLabel] }}</small><Handle :id="port.endpoint" type="source" :position="Position.Right" /></div>
+      <div v-for="port in data.outputs" :key="'o' + port.endpoint" class="node-port output" :data-connection-status="port.assistance?.status" :title="port.assistance?.message" @pointerenter="port.assistance && emit('port-hover', port.endpoint + ' · ' + port.assistance.message)"><span>{{ port.name }}<small v-if="port.publicAliases?.length" class="public-port">Public · {{ port.publicAliases.join(', ') }}</small></span><code>{{ port.root }}</code><small v-if="port.assistance" class="connection-marker">{{ statusLabel[port.assistance.status as keyof typeof statusLabel] }}</small><Handle :id="port.endpoint" type="source" :position="Position.Right" /></div>
     </div>
   </div>
 </template>
 <style scoped>
+.component-node.group { background: #e1ebfa; }
+.component-node.group .node-port { background: transparent; }
+.open-definition { padding: 2px 4px; border: 0; background: none; color: #3159a4; font-size: 14px; line-height: 16px; }
+.subsystem-ports { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 6px 0; box-sizing: content-box; }
+.subsystem-port-column { display: flex; flex-direction: column; justify-content: center; }
+.subsystem-ports .node-port { min-height: 34px; overflow-wrap: anywhere; }
+.subsystem-ports .output { justify-content: flex-end; text-align: right; }
 .edit-component { border: 0; background: none; color: #3159a4; padding: 2px 6px; font-size: 18px; cursor: pointer; }
 .node-port[data-connection-status=compatible] { background: #eaf7f0; outline: 1px solid #3a926a; }
 .node-port[data-connection-status=incompatible] { background: #fff0ef; color: #9b3535; }
@@ -63,9 +78,12 @@ function inspect(port: any) { emit('input-select', port.component, port.port) }
 .execution-port > span, .inspect-input { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .execution-port code { max-width: 100%; }
 .inspect-input { background: none; border: 0; text-align: left; padding: 0; color: #3159a4; font-size: 11px; }
+.public-port { display: block; color: #3159a4; overflow-wrap: anywhere; }
 .mode-label { color: #536d91; }
-.execution-port[data-mode=pull] .mode-label { color: #6d4ea0; }
-.execution-port[data-mode=timer] .mode-label { color: #966514; }
+.execution-port[data-mode=pull] .public-port { display: block; color: #3159a4; overflow-wrap: anywhere; }
+.mode-label { color: #6d4ea0; }
+.execution-port[data-mode=timer] .public-port { display: block; color: #3159a4; overflow-wrap: anywhere; }
+.mode-label { color: #966514; }
 .activation-arrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .activation-arrows > path { fill: none; stroke-width: 1.5; pointer-events: stroke; }
 .activation-arrows .message { stroke: #4770bd; }

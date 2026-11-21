@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
 import { useWorkspacePanels } from '../src/workspace-panels'
+import ToolbarMenu from '../src/components/ToolbarMenu.vue'
 
 describe('workspace resizing', () => {
   it('supports bounded keyboard resizing on either side and below the canvas', () => {
@@ -32,5 +34,50 @@ describe('workspace resizing', () => {
     expect(document.body.style.userSelect).toBe(userSelect)
     handle.dispatchEvent(new PointerEvent('pointermove', { clientX: 10, pointerId: 1 }))
     expect(panels.widths.inspector).toBe(390)
+  })
+})
+
+describe('graph toolbar menus', () => {
+  it('keeps internal controls usable and closes on focus or pointer moves outside', async () => {
+    const wrapper = mount(ToolbarMenu, { attachTo: document.body, props: { label: 'Display' },
+      slots: { default: '<input aria-label="Labels" type="checkbox"><button>Style</button>' } })
+    const outside = document.createElement('button'); document.body.append(outside)
+    try {
+      const menu = wrapper.get('details').element as HTMLDetailsElement
+      menu.open = true
+      wrapper.get('summary').element.focus()
+      wrapper.get('input').element.focus()
+      expect(menu.open).toBe(true)
+      await wrapper.get('button').trigger('pointerdown')
+      expect(menu.open).toBe(true)
+      await wrapper.get('input').trigger('focusout', { relatedTarget: null })
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(menu.open).toBe(true)
+      wrapper.get('input').element.blur()
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(menu.open).toBe(false)
+      menu.open = true
+      wrapper.get('input').element.focus()
+      outside.focus()
+      expect(menu.open).toBe(false)
+      menu.open = true
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+      expect(menu.open).toBe(false)
+      menu.open = true
+      window.dispatchEvent(new Event('blur'))
+      expect(menu.open).toBe(false)
+    } finally { wrapper.unmount(); outside.remove() }
+  })
+
+  it('closes with Escape and returns focus to the menu button', async () => {
+    const wrapper = mount(ToolbarMenu, { attachTo: document.body, props: { label: 'Groups' }, slots: { default: '<button>Group selection</button>' } })
+    try {
+      const menu = wrapper.get('details').element as HTMLDetailsElement
+      menu.open = true
+      wrapper.get('button').element.focus()
+      await wrapper.get('button').trigger('keydown', { key: 'Escape' })
+      expect(menu.open).toBe(false)
+      expect(document.activeElement).toBe(wrapper.get('summary').element)
+    } finally { wrapper.unmount() }
   })
 })

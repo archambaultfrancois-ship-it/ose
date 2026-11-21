@@ -78,12 +78,26 @@ or 24 and `make frontend-editor`.
 
 ## Editing workflow
 
-Subsystem instances appear as graph blocks with public inputs and outputs.
-**Open definition** or double-click enters their shared source model;
-breadcrumbs return to the parent. A notice identifies shared-definition edits,
+Subsystem instances loaded from existing models appear as folded groups with
+public input and output names, centered vertically in two columns. The header
+identifies the card as a subsystem. Double-click unfolds the instance in the application
+graph, including internal components, subscriptions and crossing links. Unfolding reveals the complete nested definition, including isolated components.
+Each expanded definition has a visible frame naming its source file and public
+inputs, outputs and parameter interface. Public aliases are also marked on the
+corresponding internal ports. The graph
+automatically fits the unfolded content. Nested instances can be folded independently. Drag an expanded frame to move
+its components and nested frames together. The frames have a tinted background and
+four corner handles for resizing. Components rearrange into rows as the frame
+changes shape; nested frames move with their contents. Frame sizes and component positions
+are saved in the workspace; **Auto layout** restores compact sizes. Double-click
+the frame to fold it; the workspace retains the expansion state. **Open definition**
+in a folded card’s header (↗) enters the shared source model; breadcrumbs return to the parent. A notice identifies shared-definition edits,
 which affect every instance. Each model keeps its own graph layout.
 **Instantiate subsystem**, **New subsystem**, **Expose public port** and
-**Extract selection** prepare undoable diffs. Extraction moves selected local
+**Extract selection** prepare undoable diffs. Selecting a visual group enables
+**Convert group to subsystem**, preserving its position and supporting undo.
+**Add component** is available directly in the graph toolbar, including inside a
+subsystem definition and when the explorer is hidden. Extraction moves selected local
 components and internal subscriptions into new model/definition/deployment
 drafts, preserving registered deployment variants, shared-parameter bindings,
 existing handler paths and schema/project substitution contexts. Handler files
@@ -107,7 +121,8 @@ separators to resize panels, or focus a separator and use the arrow keys
 collapsed bar and opens when new diagnostics arrive; its tabs and **Expand** /
 **Collapse** control the panel. **Display** in the graph toolbar contains link
 labels, activation links, link style and dependency highlighting; **Groups**
-contains grouping commands. The inspector uses collapsible sections for
+contains grouping commands. Both menus close when focus moves outside, on an
+outside click or with **Escape**. The inspector uses collapsible sections for
 General, Execution, Reception and Contract where applicable, with removal
 commands under the initially collapsed **Advanced** section.
 
@@ -127,6 +142,12 @@ Source syntax diagnostics carry one-based line/column positions when available.
 JSON paths resolve against the current source draft; coordinate-based and SDL
 locations are withheld when unfinished source text may have shifted them.
 Apply source drafts before preparing a diagnostic correction.
+
+Tables uses the same visible projection as Graph, including expansion state,
+folded visual groups and crossing subscriptions. The default **all** category
+lists visible components, subsystem frames, groups, external topics and links.
+Category filters also expose ports, activations and the relevant source settings.
+Nested rows retain their definition file and local source path for inspection.
 
 Select a component/link in Graph, an object in Tables or a declaration in the
 explorer. Use the inspector to edit its properties, including explicit defaults,
@@ -213,6 +234,11 @@ including ports hidden inside groups and external topics. A completed drag opens
 the same form. Enter a subscription ID and choose **Preview connection** to review
 the source diff before applying the undoable change. Existing incoming connections
 do not prevent another producer; the destination's shared reception is inherited.
+**Auto layout** uses expanded subsystem frames as nested layout containers.
+It places each definition's components together with compact spacing, then
+arranges the frames using their crossing connections. Nested definitions retain
+their own bounds, and isolated components participate in the layout.
+
 Presentation changes (groups, positions and auto layout) apply immediately
 without a review dialog and remain undoable with **Undo**.
 Every semantic change opens a concrete diff before application. Rename

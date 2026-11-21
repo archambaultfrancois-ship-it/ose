@@ -47,7 +47,7 @@ class ObserverTests(unittest.TestCase):
         identity = next(key for key, source in composition['components'].items()
                         if source['path'] == ['cell_1', 'plant'])
         link = next(key for key, source in composition['subscriptions'].items()
-                    if source['path'] == ['cell_1', 'plant-analyzer-input'])
+                    if source['path'] == ['cell_1', 'frame'])
         data = dict(epoch='epoch', observation=observation,
                     subscriptions={link: dict(depth=8)}, components={})
         observation['subscriptions'][link]['policy'] = dict(buffer='fifo', capacity=10)
@@ -56,7 +56,7 @@ class ObserverTests(unittest.TestCase):
         self.assertEqual(row['name'], 'cell_1.plant')
         self.assertNotIn('display_name', row)
         self.assertEqual(row['queues'][0]['name'], link)
-        self.assertIn('cell_1.plant-analyzer-input', row['alerts'][0]['message'])
+        self.assertIn('cell_1.frame', row['alerts'][0]['message'])
         text = render(report, details=True, width=240)
         self.assertIn('cell_1.plant', text)
         self.assertNotIn('ss_', text)

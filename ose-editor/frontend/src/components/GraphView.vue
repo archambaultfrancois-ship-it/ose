@@ -8,19 +8,24 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import ComponentNode from './ComponentNode.vue'
+import SubsystemFrame from './SubsystemFrame.vue'
 import ComponentEditor from './ComponentEditor.vue'
 import SubsystemTools from './SubsystemTools.vue'
-import { graphModel } from '../subsystems'
+import ToolbarMenu from './ToolbarMenu.vue'
+import { graphModel, subsystemGraph, definitionScopes } from '../subsystems'
 import { useProject } from '../store'
 import { topology, downstream, type LinkStyle } from '../graph'
-import { layoutGraph } from '../layout'
+import { layoutGraph, layoutPositions, type FrameLayout } from '../layout'
 import { assessConnection, inputs, publishers, statusLabel, type Publisher } from '../connections'
+defineEmits<{ 'add-component': [] }>()
 const props = defineProps<{ navigationRequest?: number }>()
 const store = useProject(), nodes = ref<any[]>([]), edges = ref<any[]>([]), search = ref(''), labels = ref(true), scope = ref('all'), layoutBusy = ref(false)
 const linkStyle = ref<LinkStyle>('default')
 const showActivations = ref(false)
 const linkStyles = [{ label: 'Curved', value: 'default' }, { label: 'Straight', value: 'straight' }, { label: 'Right-angle', value: 'smoothstep' }]
 const model = computed(() => graphModel(store.project))
+const expandedSubsystems = computed<string[]>(() => store.project?.workspace.views?.expanded_subsystems || [])
+const displayModel = computed(() => subsystemGraph(store.project, expandedSubsystems.value))
 const drag = ref<{ endpoint: string; type: string; external: boolean } | null>(null)
 const connectionFeedback = ref(''), assistant = ref(false), sourceKey = ref(''), target = ref(''), subscriptionId = ref('')
 const sourceSelect = ref<HTMLSelectElement>(), idInput = ref<HTMLInputElement>()
@@ -42,22 +47,38 @@ watch(() => store.editingComponent, async (name, previous) => {
     await setViewport(overviewViewport)
   }
 })
-const selectedGroups = computed(() => getSelectedNodes.value.filter(node => node.data.kind === 'group').map(node => node.data.name))
-const hasGroups = computed(() => Object.keys(store.project?.workspace.groups || {}).length > 0)
-const hasExpandedGroups = computed(() => Object.values(store.project?.workspace.groups || {}).some((group: any) => !group.collapsed))
-const selectedComponents = computed(() => getSelectedNodes.value.filter(node => node.data.kind === 'component').map(node => node.data.name))
+const selectedGroups = computed(() => getSelectedNodes.value.filter(node => node.data.kind === 'group' && !node.data.subsystem).map(node => node.data.name))
+const hasGroups = computed(() => Object.keys(store.project?.workspace.groups || {}).length > 0 || Object.keys(model.value?.subsystems || {}).length > 0)
+const hasExpandedGroups = computed(() => expandedSubsystems.value.length > 0 || Object.values(store.project?.workspace.groups || {}).some((group: any) => !group.collapsed))
+const selectedMembers = computed(() => getSelectedNodes.value.filter(node => (node.data.kind === 'component' || node.data.subsystem) && !node.data.scope?.length).map(node => node.data.name))
+const selectedComponents = computed(() => getSelectedNodes.value.filter(node => node.data.kind === 'component' && !node.data.scope?.length).map(node => node.data.name))
+const extraction = computed(() => {
+  const members = new Set<string>(selectedComponents.value), seen = new Set<string>()
+  function collect(name: string) {
+    if (seen.has(name)) return
+    seen.add(name)
+    const group = store.project.workspace.groups[name]
+    for (const member of group?.members || []) members.add(member)
+    for (const child of group?.groups || []) collect(child)
+  }
+  selectedGroups.value.forEach(collect)
+  return [...members].every(name => store.project.documents[store.project.model]?.value?.components?.[name]) ? [...members] : []
+})
 // Inspector focus is a single object; Vue Flow owns the graph's multiple selection.
 let graphInspection: typeof store.selection = null
+let graphRevision = 0
 const worker = new Worker(new URL('../layout.worker.ts', import.meta.url), { type: 'module' })
 watch(() => store.project?.revision, () => { connectionFeedback.value = '' })
-watch(() => [store.project?.model, store.project?.revision, store.project?.validation, labels.value, search.value, scope.value, linkStyle.value, showActivations.value, store.selection, drag.value], () => {
-  const graph = topology(model.value, store.project?.workspace, labels.value, linkStyle.value, showActivations.value)
+watch(() => [store.project?.model, store.project?.revision, store.project?.validation, labels.value, search.value, scope.value, linkStyle.value, showActivations.value, store.selection, drag.value], async () => {
+  const revision = ++graphRevision
+  const graph = topology(displayModel.value, store.project?.workspace, labels.value, linkStyle.value, showActivations.value)
   const inspectionChanged = store.selection !== graphInspection
   const selectedIds = new Set(getSelectedNodes.value.map(node => node.id))
   const chosen = ['components', 'subsystems'].includes(store.selection?.path?.[0] || '') ? store.selection?.path?.[1] || '' : ''
   const inspectedId = chosen ? (model.value?.components[chosen]?._subsystem ? 'subsystem:' : 'component:') + chosen : store.selection?.path?.[0] === 'external_topics' ? 'external:' + store.selection.path[1] : ''
-  const highlighted = chosen && scope.value !== 'all' ? downstream(model.value, chosen, scope.value) : null
-  graph.nodes.forEach(node => { node.class = search.value && !node.data.name.toLowerCase().includes(search.value.toLowerCase()) || highlighted && !highlighted.has(node.data.name) ? 'dimmed' : ''; node.selected = inspectionChanged ? node.id === inspectedId || !!chosen && !!node.data.members?.includes(chosen) : selectedIds.has(node.id) })
+  const selectedName = graph.nodes.find(node => node.data.model === store.selection?.file && node.data.localName === chosen)?.data.name || chosen
+  const highlighted = chosen && scope.value !== 'all' ? downstream(displayModel.value, selectedName, scope.value) : null
+  graph.nodes.forEach(node => { node.class = search.value && !node.data.name.toLowerCase().includes(search.value.toLowerCase()) || highlighted && !highlighted.has(node.data.name) ? 'dimmed' : ''; node.selected = inspectionChanged ? node.id === inspectedId || !!chosen && (node.data.model === store.selection?.file && node.data.localName === chosen || !!node.data.members?.includes(chosen)) : selectedIds.has(node.id) })
   if (drag.value) for (const node of graph.nodes) {
     for (const port of node.data.inputs) if (drag.value.type === 'source') {
       port.assistance = assessConnection(store.project, drag.value, port.endpoint)
@@ -67,12 +88,20 @@ watch(() => [store.project?.model, store.project?.revision, store.project?.valid
     }
   }
   graph.edges.forEach((edge: any) => { edge.selected = store.selection?.file === store.project?.model && store.selection?.path?.[0] === 'subscriptions' && edge.data.index === Number(store.selection.path[1]) })
-  nodes.value = graph.nodes; edges.value = graph.edges
+  nodes.value = graph.nodes
   graphInspection = store.selection
+  // Register the replacement nodes before Vue Flow validates their edges.
+  await nextTick()
+  if (revision === graphRevision) edges.value = graph.edges
 }, { immediate: true, deep: false })
 const nodesInitialized = useNodesInitialized()
-let pendingNavigation = false
+let pendingNavigation = false, pendingDefinitionFit = false
 async function revealNavigation() {
+  if (pendingDefinitionFit && nodesInitialized.value && !store.editingComponent) {
+    pendingDefinitionFit = false
+    await nextTick()
+    await fitView({ padding: 0.15, maxZoom: 1 })
+  }
   if (!pendingNavigation || !nodesInitialized.value || store.editingComponent) return
   await nextTick()
   const path = store.selection?.path || []
@@ -95,13 +124,21 @@ async function layout() {
     layoutBusy.value = false
     if (event.data.error) { store.error = event.data.error; return }
     const positions = { ...store.project.workspace.positions }
-    event.data.graph.children.forEach((node: any) => { const name = node.id.startsWith('component:') ? node.id.slice(10) : node.id; if (!store.project.workspace.pinned.includes(name)) positions[name] = { x: node.x, y: node.y } })
-    await store.command({ action: 'workspace', positions }, false)
+    for (const [name, position] of Object.entries(layoutPositions(event.data.graph))) {
+      if (!store.project.workspace.pinned.includes(name)) positions[name] = position
+    }
+    const frameBounds = { ...store.project.workspace.views?.frame_bounds }
+    for (const node of nodes.value) if (node.data.kind === 'definition') delete frameBounds[node.data.name]
+    await store.command({ action: 'workspace', positions, ...(store.project.workspace.views?.frame_bounds ? { views: { ...store.project.workspace.views, frame_bounds: frameBounds } } : {}) }, false)
     setTimeout(() => fitView({ padding: 0.15 }), 100)
   }
   worker.postMessage({ id: Date.now(), graph })
 }
 function validConnection(connection: any) {
+  // Vue Flow also checks existing edges when the visible topology changes.
+  // Projected subscriptions already resolve to real ports, including private
+  // ports revealed by expansion. Authoring checks apply to new connections.
+  if (connection.data?.sub) return true
   return !!connection.sourceHandle && !!connection.targetHandle && assessConnection(store.project,
     { endpoint: connection.sourceHandle, external: connection.source.startsWith('external:') }, connection.targetHandle).status !== 'incompatible'
 }
@@ -139,17 +176,42 @@ async function previewConnection() {
 }
 function selected(event: any) {
   const data = event.node.data
-  if (data.kind === 'group') return
-  store.select(store.project.model, data.kind === 'external' ? ['external_topics', data.name] : data.kind === 'subsystem' ? ['subsystems', data.name] : ['components', data.name])
+  if (data.kind === 'definition' || data.kind === 'group' && !data.subsystem) return
+  const path = data.kind === 'external' ? ['external_topics', data.name] : data.subsystem ? ['subsystems', data.localName] : ['components', data.localName]
+  if (data.scope?.length) store.selection = { file: data.model, path }
+  else store.select(data.model || store.project.model, path)
   graphInspection = store.selection
 }
 function inspectInput(component: string, port: string) {
+  const data = nodes.value.find(node => node.data.name === component)?.data
+  if (data?.scope?.length) { openScope(data.scope); component = data.localName }
   store.select(store.project.model, ['components', component, 'inputs', port])
   graphInspection = store.selection
 }
+function openScope(scope: string[]) { scope.forEach(name => store.openSubsystem(name)) }
+function editComponent(name: string) {
+  const data = nodes.value.find(node => node.data.name === name)?.data
+  if (!data) return
+  openScope(data.scope || [])
+  store.editComponent(data.localName)
+}
+function openDefinition(name: string) {
+  const data = nodes.value.find(node => node.data.name === name)?.data
+  if (!data) { openScope(name.split('.')); return }
+  openScope(data.scope || [])
+  store.openSubsystem(data.localName)
+}
+async function setExpanded(names: string[]) {
+  pendingDefinitionFit = true
+  const result = await store.command({ action: 'workspace', views: { ...store.project.workspace.views, expanded_subsystems: [...new Set(names)] } }, false)
+  if (result) { await nextTick(); await revealNavigation() }
+  else pendingDefinitionFit = false
+}
+function collapseSubsystem(name: string) { setExpanded(expandedSubsystems.value.filter(path => path !== name && !path.startsWith(name + '.'))) }
 function expand(event: any) {
-  if (event.node.data.kind === 'subsystem') { store.openSubsystem(event.node.data.name); return }
-  if (event.node.data.kind === 'component') { store.editComponent(event.node.data.name); return }
+  if (event.node.data.kind === 'definition') { collapseSubsystem(event.node.data.name); return }
+  if (event.node.data.subsystem) { setExpanded([...expandedSubsystems.value, ...definitionScopes(store.project, event.node.data.name)]); return }
+  if (event.node.data.kind === 'component') { editComponent(event.node.data.name); return }
   if (event.node.data.kind !== 'group') return
   const groups = JSON.parse(JSON.stringify(store.project.workspace.groups))
   groups[event.node.data.name].collapsed = false
@@ -159,11 +221,54 @@ function toggleGroups() {
   const groups = JSON.parse(JSON.stringify(store.project.workspace.groups))
   const collapsed = hasExpandedGroups.value
   Object.values(groups).forEach((group: any) => { group.collapsed = collapsed })
-  store.command({ action: 'workspace', groups })
+  store.command({ action: 'workspace', groups, ...(Object.keys(model.value.subsystems || {}).length || expandedSubsystems.value.length ? { views: { ...store.project.workspace.views, expanded_subsystems: collapsed ? [] : Object.keys(model.value.subsystems || {}).flatMap(name => definitionScopes(store.project, name)) } } : {}) })
 }
-function position(event: any) { const positions = { ...store.project.workspace.positions }; const node = event.node; positions[node.data.kind === 'component' ? node.data.name : node.id] = node.position; store.command({ action: 'workspace', positions }, false) }
+function resizeFrame(layout: FrameLayout) {
+  store.command({ action: 'workspace', positions: { ...store.project.workspace.positions, ...layout.positions },
+    views: { ...store.project.workspace.views, frame_bounds: { ...store.project.workspace.views?.frame_bounds, ...layout.frameBounds } } }, false)
+}
+type GroupDrag = { id: string; model: string; revision: string; start: { x: number; y: number }; members: Map<string, { x: number; y: number }> }
+let groupDrag: GroupDrag | null = null
+function startPosition(event: any) {
+  groupDrag = null
+  if (event.node.data.kind !== 'definition') return
+  const members = new Set(event.node.data.members)
+  groupDrag = { id: event.node.id, model: store.project.model, revision: store.project.revision,
+    start: { ...event.node.position }, members: new Map(nodes.value.filter(node => members.has(node.data.name))
+      .map(node => [node.id, { ...node.position }])) }
+}
+function movePosition(event: any) {
+  if (!groupDrag || groupDrag.id !== event.node.id) return
+  if (groupDrag.model !== store.project.model || groupDrag.revision !== store.project.revision) { groupDrag = null; return }
+  const dx = event.node.position.x - groupDrag.start.x, dy = event.node.position.y - groupDrag.start.y
+  for (const node of nodes.value) {
+    const original = groupDrag.members.get(node.id)
+    if (original) node.position = { x: original.x + dx, y: original.y + dy }
+  }
+}
+function position(event: any) {
+  const positions = { ...store.project.workspace.positions }, node = event.node
+  const moved = [node]
+  const frameBounds = { ...store.project.workspace.views?.frame_bounds }
+  if (node.data.kind === 'definition') {
+    if (!groupDrag || groupDrag.id !== node.id || groupDrag.model !== store.project.model || groupDrag.revision !== store.project.revision) {
+      groupDrag = null; return
+    }
+    movePosition(event)
+    moved.push(...nodes.value.filter(member => groupDrag?.members.has(member.id)))
+  }
+  for (const member of moved) {
+    const frame = member.data.kind === 'definition'
+    const name = frame || member.data.kind === 'component' || member.data.subsystem ? member.data.name : member.id
+    positions[name] = { x: member.position.x + (frame ? 24 : 0), y: member.position.y + (frame ? 100 : 0) }
+    if (frame && frameBounds[name]) frameBounds[name] = { ...frameBounds[name], x: member.position.x, y: member.position.y }
+  }
+  groupDrag = null
+  store.command({ action: 'workspace', positions, ...(Object.keys(frameBounds).length ? { views: { ...store.project.workspace.views, frame_bounds: frameBounds } } : {}) }, false)
+}
+
 function group() {
-  const members = selectedComponents.value, children = selectedGroups.value
+  const members = selectedMembers.value, children = selectedGroups.value
   if (!members.length && !children.length) { store.error = 'Select components or groups before creating a visual group.'; return }
   const name = window.prompt('Visual group name')?.trim()
   if (!name) return
@@ -186,21 +291,22 @@ onBeforeUnmount(() => worker.terminate())
     <div v-show="!store.editingComponent" class="graph-overview">
     <nav v-if="store.modelTrail.length" class="subsystem-breadcrumbs" aria-label="Subsystem hierarchy"><button v-for="(item, index) in store.modelTrail" :key="index" @click="store.parentModel(index)">{{ index ? ' / ' : '' }}{{ item.name }}</button></nav>
     <p v-if="store.project.model !== store.project.root_model" class="definition-notice">Editing shared definition: {{ store.project.model }}. Changes affect every instance of this definition.</p>
-    <SubsystemTools :selected="selectedComponents" />
+    <SubsystemTools :selected="extraction" :group="selectedGroups.length === 1 ? selectedGroups[0] : undefined" />
     <div class="graph-toolbar">
+      <Button label="Add component" :disabled="!!store.pending || store.busy" @click="$emit('add-component')" />
       <InputText v-model="search" placeholder="Find a component…" aria-label="Find a component" />
       <Button ref="connectButton" label="Connect ports" severity="secondary" :disabled="!!store.pending" @click="openAssistant()" />
       <Button label="Auto layout" severity="secondary" :loading="layoutBusy" @click="layout" />
-      <details name="graph-toolbar" class="toolbar-menu" @keydown.esc="($event.currentTarget as HTMLDetailsElement).open = false"><summary>Groups</summary><div class="toolbar-menu-content">
-        <Button label="Group selection" severity="secondary" :disabled="!selectedComponents.length && !selectedGroups.length" @click="group" />
+      <ToolbarMenu label="Groups">
+        <Button label="Group selection" severity="secondary" :disabled="!selectedMembers.length && !selectedGroups.length" @click="group" />
         <Button :label="hasExpandedGroups ? 'Collapse all groups' : 'Expand all groups'" severity="secondary" :disabled="!hasGroups" @click="toggleGroups" />
-      </div></details>
-      <details name="graph-toolbar" class="toolbar-menu" @keydown.esc="($event.currentTarget as HTMLDetailsElement).open = false"><summary>Display</summary><div class="toolbar-menu-content">
-        <label>Dependency highlighting<Select v-model="scope" :options="['all', 'upstream', 'downstream', 'both']" aria-label="Dependency highlighting" /></label>
+      </ToolbarMenu>
+      <ToolbarMenu label="Display">
+        <label>Dependency highlighting<Select v-model="scope" :options="['all', 'upstream', 'downstream', 'both']" append-to="self" aria-label="Dependency highlighting" /></label>
         <label class="inline"><input type="checkbox" v-model="labels"> Link labels</label>
         <label v-if="model?.version === 2" class="inline"><input type="checkbox" v-model="showActivations" aria-label="Show activation links"> Activation links</label>
-        <label>Link style<Select v-model="linkStyle" :options="linkStyles" option-label="label" option-value="value" aria-label="Link style" /></label>
-      </div></details>
+        <label>Link style<Select v-model="linkStyle" :options="linkStyles" option-label="label" option-value="value" append-to="self" aria-label="Link style" /></label>
+      </ToolbarMenu>
     </div>
     <form v-if="assistant" class="connection-assistant" aria-label="Connect ports" @submit.prevent="previewConnection" @keydown.esc.stop="closeAssistant">
       <label>Publisher<select ref="sourceSelect" v-model="sourceKey" aria-label="Connection publisher"><option value="" disabled>Choose an output</option><option v-for="source in sourceOptions" :key="source.key" :value="source.key">{{ source.endpoint }}{{ source.external ? ' (external topic)' : '' }}</option></select></label>
@@ -210,8 +316,9 @@ onBeforeUnmount(() => worker.terminate())
       <p id="connection-assessment" role="status" :data-status="assessment?.status">{{ assessment ? statusLabel[assessment.status] + ' · ' + assessment.message : 'Choose a publisher and destination. Inputs with existing producers can receive another connection.' }}</p>
     </form>
     <p v-if="connectionFeedback" class="connection-feedback" role="status">{{ connectionFeedback }}</p>
-    <VueFlow v-model:nodes="nodes" v-model:edges="edges" fit-view-on-init :is-valid-connection="validConnection" :multi-selection-key-code="['Shift', 'Control', 'Meta']" :delete-key-code="null" :min-zoom="0.15" :max-zoom="2" @nodes-initialized="revealNavigation" @node-click="selected" @node-double-click="expand" @edge-click="event => store.select(store.project.model, ['subscriptions', String(event.edge.data.index)])" @connect-start="startConnection" @connect-end="drag = null" @connect="connect" @node-drag-stop="position">
-      <template #node-component="nodeProps"><ComponentNode v-bind="nodeProps" @port-hover="message => connectionFeedback = message" @input-select="inspectInput" @edit-component="store.editComponent" @open-subsystem="store.openSubsystem" /></template>
+    <VueFlow v-model:nodes="nodes" v-model:edges="edges" fit-view-on-init :is-valid-connection="validConnection" :multi-selection-key-code="['Shift', 'Control', 'Meta']" :delete-key-code="null" :min-zoom="0.15" :max-zoom="2" @nodes-initialized="revealNavigation" @node-click="selected" @node-double-click="expand" @edge-click="event => store.select(event.edge.data.model || store.project.model, ['subscriptions', String(event.edge.data.index)])" @connect-start="startConnection" @connect-end="drag = null" @connect="connect" @node-drag-start="startPosition" @node-drag="movePosition" @node-drag-stop="position">
+      <template #node-subsystem-frame="nodeProps"><SubsystemFrame v-bind="nodeProps" @resize="resizeFrame" /></template>
+      <template #node-component="nodeProps"><ComponentNode v-bind="nodeProps" @port-hover="message => connectionFeedback = message" @input-select="inspectInput" @edit-component="editComponent" @open-subsystem="openDefinition" /></template>
       <Background :gap="24" pattern-color="#c8d5e5" /><MiniMap pannable zoomable /><Controls />
     </VueFlow>
     <p class="graph-caption">{{ Object.keys(store.project.documents[store.project.model]?.value?.components || {}).length }} components · {{ Object.keys(model?.subsystems || {}).length }} subsystems · {{ model?.subscriptions?.length || 0 }} subscriptions · {{ selectedComponents.length }} components selected · {{ selectedGroups.length }} groups selected · Shift/Ctrl/Cmd + click to select multiple · Shift + drag to select an area · drag between ports to connect</p>
@@ -220,6 +327,8 @@ onBeforeUnmount(() => worker.terminate())
 </template>
 
 <style scoped>
+.graph-toolbar { gap: 6px; padding: 6px 12px; }
+.graph-toolbar > :deep(.p-button), .graph-toolbar > :deep(.p-inputtext) { min-height: 28px; padding: 5px 8px; font-size: 11px !important; line-height: 16px; }
 .subsystem-breadcrumbs, .definition-notice { padding: 8px 16px; margin: 0; font-size: 12px; background: #edf3fc; }
 .subsystem-breadcrumbs button { border: none; background: none; color: #3159a4; cursor: pointer; }
 .graph-overview { display: flex; flex-direction: column; flex: 1; min-height: 0; }

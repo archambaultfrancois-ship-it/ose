@@ -11,11 +11,7 @@
         "to": "audit.policy"
       }
     },
-    "outputs": {
-      "archive": {
-        "from": "historian.archive"
-      }
-    },
+    "outputs": {},
     "parameters": {
       "workload": {
         "path": "workload"

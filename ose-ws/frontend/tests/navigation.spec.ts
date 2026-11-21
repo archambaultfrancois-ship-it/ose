@@ -64,7 +64,11 @@ it('shows only the selected page and preserves parameter drafts across navigatio
   ]
   expect([...root.querySelectorAll('nav button')][1].textContent).toContain('Logs')
   function checkPage(label: string) {
-    expect(root.querySelector('.page-heading h1')?.textContent).toBe(label)
+    expect(root.querySelector('.page-title')?.textContent).toBe(label)
+    expect(root.querySelector('.page-heading')).toBeNull()
+    expect(root.querySelector('.topbar .page-title button')?.textContent).toBe(label)
+    expect(root.querySelector('[role="tooltip"]')?.textContent).toContain(label)
+    expect(root.querySelector('.topbar-refresh')).not.toBeNull()
     for (const [name, marker] of pages) {
       const content = [...root.querySelectorAll('label, h2')].find(node => node.textContent?.includes(marker))!
       expect(content, `${name} content exists`).toBeTruthy()
@@ -83,6 +87,21 @@ it('shows only the selected page and preserves parameter drafts across navigatio
     checkPage(label)
   }
   checkPage('Components')
+  const help = root.querySelector('.page-help')!
+  const helpButton = help.querySelector('button')!
+  help.dispatchEvent(new MouseEvent('mouseenter'))
+  await nextTick()
+  expect(visible(root.querySelector('[role="tooltip"]')!)).toBe(true)
+  expect(root.querySelector('[role="tooltip"]')?.textContent).toContain('Execution health, delivery queues and protocol timings.')
+  help.dispatchEvent(new MouseEvent('mouseleave'))
+  await nextTick()
+  expect(visible(root.querySelector('[role="tooltip"]')!)).toBe(false)
+  helpButton.focus()
+  await nextTick()
+  expect(visible(root.querySelector('[role="tooltip"]')!)).toBe(true)
+  helpButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await nextTick()
+  expect(visible(root.querySelector('[role="tooltip"]')!)).toBe(false)
   for (const [label] of pages.slice(1)) await select(label)
 
   await until(() => !!root.querySelector('.block-list button'))

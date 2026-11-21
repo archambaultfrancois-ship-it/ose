@@ -125,7 +125,7 @@
   },
   "subscriptions": [
     {
-      "id": "plant-analyzer-input",
+      "id": "frame",
       "from": "plant.frame",
       "to": "analyzer.input",
       "qos": {
@@ -137,7 +137,7 @@
       }
     },
     {
-      "id": "analyzer-controller-input",
+      "id": "analysis",
       "from": "analyzer.analysis",
       "to": "controller.input",
       "qos": {
@@ -149,7 +149,7 @@
       }
     },
     {
-      "id": "controller-actuator-input",
+      "id": "command",
       "from": "controller.command",
       "to": "actuator.input",
       "qos": {
@@ -161,7 +161,7 @@
       }
     },
     {
-      "id": "actuator-plant-feedback",
+      "id": "feedback",
       "from": "actuator.applied",
       "to": "plant.feedback",
       "qos": {

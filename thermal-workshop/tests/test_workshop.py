@@ -253,7 +253,7 @@ class WorkshopTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(point['topic'] == 'cell_1.plant:frame' for point in points['points']))
         self.assertTrue(all('ss_' not in point['topic'] for point in points['points']))
         response = await client.post('/api/v1/flow-watches', json={
-            'subscription': self.subscriptions['cell_1.plant-analyzer-input'], 'epoch': snapshot['epoch']}, headers=csrf)
+            'subscription': self.subscriptions['cell_1.frame'], 'epoch': snapshot['epoch']}, headers=csrf)
         self.assertEqual(response.status_code, 200, response.text)
         identity = response.json()['id']
         preview = None

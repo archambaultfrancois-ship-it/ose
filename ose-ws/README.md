@@ -117,13 +117,23 @@ an exclusive lock refuses another console using the same state directory.
 
 ## Five workspaces
 
+Components, Logs, Measurements, Recordings and Parameters show their page explanation
+in a tooltip on the page name at the top left. Hover or focus the name to read it;
+**Escape** dismisses the tooltip. **Refresh** is in the top bar on these pages.
+
 - **Components:** shared `status` sampling, the same diagnostics as `ose top`,
   sliding-window rates, freshness, FIFO occupancy, alerts and queue details.
+  Four compact indicators summarize inventory, active components, attention and
+  status age above the workspace.
+  **Sort** covers every table column. Numbers sort highest first, FIFO sorts by
+  fill ratio, and state sorting puts errors and warnings first. Missing values
+  stay at the bottom; equal values are ordered by component name.
   **Show component table** hides or restores the measurements table while keeping
   the application flow graph and selected component details available.
   A directed application flow graph shows components, external topics and
   declared subscriptions, with live component states and admission/publication
-  rates. A metric selector adds component CPU, RSS, worst-port timer/input-wait
+  rates. The graph expands to its full height; use page scrolling to reach the
+  lower rows. A metric selector adds component CPU, RSS, worst-port timer/input-wait
   p95, publication-wait p95, callback p95 or admission/publication rates to cards.
   The state filter includes disabled components, enable/disable transitions and
   publication waits. CPU and RSS describe the component process, excluding its

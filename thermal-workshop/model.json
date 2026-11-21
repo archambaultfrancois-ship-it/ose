@@ -50,7 +50,7 @@
   },
   "subscriptions": [
     {
-      "id": "analyzer_1-fusion-cell_1",
+      "id": "analysis_1",
       "from": "cell_1.analysis",
       "to": "supervision.cell_1",
       "qos": {
@@ -58,7 +58,7 @@
       }
     },
     {
-      "id": "supervisor-controller_1-policy",
+      "id": "policy_1",
       "from": "supervision.policy",
       "to": "cell_1.policy",
       "qos": {
@@ -66,7 +66,7 @@
       }
     },
     {
-      "id": "analyzer_2-fusion-cell_2",
+      "id": "analysis_2",
       "from": "cell_2.analysis",
       "to": "supervision.cell_2",
       "qos": {
@@ -74,7 +74,7 @@
       }
     },
     {
-      "id": "supervisor-controller_2-policy",
+      "id": "policy_2",
       "from": "supervision.policy",
       "to": "cell_2.policy",
       "qos": {
@@ -82,7 +82,7 @@
       }
     },
     {
-      "id": "analyzer_3-fusion-cell_3",
+      "id": "analysis_3",
       "from": "cell_3.analysis",
       "to": "supervision.cell_3",
       "qos": {
@@ -90,7 +90,7 @@
       }
     },
     {
-      "id": "supervisor-controller_3-policy",
+      "id": "policy_3",
       "from": "supervision.policy",
       "to": "cell_3.policy",
       "qos": {
@@ -98,7 +98,7 @@
       }
     },
     {
-      "id": "analyzer_4-fusion-cell_4",
+      "id": "analysis_4",
       "from": "cell_4.analysis",
       "to": "supervision.cell_4",
       "qos": {
@@ -106,7 +106,7 @@
       }
     },
     {
-      "id": "supervisor-controller_4-policy",
+      "id": "policy_4",
       "from": "supervision.policy",
       "to": "cell_4.policy",
       "qos": {
@@ -114,7 +114,7 @@
       }
     },
     {
-      "id": "fusion-historian-input",
+      "id": "report",
       "from": "supervision.report",
       "to": "recording.report",
       "qos": {
@@ -122,7 +122,7 @@
       }
     },
     {
-      "id": "supervisor-audit-policy",
+      "id": "policy_recording",
       "from": "supervision.policy",
       "to": "recording.policy",
       "qos": {

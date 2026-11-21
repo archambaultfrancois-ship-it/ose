@@ -439,4 +439,22 @@ def extract(project, command):
     project.json_set(project.model, ['subscriptions'], remaining)
     set_member(project, project.model, 'subsystems', instance, dict(source=os.path.relpath(directory / 'subsystem.json', base),
                      **({'parameter_bindings': bindings} if bindings else {})))
+    # Preserve visual group placement and remove references to extracted leaves
+    # in the same undoable operation as the source extraction.
+    converted = command.get('group')
+    groups = project.workspace['groups']
+    for group in groups.values():
+        members = group.get('members', [])
+        if any(member in selected for member in members):
+            group['members'] = [member for member in members if member not in selected]
+            if converted is None:
+                group['members'].append(instance)
+        if converted in group.get('groups', []):
+            group['groups'].remove(converted)
+            group.setdefault('members', []).append(instance)
+    if converted in groups:
+        del groups[converted]
+        position = project.workspace['positions'].pop('group:' + converted, None)
+        if position is not None:
+            project.workspace['positions'][instance] = position
     check(project)

@@ -17,6 +17,14 @@ class CompositionTests(unittest.TestCase):
     def check_graph(self, model, deployment, metadata):
         self.assertEqual(len(model['components']), 20)
         self.assertEqual(len(model['subscriptions']), 28)
+        subscriptions = {sub['id'] for sub in model['subscriptions']}
+        self.assertEqual(subscriptions, {
+            *(f'analysis_{i}' for i in range(1, 5)),
+            *(f'policy_{i}' for i in range(1, 5)),
+            'report', 'policy_recording', 'supervision.report', 'recording.archive',
+            *(f'cell_{i}.{flow}' for i in range(1, 5) for flow in ('frame', 'analysis', 'command', 'feedback')),
+        })
+        self.assertEqual(set(metadata['subscriptions']), subscriptions)
         self.assertEqual(set(metadata['instances']), {
             'cell_1', 'cell_2', 'cell_3', 'cell_4', 'supervision', 'recording'})
         self.assertEqual(set(model['shared_parameters']), {

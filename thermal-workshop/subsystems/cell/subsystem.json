@@ -9,9 +9,6 @@
       }
     },
     "outputs": {
-      "frame": {
-        "from": "plant.frame"
-      },
       "analysis": {
         "from": "analyzer.analysis"
       }

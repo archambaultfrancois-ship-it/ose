@@ -48,9 +48,9 @@ async function mount() {
   document.body.append(root)
   app = createApp(App)
   app.mount(root)
-  await until(() => !!root.querySelector('.page-heading h1'))
+  await until(() => !!root.querySelector('.page-title'))
 }
-function heading() { return root.querySelector('.page-heading h1')?.textContent }
+function heading() { return root.querySelector('.page-title')?.textContent }
 
 it.each(['logs', 'measurements', 'recordings', 'parameters'])('restores %s after the browser reloads the tab', async page => {
   await mount()

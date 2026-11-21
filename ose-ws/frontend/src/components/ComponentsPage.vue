@@ -5,18 +5,43 @@ import FlowGraph from './FlowGraph.vue'
 const props = defineProps<{ report: any; active?: boolean; connected?: boolean }>()
 const search = ref(''), state = ref(''), selectedName = ref<string | null>(null), frozen = ref(false), held = ref<any>(null)
 const sort = ref('name'), showTable = ref(true)
+const sortOptions: { id: string; label: string; value?: (row: any) => number | null | undefined }[] = [
+  { id: 'name', label: 'Name' },
+  { id: 'state', label: 'State (attention first)' },
+  { id: 'in', label: 'Admissions/s', value: row => row.rates?.in },
+  { id: 'out', label: 'Publications/s', value: row => row.rates?.out },
+  { id: 'ticks', label: 'Callbacks/s', value: row => row.rates?.ticks },
+  { id: 'cpu', label: 'CPU %', value: row => row.resources?.component?.cpu_percent },
+  { id: 'memory', label: 'RSS MiB', value: row => row.resources?.component?.rss_bytes },
+  { id: 'fifo', label: 'FIFO occupancy', value: row => {
+    const fifo = queue(row)
+    return fifo?.depth != null && fifo.policy.capacity > 0 ? fifo.depth / fifo.policy.capacity : null
+  } },
+  { id: 'tick', label: 'Callback p95', value: row => row.tick_p95_ms },
+  { id: 'age', label: 'Report age', value: row => row.report_age_ms },
+]
+const severityOrder: Record<string, number> = { error: 4, warning: 3, waiting: 2, ok: 1 }
 const view = (report: any) => frozen.value ? held.value : report
 const selected = computed(() => view(props.report)?.components?.find((row: any) => row.name === selectedName.value))
 function toggle(report: any) { if (!frozen.value) held.value = copyValue(report); frozen.value = !frozen.value }
 function rows(report: any) {
+  const option = sortOptions.find(option => option.id === sort.value)
   return [...(view(report)?.components || [])].filter(row => row.name.toLowerCase().includes(search.value.toLowerCase()) && (!state.value || row.state === state.value))
-    .sort((a, b) => sort.value === 'name' ? a.name.localeCompare(b.name) : (b.tick_p95_ms ?? -1) - (a.tick_p95_ms ?? -1))
+    .sort((a, b) => {
+      const byName = a.name.localeCompare(b.name)
+      if (sort.value === 'state') return (severityOrder[b.severity] || 0) - (severityOrder[a.severity] || 0) || a.state.localeCompare(b.state) || byName
+      if (!option?.value) return byName
+      const left = option.value(a), right = option.value(b)
+      const hasLeft = typeof left === 'number' && Number.isFinite(left), hasRight = typeof right === 'number' && Number.isFinite(right)
+      if (!hasLeft || !hasRight) return hasLeft ? -1 : hasRight ? 1 : byName
+      return right - left || byName
+    })
 }
 function number(value: any) { return value == null ? '—' : Number(value).toLocaleString('en', { maximumFractionDigits: 1 }) }
 function queue(row: any) { return row.queues?.filter((q: any) => q.policy.buffer === 'fifo').sort((a: any, b: any) => (b.depth / b.policy.capacity) - (a.depth / a.policy.capacity))[0] }
 </script>
 <template>
-  <div class="toolbar"><label class="search">Search components<input v-model="search" placeholder="Name contains…" /></label><label>State<select v-model="state"><option value="">All states</option><option v-for="name in ['ACTIVE','ATTENTION','LOSS/ERROR','UNAVAILABLE','STALE','WAIT INPUT','WAIT PUB','DISABLED','ENABLING','DISABLING','STARTING','IDLE']" :key="name">{{ name }}</option></select></label><label>Sort<select v-model="sort"><option value="name">Name</option><option value="tick">Callback p95</option></select></label><label class="inline"><input type="checkbox" v-model="showTable" /> Show component table</label><button @click="toggle(report)">{{ frozen ? 'Resume view' : 'Freeze view' }}</button></div>
+  <div class="toolbar"><label class="search">Search components<input v-model="search" placeholder="Name contains…" /></label><label>State<select v-model="state"><option value="">All states</option><option v-for="name in ['ACTIVE','ATTENTION','LOSS/ERROR','UNAVAILABLE','STALE','WAIT INPUT','WAIT PUB','DISABLED','ENABLING','DISABLING','STARTING','IDLE']" :key="name">{{ name }}</option></select></label><label>Sort<select v-model="sort" aria-label="Sort components"><option v-for="option in sortOptions" :key="option.id" :value="option.id">{{ option.label }}</option></select></label><label class="inline"><input type="checkbox" v-model="showTable" /> Show component table</label><button @click="toggle(report)">{{ frozen ? 'Resume view' : 'Freeze view' }}</button></div>
   <p v-if="frozen" class="notice">View frozen. Server collection and captures continue.</p>
   <div v-if="showTable" class="panel table-scroll"><table aria-label="Component measurements"><thead><tr><th>Component</th><th>State</th><th>Admissions/s</th><th>Publications/s</th><th>Callbacks/s</th><th>CPU %</th><th>RSS MiB</th><th>FIFO</th><th>Callback p95</th><th>Report age</th></tr></thead><tbody>
     <tr v-for="row in rows(report)" :key="row.name"><td><button class="text-button" @click="selectedName = row.name">{{ row.name }}</button><small class="mono muted">{{ row.generation?.slice(0, 8) || 'No generation' }}</small></td><td><span class="badge" :data-state="row.severity">{{ row.state }}</span></td><td>{{ number(row.rates.in) }}</td><td>{{ number(row.rates.out) }}</td><td>{{ number(row.rates.ticks) }}</td><td>{{ number(row.resources?.component?.cpu_percent) }}</td><td>{{ number(row.resources?.component?.rss_bytes == null ? null : row.resources.component.rss_bytes / 1048576) }}</td><td>{{ queue(row) ? `${queue(row).depth}/${queue(row).policy.capacity}` : '—' }}</td><td>{{ number(row.tick_p95_ms) }} ms</td><td>{{ number(row.report_age_ms) }} ms</td></tr>

@@ -43,13 +43,15 @@ The application model connects six instances of three definitions:
 
 | Definition | Instances | Local components | Public message ports |
 | --- | --- | --- | --- |
-| [Cell](subsystems/cell/subsystem.json) | `cell_1` … `cell_4` | plant, analyzer, controller, actuator | input `policy`; outputs `frame`, `analysis` |
+| [Cell](subsystems/cell/subsystem.json) | `cell_1` … `cell_4` | plant, analyzer, controller, actuator | input `policy`; output `analysis` |
 | [Supervision](subsystems/supervision/subsystem.json) | `supervision` | fusion, supervisor | inputs `cell_1` … `cell_4`; outputs `report`, `policy` |
-| [Recording](subsystems/recording/subsystem.json) | `recording` | historian, audit | inputs `report`, `policy`; output `archive` |
+| [Recording](subsystems/recording/subsystem.json) | `recording` | historian, audit | inputs `report`, `policy`; no public output |
 
-The cell definition owns its complete local feedback loop. Supervision aggregates
+The cell definition owns its complete local feedback loop; `plant.frame` stays
+private and feeds the internal analyzer. Supervision aggregates
 its four analysis inputs and produces the policy shared by all controllers.
-Recording owns the history timer and audit paths. The root model only connects
+Recording owns the history timer and audit paths; `historian.archive` stays
+private and feeds the internal audit component. The root model only connects
 these public ports; internal connections retain their original queue policies.
 Public ports are aliases and add no component or queue.
 
@@ -81,8 +83,24 @@ their crossing links. Logical leaf names are now `cell_1.plant`,
 Ports use `:` after the component path, e.g. `cell_1.plant:frame`. Rebuild the plan
 and recreate watches referring to the old flat component or subscription IDs.
 
+Subscription names describe the flow rather than repeat its source and destination.
+Local names use lowercase words separated by underscores; dots are reserved for
+the instance path added by composition. Each local name must be unique within its
+model. The resulting 28 application subscription IDs are:
+
+| Scope | Subscription IDs |
+| --- | --- |
+| Application | `analysis_1` … `analysis_4`, `policy_1` … `policy_4`, `report`, `policy_recording` |
+| Each cell | `cell_N.frame`, `cell_N.analysis`, `cell_N.command`, `cell_N.feedback` |
+| Supervision | `supervision.report` |
+| Recording | `recording.archive` |
+
+After a rename, rebuild the application and recreate watches that refer to the old
+subscription IDs. Existing recording files retain their original identifiers.
+
 The standalone cell test runs its real C analyzer, injects a supervisory policy,
-updates public settings and checks ten sensor frames and analyses. It uses the
+updates public settings and checks ten public analyses, including the tenth
+sequence number. Sensor frames remain internal to the cell. It uses the
 Python workload fallback; the full application build also enables native kernels.
 
 ## Start with the web console

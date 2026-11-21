@@ -65,7 +65,7 @@
   },
   "subscriptions": [
     {
-      "id": "historian-audit-report",
+      "id": "archive",
       "from": "historian.archive",
       "to": "audit.report",
       "qos": {

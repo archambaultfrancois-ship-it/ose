@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import Button from 'primevue/button'
 import { useProject } from '../store'
 import { graphModel } from '../subsystems'
-const props = defineProps<{ selected: string[] }>()
+const props = defineProps<{ selected: string[]; group?: string }>()
 const store = useProject(), action = ref(''), instance = ref(''), source = ref(''), directory = ref('')
 const direction = ref('inputs'), target = ref(''), alias = ref('')
 const definition = computed(() => store.project.model_contexts?.[store.project.model]?.definitions?.[0])
@@ -13,11 +13,11 @@ const targets = computed(() => {
   return Object.entries(model?.components || {}).flatMap(([name, value]: any) => Object.entries(value[direction.value] || {})
     .filter(([, desc]: any) => desc.kind !== 'timer').map(([port]) => name + '.' + port))
 })
-function open(value: string) { action.value = value; instance.value = ''; source.value = ''; directory.value = ''; target.value = ''; alias.value = '' }
+function open(value: string) { action.value = value; instance.value = value === 'extract_subsystem' && props.group ? props.group.replace(/[^A-Za-z0-9_]/g, '_') : ''; source.value = ''; directory.value = ''; target.value = ''; alias.value = '' }
 async function preview() {
   const command = action.value === 'expose_subsystem_port'
     ? { action: action.value, definition: definition.value, direction: direction.value, target: target.value, name: alias.value }
-    : { action: action.value, name: instance.value, source: source.value, directory: directory.value, components: props.selected }
+    : { action: action.value, name: instance.value, source: source.value, directory: directory.value, components: props.selected, ...(action.value === 'extract_subsystem' && props.group ? { group: props.group } : {}) }
   if (await store.command(command)) action.value = ''
 }
 </script>
@@ -27,7 +27,7 @@ async function preview() {
       <label v-if="definition">Definition deployment<select :value="store.project.selected_deployment" aria-label="Definition deployment" @change="store.command({ action: 'select_deployment', model: store.project.model, file: ($event.target as HTMLSelectElement).value }, false)"><option v-for="file in store.project.deployments" :key="file">{{ file }}</option></select></label>
       <Button label="Instantiate subsystem" size="small" severity="secondary" :disabled="!!store.pending" @click="open('instantiate_subsystem')" />
       <Button label="New subsystem" size="small" severity="secondary" :disabled="!!store.pending" @click="open('create_subsystem')" />
-      <Button label="Extract selection" size="small" severity="secondary" :disabled="!selected.length || !!store.pending" @click="open('extract_subsystem')" />
+      <Button :label="group ? 'Convert group to subsystem' : 'Extract selection'" size="small" severity="secondary" :disabled="!selected.length || !!store.pending" @click="open('extract_subsystem')" />
       <Button v-if="definition" label="Expose public port" size="small" severity="secondary" :disabled="!!store.pending" @click="open('expose_subsystem_port')" />
     </div>
     <form v-if="action" aria-label="Subsystem operation" @submit.prevent="preview" @keydown.esc="action = ''">
@@ -48,7 +48,11 @@ async function preview() {
   </div>
 </template>
 <style scoped>
-.subsystem-tools { padding: 8px 16px; border-bottom: 1px solid #dce4ef; }
+.subsystem-tools { padding: 4px 12px; border-bottom: 1px solid #dce4ef; }
+.subsystem-tools > .actions { gap: 6px; align-items: center; }
+.subsystem-tools > .actions :deep(.p-button) { min-height: 26px; padding: 4px 8px; font-size: 11px !important; line-height: 16px; }
+.subsystem-tools > .actions label { flex-direction: row; align-items: center; font-size: 11px; }
+.subsystem-tools > .actions select { padding: 4px 6px; font-size: 11px; }
 .actions, form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
 form { padding-top: 12px; }
 label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }

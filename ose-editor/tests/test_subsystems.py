@@ -26,8 +26,8 @@ class SubsystemTests(unittest.TestCase):
         self.addCleanup(project.close)
         state = project.projection()
         self.assertEqual(state['diagnostics'], [])
-        self.assertEqual(state['subsystems']['model.json']['cell_1']['outputs']['frame']['root'],
-                         'SensorFrame')
+        self.assertEqual(state['subsystems']['model.json']['cell_1']['outputs']['analysis']['root'],
+                         'Analysis')
         validator = Validator(project, ROOT / 'sdl')
         self.addCleanup(validator.close)
         with patch.object(validator.pool, 'submit') as queued:
@@ -36,7 +36,7 @@ class SubsystemTests(unittest.TestCase):
         task[0](*task[1:])
         result = validator.snapshot(job['id'])
         self.assertEqual(result['status'], 'passed', result)
-        self.assertIn('analyzer_1-fusion-cell_1', result['contracts'])
+        self.assertIn('analysis_1', result['contracts'])
 
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
@@ -143,6 +143,19 @@ class SubsystemTests(unittest.TestCase):
             with self.subTest(command=command), self.assertRaises(ValueError):
                 self.project.prepare(command, self.project.revision)
             self.assertEqual(self.project.snapshot(), before)
+
+    def test_visual_group_conversion_preserves_position_and_is_undoable(self):
+        self.command(dict(action='workspace', groups={'Presentation': {'members': ['display'], 'collapsed': True}},
+                          positions={'group:Presentation': {'x': 120, 'y': 80}}))
+        before = self.project.snapshot()
+        self.command(dict(action='extract_subsystem', components=['display'], group='Presentation',
+                          name='presentation', directory='presentation'))
+        state = self.project.projection()
+        self.assertNotIn('Presentation', state['workspace']['groups'])
+        self.assertEqual(state['workspace']['positions']['presentation'], {'x': 120, 'y': 80})
+        self.assertIn('presentation', state['subsystems']['model.json'])
+        self.project.undo(self.project.revision)
+        self.assertEqual(self.project.snapshot(), before)
 
     def test_extraction_preserves_deployments_connections_and_execution_paths(self):
         from ose.modeling.compiler import compile_plan

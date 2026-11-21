@@ -2,15 +2,6 @@
   "version": 1,
   "assertions": [
     {
-      "output": "frame",
-      "count": 10,
-      "value": {
-        "header": {
-          "cell": 1
-        }
-      }
-    },
-    {
       "output": "analysis",
       "count": 10,
       "value": {

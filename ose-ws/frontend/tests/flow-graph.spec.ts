@@ -66,12 +66,12 @@ it.each([false, true])('keeps the real thermal processing chains horizontal with
     expect(new Set(centers).size).toBe(1)
     rows.push(centers[0])
     for (let i = 1; i < chain.length; i++) expect(chain[i - 1].x + nodeWidth).toBeLessThan(chain[i].x)
-    feedback.push(thermalSubscriptions[`cell_${cell}.actuator-plant-feedback`], `supervisor-controller_${cell}-policy`)
+    feedback.push(thermalSubscriptions[`cell_${cell}.feedback`], `policy_${cell}`)
   }
   expect(new Set(rows).size).toBe(4)
   expect(graph.edges.filter(edge => edge.feedback).map(edge => edge.id).sort()).toEqual(feedback.sort())
-  expect(graph.edges.filter(edge => edge.mode === 'pull').map(edge => edge.id).sort()).toEqual([...feedback, 'fusion-historian-input'].sort())
-  expect(graph.edges.find(edge => edge.id === 'fusion-historian-input')).toMatchObject({ mode: 'pull', feedback: false })
+  expect(graph.edges.filter(edge => edge.mode === 'pull').map(edge => edge.id).sort()).toEqual([...feedback, 'report'].sort())
+  expect(graph.edges.find(edge => edge.id === 'report')).toMatchObject({ mode: 'pull', feedback: false })
   expect(nodes.get(thermalIds['supervision.fusion'])!.x + nodeWidth).toBeLessThan(nodes.get(thermalIds['recording.historian'])!.x)
 
   for (const edge of graph.edges) {
@@ -182,6 +182,38 @@ it('keeps the status table usable when topology metadata is unavailable', () => 
   expect(root.querySelectorAll('tbody tr')).toHaveLength(Object.keys(model.components).length)
 })
 
+it('sorts components by every displayed column, using FIFO fill ratios and placing missing values last', async () => {
+  const row = (name: string, input: number, output: number, ticks: number, cpu: number, memory: number, callback: number, age: number, depth: number, capacity: number, severity: string, state: string) => ({
+    name, rates: { in: input, out: output, ticks }, resources: { component: { cpu_percent: cpu, rss_bytes: memory * 1048576 } },
+    tick_p95_ms: callback, report_age_ms: age, queues: [{ policy: { buffer: 'fifo', capacity }, depth }], severity, state,
+  })
+  const data = ref({ topology: null, components: [
+    row('c', 10, 0, 5, 20, 20, 3, 20, 8, 10, 'error', 'STALE'),
+    row('b', 1, 5, 10, 30, 10, 1, 10, 1, 2, 'warning', 'ATTENTION'),
+    row('a', 5, 10, 1, 0, 30, 2, 30, 9, 100, 'ok', 'ACTIVE'),
+    { name: 'd', rates: {}, queues: [], severity: 'error', state: 'UNAVAILABLE' },
+  ] as any[] })
+  const root = document.createElement('div'); document.body.append(root)
+  app = createApp({ render: () => h(ComponentsPage, { report: data.value }) }); app.mount(root)
+  const sort = root.querySelector('[aria-label="Sort components"]') as HTMLSelectElement
+  const names = () => [...root.querySelectorAll('table[aria-label="Component measurements"] tbody .text-button')].map(node => node.textContent)
+  expect(names()).toEqual(['a', 'b', 'c', 'd'])
+  const expected: Record<string, string[]> = {
+    state: ['c', 'd', 'b', 'a'], in: ['c', 'a', 'b', 'd'], out: ['a', 'b', 'c', 'd'],
+    ticks: ['b', 'c', 'a', 'd'], cpu: ['b', 'c', 'a', 'd'], memory: ['a', 'c', 'b', 'd'],
+    fifo: ['c', 'b', 'a', 'd'], tick: ['c', 'a', 'b', 'd'], age: ['a', 'c', 'b', 'd'],
+  }
+  expect([...sort.options].map(option => option.value).sort()).toEqual(['name', ...Object.keys(expected)].sort())
+  for (const [key, order] of Object.entries(expected)) {
+    sort.value = key; sort.dispatchEvent(new Event('change', { bubbles: true })); await nextTick()
+    expect(names(), key).toEqual(order)
+  }
+  sort.value = 'cpu'; sort.dispatchEvent(new Event('change', { bubbles: true }))
+  for (const component of data.value.components.slice(0, 3)) component.resources.component.cpu_percent = 20
+  await nextTick()
+  expect(names()).toEqual(['a', 'b', 'c', 'd'])
+})
+
 it('anchors links to named ports with enough space for all inputs and outputs', () => {
   const graph = layout(topology, true)
   for (const edge of graph.edges) {
@@ -288,9 +320,9 @@ it('uses thermal logical names for tables, search, details and links while selec
   button.click(); await nextTick()
   expect(root.querySelector('.detail h2')?.textContent).toBe('cell_2.plant')
   expect(root.querySelector('.flow-node.selected')?.getAttribute('aria-label')).toBe('cell_2.plant: ACTIVE')
-  const link = root.querySelector(`[aria-label^="Subscription cell_2.plant-analyzer-input:"]`) as SVGGElement
+  const link = root.querySelector(`[aria-label^="Subscription cell_2.frame:"]`) as SVGGElement
   expect(link.getAttribute('aria-label')).toContain('cell_2.plant:frame → cell_2.analyzer:input')
   link.dispatchEvent(new MouseEvent('click', { bubbles: true })); await nextTick()
-  expect(root.querySelector('.flow-link-details')?.textContent).toContain('cell_2.plant-analyzer-input')
+  expect(root.querySelector('.flow-link-details')?.textContent).toContain('cell_2.frame')
   expect(root.textContent).not.toContain('ss_')
 })

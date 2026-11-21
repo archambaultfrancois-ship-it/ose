@@ -112,8 +112,8 @@ class CompositionTests(unittest.TestCase):
     def test_dotted_identities_and_explicit_port_separator(self):
         from ose.names import split_endpoint, endpoint_name, code_identifier
         self.assertEqual(identifier(('cell_1', 'plant'), 'component'), 'cell_1.plant')
-        self.assertEqual(identifier(('cell_1', 'plant-analyzer-input'), 'subscription'),
-                         'cell_1.plant-analyzer-input')
+        self.assertEqual(identifier(('cell_1', 'frame'), 'subscription'),
+                         'cell_1.frame')
         self.assertEqual(split_endpoint('cell_1.plant:frame'), ('cell_1.plant', 'frame'))
         self.assertEqual(split_endpoint('cell_1.plant:record.dsp.fft'), ('cell_1.plant', 'record.dsp.fft'))
         self.assertEqual(endpoint_name('cell_1.plant', 'frame'), 'cell_1.plant:frame')
