@@ -123,12 +123,12 @@ printf '%s\n' "$PWD"
             probe.chmod(0o755)
             env = dict(os.environ, FRAMEWORK_ENV=str(FRAMEWORK / 'setenv.sh'),
                        OSE_APP_ROOT=directory, PATH=str(root) + os.pathsep + os.environ['PATH'])
-            script = 'set -eu\nsource "$FRAMEWORK_ENV"\nose-editor "$@"\n'
+            script = 'set -eu\nshopt -s expand_aliases\nsource "$FRAMEWORK_ENV"\nose editor "$@"\n'
             for arguments in (['setup'], ['--root', 'project with spaces', '--port', '8083']):
                 result = subprocess.run(['bash', '--noprofile', '--norc', '-c', script, 'test', *arguments],
                                         env=env, text=True, capture_output=True, check=True)
                 self.assertEqual(json.loads(result.stdout),
-                                 [str(FRAMEWORK / 'ose-editor/tools/editor.py'), *arguments])
+                                 ['-m', 'ose.cli', 'editor', *arguments])
 
     def test_old_path_python_is_rejected_by_shell_and_make(self):
         with tempfile.TemporaryDirectory() as temporary:

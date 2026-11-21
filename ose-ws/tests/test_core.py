@@ -246,7 +246,7 @@ class StorageTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(APIError) as refused:
                 await second.open()
             self.assertEqual(refused.exception.code, "STATE_IN_USE")
-            self.assertIn("Another ose-ws process", refused.exception.message)
+            self.assertIn("Another ose ws process", refused.exception.message)
         finally:
             await second.close()
         config = copy.deepcopy(self.config)

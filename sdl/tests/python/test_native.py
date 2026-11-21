@@ -54,7 +54,7 @@ class NativeTests(unittest.TestCase):
          plan = native.prepare((kind,))
          raw = b''.join(rng.getrandbits(width*8).to_bytes(width, 'big') for _ in range(512))
          values = struct.unpack('>' + fmt * 512, raw)
-         # Python floats may quiet signaling float32 NaNs during conversion.
+         # Use this interpreter's signaling-NaN conversion, which changed in 3.15.
          expected = struct.pack('>' + fmt * 512, *values)
          self.assertEqual(native.encode(plan, values), expected)
          self.assertEqual(native.encode(plan, native.decode(plan, raw, 512)), expected)
@@ -64,6 +64,26 @@ class NativeTests(unittest.TestCase):
          expected = struct.pack('>' + fmt * 2, -0.0, 1.25, float('inf'), -2.5)
          self.assertEqual(native.encode(plan, values), expected)
          self.assertEqual(native.encode(plan, native.decode(plan, expected, 2)), expected)
+
+   def test_01_codec_native_nan_payloads_and_complex_components(self):
+      for kind, fmt, width, patterns, cls in (
+         ('fl32', 'f', 4, (0x7f800001, 0x7fa12345, 0x7fc12345, 0xffa12345), runtime.Complex32),
+         ('fl64', 'd', 8, (0x7ff0000000000001, 0x7ff123456789abcd, 0x7ff8123456789abc, 0xfff123456789abcd), runtime.Complex64),
+      ):
+         scalar = native.prepare((kind,))
+         complex_plan = native.prepare(('c32' if width == 4 else 'c64', cls))
+         for bits in patterns:
+            with self.subTest(kind=kind, bits=hex(bits)):
+               raw = bits.to_bytes(width, 'big')
+               value = struct.unpack('>' + fmt, raw)[0]
+               expected = struct.pack('>' + fmt, value)
+               self.assertEqual(native.encode(scalar, [value]), expected)
+               decoded = native.decode(scalar, raw, 1)[0]
+               self.assertEqual(struct.pack('>d', decoded), struct.pack('>d', value))
+               self.assertEqual(native.encode(scalar, [decoded]), expected)
+               self.assertEqual(native.encode(complex_plan, [cls(value, value)]), expected * 2)
+               decoded_complex = native.decode(complex_plan, raw * 2, 1)[0]
+               self.assertEqual(struct.pack('>dd', decoded_complex.real, decoded_complex.imag), struct.pack('>dd', value, value))
 
    def test_01_codec_native_messages_and_lifetime(self):
       for cls in (BenchPayload, BenchRecordBatch):

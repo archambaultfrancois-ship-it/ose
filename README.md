@@ -12,16 +12,16 @@ The `ose` repository contains six projects that evolve together:
 - **[OSE](ose/README.md)** (Orchestration, Simulation, Exécution) orchestrates
   and executes component graphs with SDL message contracts, bounded RAM delivery, external clients,
   deterministic parallel simulation, and [distributed real-time deployment](ose/docs/distributed.md).
-- **[OSE Web Console](ose-ws/README.md)** (`ose-ws`) provides an independent
+- **[OSE Web Console](ose-ws/README.md)** (`ose ws`) provides an independent
   English-language web interface for diagnostics, scalar measurements, message
   captures and typed parameter editing in a running OSE application.
-- **[OSE Model Editor](ose-editor/README.md)** (`ose-editor`) provides graphical
+- **[OSE Model Editor](ose-editor/README.md)** (`ose editor`) provides graphical
   authoring of OSE models, deployments and SDL schemas, with synchronized
   structured/source views, revisioned changes and offline validation. Its
   [validation record](ose-editor/docs/validation.md) tracks initial-release qualification.
 - **[Vibration Watch](vibration-watch/README.md)** is a runnable SDL/OSE application
   with C sensors, Rust analyzers, Python alarms, and local, simulated or distributed execution.
-- **[Thermal Workshop](thermal-workshop/README.md)** is an ose-ws load application
+- **[Thermal Workshop](thermal-workshop/README.md)** is an ose ws load application
   with 20 components, feedback control loops and variable nested SDL messages.
 
 New to OSE? Follow the **[beginner quick start](docs/quick-start.md)**

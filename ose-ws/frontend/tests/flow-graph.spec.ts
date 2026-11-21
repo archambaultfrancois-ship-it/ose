@@ -1,10 +1,29 @@
 import { afterEach, expect, it } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
+import { execFileSync } from 'node:child_process'
+import { resolve } from 'node:path'
 import { layout, inputSummary, inputDetails, nodeHeight, nodeWidth, type Topology } from '../src/flow-graph'
 import ComponentsPage from '../src/components/ComponentsPage.vue'
 import model from '../../../vibration-watch/model.json'
-import thermalModel from '../../../thermal-workshop/model.json'
 import { portY } from '../src/flow-graph'
+
+// Resolve the authored hierarchy through OSE, just as the running application
+// does, rather than assuming the application source is already a flat graph.
+const framework = resolve(process.cwd(), '../..')
+const python = execFileSync('sh', ['tools/find-python.sh'], { cwd: framework, encoding: 'utf8' }).trim()
+const thermal: Topology = JSON.parse(execFileSync(python, ['-c', `
+import json, sys
+sys.path.insert(0, 'ose/src')
+from ose.modeling.composition import resolve
+from ose.execution.observation import describe
+model, _, metadata, _ = resolve('thermal-workshop/model.json', 'thermal-workshop/deployment.json')
+model['composition'] = metadata
+for sub in model['subscriptions']:
+    sub['policy'] = sub.get('qos', {})
+print(json.dumps(describe(model)))
+`], { cwd: framework, encoding: 'utf8' }))
+const thermalIds = Object.fromEntries(Object.entries(thermal.composition!.components).map(([id, source]) => [source.path.join('.'), id]))
+const thermalSubscriptions = Object.fromEntries(Object.entries(thermal.composition!.subscriptions!).map(([id, source]) => [source.path.join('.'), id]))
 
 const topology: Topology = {
   version: 1, components: model.components,
@@ -31,30 +50,28 @@ it('lays out the real vibration model in producer order without overlapping node
 })
 
 it.each([false, true])('keeps the real thermal processing chains horizontal with passive feedback (ports=%s)', ports => {
-  const thermal: Topology = {
-    version: 1, components: thermalModel.components,
-    subscriptions: Object.fromEntries(thermalModel.subscriptions.map(sub => [sub.id, { ...sub, policy: sub.qos }])),
-  }
   const graph = layout(thermal, ports)
   const nodes = new Map(graph.nodes.map(node => [node.name, node]))
   expect([...nodes.keys()].sort()).toEqual(Object.keys(thermal.components).sort())
-  expect(graph.edges.map(edge => edge.id).sort()).toEqual(thermalModel.subscriptions.map(sub => sub.id).sort())
+  expect(graph.nodes).toHaveLength(20)
+  expect(graph.edges).toHaveLength(28)
+  expect(graph.edges.map(edge => edge.id).sort()).toEqual(Object.keys(thermal.subscriptions).sort())
 
   const rows: number[] = []
   const feedback: string[] = []
   for (let cell = 1; cell <= 4; cell++) {
-    const chain = ['plant', 'analyzer', 'controller', 'actuator'].map(role => nodes.get(`${role}_${cell}`)!)
+    const chain = ['plant', 'analyzer', 'controller', 'actuator'].map(role => nodes.get(thermalIds[`cell_${cell}.${role}`])!)
     const centers = chain.map(node => node.y + node.height / 2)
     expect(new Set(centers).size).toBe(1)
     rows.push(centers[0])
     for (let i = 1; i < chain.length; i++) expect(chain[i - 1].x + nodeWidth).toBeLessThan(chain[i].x)
-    feedback.push(`actuator_${cell}-plant_${cell}-feedback`, `supervisor-controller_${cell}-policy`)
+    feedback.push(thermalSubscriptions[`cell_${cell}.actuator-plant-feedback`], `supervisor-controller_${cell}-policy`)
   }
   expect(new Set(rows).size).toBe(4)
   expect(graph.edges.filter(edge => edge.feedback).map(edge => edge.id).sort()).toEqual(feedback.sort())
   expect(graph.edges.filter(edge => edge.mode === 'pull').map(edge => edge.id).sort()).toEqual([...feedback, 'fusion-historian-input'].sort())
   expect(graph.edges.find(edge => edge.id === 'fusion-historian-input')).toMatchObject({ mode: 'pull', feedback: false })
-  expect(nodes.get('fusion')!.x + nodeWidth).toBeLessThan(nodes.get('historian')!.x)
+  expect(nodes.get(thermalIds['supervision.fusion'])!.x + nodeWidth).toBeLessThan(nodes.get(thermalIds['recording.historian'])!.x)
 
   for (const edge of graph.edges) {
     expect(edge.path).toMatch(/^M /)

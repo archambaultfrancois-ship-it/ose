@@ -14,7 +14,7 @@ Subsystem extension checked on 2026-11-21 with CPython 3.13.13 and Node.js
 | Complete editor backend suite | 108 tests passed, including 15 subsystem regressions and the thirty-component workload |
 | Complete editor frontend suite | 101 tests passed under Happy DOM |
 | Production frontend | TypeScript/Vue checks and Vite build passed; source fingerprint and packaged asset hashes verified |
-| Example opening | `ose-editor --root ose/examples/subsystems --check`: 12 documents, no diagnostics |
+| Example opening | `ose editor --root ose/examples/subsystems --check`: 12 documents, no diagnostics |
 | Extraction execution | Nested extraction saved, reopened, compiled and simulated; three `ALARM 90.0` outputs preserved |
 
 Subsystem cases cover public interfaces, private-port rejection, shared source

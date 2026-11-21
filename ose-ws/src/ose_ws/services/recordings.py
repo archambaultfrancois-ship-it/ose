@@ -291,6 +291,7 @@ class RecordingManager:
 
     async def sync(self, identity, recorder):
         capture = self.objects[identity]
+        await recorder.flush()
         status = recorder.status()
         status["file_size_bytes"] = await asyncio.to_thread(
             self.file_size, identity, Path(status.get("file") or "").name)

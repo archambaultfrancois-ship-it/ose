@@ -81,14 +81,16 @@ class InstallTests(unittest.TestCase):
         self.assertTrue((self.prefix / 'framework/sdl/runtime/java/SdlCodec.java').is_file())
         self.assertTrue((self.prefix / 'framework/ose-ws/src/ose_ws/static/index.html').is_file())
         self.assertTrue((self.prefix / 'framework/ose-editor/src/ose_editor/static/index.html').is_file())
-        self.assertTrue((self.bin / 'ose-editor').is_symlink())
+        self.assertTrue((self.bin / 'ose').is_symlink())
+        self.assertFalse((self.bin / 'ose-editor').exists())
+        self.assertFalse((self.bin / 'ose-ws').exists())
 
     def test_editor_is_independent_of_web_and_owned_launcher_is_removed(self):
         self.assertEqual(self.install('--languages', 'python', '--features', 'editor'), 0, self.errors)
-        self.assertTrue((self.bin / 'ose-editor').is_symlink())
+        self.assertTrue((self.bin / 'ose').is_symlink())
         self.assertFalse((self.prefix / 'framework/ose-ws').exists())
         self.assertFalse((self.bin / 'ose-ws').exists())
-        self.assertEqual(self.invoke('ose-editor', '--help').returncode, 0)
+        self.assertEqual(self.invoke('ose', 'editor', '--help').returncode, 0)
         self.assertEqual(self.install('--languages', 'python', '--features', 'none'), 0, self.errors)
         self.assertFalse((self.prefix / 'framework/ose-editor').exists())
         self.assertFalse((self.bin / 'ose-editor').is_symlink())
@@ -173,10 +175,17 @@ class InstallTests(unittest.TestCase):
 
     def test_reinstall_removes_deselected_resources_and_commands(self):
         self.assertEqual(self.install('--languages', 'python', '--features', 'web'), 0, self.errors)
-        self.assertTrue((self.bin / 'ose-ws').is_symlink())
+        self.assertEqual(self.invoke('ose', 'ws', '--help').returncode, 0)
+        for name in ('ose-ws', 'ose-editor'):
+            legacy = self.prefix / 'bin' / name
+            legacy.write_text('old launcher')
+            (self.bin / name).symlink_to(legacy)
         self.assertEqual(self.install('--profile', 'runtime', '--languages', 'python', '--features', 'none'), 0, self.errors)
         self.assertFalse((self.prefix / 'framework/ose-ws').exists())
         self.assertFalse((self.bin / 'ose-ws').is_symlink())
+        self.assertFalse((self.bin / 'ose-editor').is_symlink())
+        self.assertFalse((self.prefix / 'bin/ose-ws').exists())
+        self.assertFalse((self.prefix / 'bin/ose-editor').exists())
         self.assertFalse((self.bin / 'sdlc').is_symlink())
 
     def test_preview_warns_but_makes_no_destination_changes(self):
@@ -248,7 +257,8 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Python is unavailable', result.stderr)
         self.assertTrue((self.prefix / 'framework/ose/src/ose/cli.py').is_file())
-        self.assertTrue((self.prefix / 'bin/ose-editor').is_file())
+        self.assertTrue((self.prefix / 'bin/ose').is_file())
+        self.assertFalse((self.prefix / 'bin/ose-editor').exists())
         self.assertEqual(self.install('--languages', 'python', '--features', 'none'), 0, self.errors)
         self.assertEqual(self.invoke('ose', '--help').returncode, 0)
 

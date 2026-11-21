@@ -237,7 +237,7 @@ Depuis le dossier de l'exemple, dans Bash :
 ```bash
 cd ose/examples/subsystems
 source ../../../setenv.sh
-ose-editor --root .
+ose editor --root .
 ```
 
 L'éditeur charge les définitions, modèles, déploiements et schémas référencés.

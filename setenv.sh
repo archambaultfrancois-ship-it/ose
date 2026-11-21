@@ -73,14 +73,8 @@ _ose_env_app_cd() {
     cd -- "$OSE_APP_ROOT"
 }
 
-# Every checkout command uses the same detected PATH Python.
-ose-editor() {
-    "$PYTHON" "$FRAMEWORK_ROOT/ose-editor/tools/editor.py" "$@"
-}
-
-ose-ws() {
-    "$PYTHON" "$FRAMEWORK_ROOT/ose-ws/tools/console.py" "$@"
-}
+# Clear the old launchers when reloading an environment sourced before the rename.
+unset -f ose-editor ose-ws
 
 # Application commands resolve credentials afresh on every invocation.
 if [[ ${_ose_env_parameter_token_auto+x} &&
@@ -95,6 +89,6 @@ alias app-build='_ose_env_cli app build'
 alias app-run='_ose_env_cli app run'
 
 if [[ $- == *i* ]]; then
-    eval "$(_ose_env_cli completion bash)"
+    eval "$(_ose_env_cli --completion bash)"
     printf 'SDL/OSE ready. Application: %s\nType ose app env for paths and ose app --help for commands.\n' "$OSE_APP_ROOT"
 fi

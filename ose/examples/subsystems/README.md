@@ -56,7 +56,7 @@ if selecting `--integration-profile standalone` explicitly during validation.
 From this example's directory with the environment prepared:
 
 ```sh
-ose-editor --root .
+ose editor --root .
 ```
 
 The graph shows Acquisition, Monitoring and the local display with their public

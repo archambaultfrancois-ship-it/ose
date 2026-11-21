@@ -97,9 +97,15 @@ static PyObject *prepare_plan(PyObject *self,PyObject *spec) {
 }
 static int write_float(uint8_t *out,PyObject *value,int single) {
    double d=PyFloat_AsDouble(value);if(PyErr_Occurred())return -1;
-   if(single){float f=(float)d;uint32_t bits;
+   if(single){
+#if PY_VERSION_HEX >= 0x030B0000
+      /* Match struct.pack, including signaling NaNs preserved by Python 3.15. */
+      return PyFloat_Pack4(d,(char *)out,0);
+#else
+      float f=(float)d;uint32_t bits;
       if(isfinite(d)&&!isfinite(f)){PyErr_SetString(PyExc_OverflowError,"float32 overflow");return -1;}
       memcpy(&bits,&f,4);sdl_wire_write_u32(out,bits);
+#endif
    }else{uint64_t bits;memcpy(&bits,&d,8);sdl_wire_write_u32(out,(uint32_t)(bits>>32));sdl_wire_write_u32(out+4,(uint32_t)bits);}
    return 0;
 }
@@ -151,7 +157,13 @@ static int write_node(const Node *n,PyObject *v,uint8_t *out) {
 }
 static PyObject *read_float(const uint8_t *in,int single){
    double d;
-   if(single){uint32_t bits=sdl_wire_read_u32(in);float f;memcpy(&f,&bits,4);d=f;}
+   if(single){
+#if PY_VERSION_HEX >= 0x030B0000
+      d=PyFloat_Unpack4((const char *)in,0);if(PyErr_Occurred())return NULL;
+#else
+      uint32_t bits=sdl_wire_read_u32(in);float f;memcpy(&f,&bits,4);d=f;
+#endif
+   }
    else{uint64_t bits=((uint64_t)sdl_wire_read_u32(in)<<32)|sdl_wire_read_u32(in+4);memcpy(&d,&bits,8);}
    return PyFloat_FromDouble(d);
 }

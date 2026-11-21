@@ -108,6 +108,14 @@ class Recorder:
             await self.capture.stop()
         return self.status()
 
+    async def flush(self):
+        """Make pending output visible without forcing a durable disk sync."""
+        if self.capture:
+            if self.capture.state in ('recording', 'stopping'):
+                await self.capture.disk(self.capture.flush)
+            else:
+                await self.capture.task
+
     def status(self):
         if not self.capture:
             return {"state": "idle", "label": self.label, "max_size": self.max_size,
@@ -150,6 +158,14 @@ class Capture:
 
     async def disk(self, function, *args):
         return await asyncio.get_running_loop().run_in_executor(self.executor, function, *args)
+
+    def flush(self):
+        # Select the current writer on the disk executor, after any pending
+        # rotation or finalization, rather than retaining a closed writer.
+        if self.writer is not None:
+            self.writer.flush()
+            self.pending_bytes = 0
+            self.file_bytes = self.files.stream.tell()
 
     def prepare(self):
         try:

@@ -14,7 +14,7 @@ check: test
 wheel:
 	"$(PYTHON)" -m build
 serve:
-	"$(PYTHON)" -m ose_ws.cli --config ose-ws.json
+	"$(PYTHON)" -m ose.cli ws --config ose-ws.json
 
 include ../tools/sdl-services.mk
 test-python serve: sdl-services

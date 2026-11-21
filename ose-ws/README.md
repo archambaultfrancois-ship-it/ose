@@ -2,7 +2,7 @@
 
 <a href="../README.md"><img align="right" src="../docs/branding/ose-logo.svg" alt="OSE project home" width="64" height="64"></a>
 
-`ose-ws` observes and configures an **already running** OSE application. It is a
+`ose ws` observes and configures an **already running** OSE application. It is a
 separate Python package with a bundled Vue 3 / TypeScript frontend. It connects
 through the existing OSE RPCs; it does not launch, build, stop or redeploy OSE.
 
@@ -27,11 +27,11 @@ cd /path/to/application
 source /path/to/ose/setenv.sh
 ```
 
-The checkout's `ose-ws` shortcut is provided by the framework, like `ose-editor`;
+The checkout's `ose ws` shortcut is provided by the framework, like `ose editor`;
 applications need no console launcher of their own. It uses
 `ose-ws/tools/console.py` and the same detected Python. Missing Python dependencies
 are prepared on the first server launch and reused from `build/python-deps`.
-`ose-ws setup` explicitly installs/repairs them and builds the SDL services.
+`ose ws setup` explicitly installs/repairs them and builds the SDL services.
 Help, `init` and `check` never install or probe dependencies.
 
 The checked-in frontend is included in the wheel. Installed users do not need
@@ -53,7 +53,7 @@ No HTTP request downloads dependencies or invokes a compiler.
 With the checkout environment loaded, start the application separately and run:
 
 ```sh
-ose-ws
+ose ws
 ```
 
 The shortcut passes `--root "$OSE_APP_ROOT"`. On the first `serve` without an
@@ -68,7 +68,7 @@ exists. Explicit environment credentials take precedence. The process-name
 prefix also follows the configured plan/deployment unless explicitly set.
 These defaults are scoped to the console invocation.
 
-The installed command also accepts `ose-ws --root /path/to/application`. Without
+The installed command also accepts `ose ws --root /path/to/application`. Without
 `--root`, it keeps the standalone, explicit-configuration workflow below.
 
 Run from the application directory, where `build/endpoint.json` identifies the
@@ -81,15 +81,15 @@ insecure or TLS settings override the file's security hints; TLS credentials
 must be configured separately.
 
 ```sh
-ose-ws init --config ./ose-ws.json
-ose-ws check --config ./ose-ws.json
-ose-ws --config ./ose-ws.json
+ose ws init --config ./ose-ws.json
+ose ws check --config ./ose-ws.json
+ose ws --config ./ose-ws.json
 ```
 
 Open **http://127.0.0.1:8080** for direct local access, without a browser token.
-Use `ose-ws --auth` to require a token; its file is `.ose-ws/access.token` beside
+Use `ose ws --auth` to require a token; its file is `.ose-ws/access.token` beside
 the configuration. The command creates the token if missing and prints its path,
-never its contents. `ose-ws init --auth` also creates it during initialization.
+never its contents. `ose ws init --auth` also creates it during initialization.
 Configuration and token files are created exclusively with owner-only permissions.
 The `--auth` flag selects local browser authentication for that launch, including
 with an existing configuration. Configured proxy authentication is preserved.
@@ -106,8 +106,8 @@ To reopen existing state after launching elsewhere, select its original runtime
 directory or set an absolute `state_dir`.
 
 ```sh
-ose-ws --config ./ose-ws.json --endpoint ./other-build/endpoint.json --port 8081
-ose-ws --config /path/to/application/ose-ws.json --working-directory ./session
+ose ws --config ./ose-ws.json --endpoint ./other-build/endpoint.json --port 8081
+ose ws --config /path/to/application/ose-ws.json --working-directory ./session
 ```
 
 An unavailable OSE application does not prevent the web server from starting.
@@ -119,6 +119,8 @@ an exclusive lock refuses another console using the same state directory.
 
 - **Components:** shared `status` sampling, the same diagnostics as `ose top`,
   sliding-window rates, freshness, FIFO occupancy, alerts and queue details.
+  **Show component table** hides or restores the measurements table while keeping
+  the application flow graph and selected component details available.
   A directed application flow graph shows components, external topics and
   declared subscriptions, with live component states and admission/publication
   rates. A metric selector adds component CPU, RSS, worst-port timer/input-wait
@@ -172,6 +174,8 @@ They capture the activating message at callback start, after FIFO overflow or
 latest-state selection. Timer/timeout activations carry no message; passive Pull
 reads are not combined into a callback snapshot. Input/output points with the same name can be selected, filtered and
 duplicated independently; counters remain separate in the capture details.
+Recording points are grouped in collapsible component branches, with local point
+names and a count for each component, like the measurement catalogue.
 The category selector filters the catalogue and additional name/type/glob patterns;
 explicitly checked points remain selected across categories. Source names and
 reception settings are shown for input points. Existing captures remain readable.
@@ -184,7 +188,8 @@ reception settings are shown for input points. Existing captures remain readable
 Capture cards show the current file's size on disk, refreshed every second, in
 decimal KB, MB or GB with three significant digits (for example, `12.3 MB`).
 The value follows the current file after rotation; finalized file lists use the
-same units. Buffered data appears when the recording writer writes it to disk.
+same units. Before each size sample, the console flushes the writer's buffered
+output (including MCAP chunks) without forcing an `fsync`.
 Expanding a capture's point list also shows each point's recorded message count
 and cumulative encoded SDL data size, refreshed every second. These totals span
 rotations and include only messages successfully written; data sizes exclude
@@ -196,7 +201,7 @@ Set its existing token without putting it in the configuration:
 
 ```sh
 export OSE_PARAMETER_TOKEN='the-token-declared-in-your-OSE-deployment'
-ose-ws --config ./ose-ws.json
+ose ws --config ./ose-ws.json
 ```
 
 Applying a parameter replaces the **entire block**. The last write processed by
@@ -280,7 +285,7 @@ Failures without a field location stay visible beside the editor's action button
 ## Simulated execution
 
 Run `ose app simulate --duration 60 --interactive` from the application environment,
-then start `ose-ws` in another terminal. The console discovers the simulation server
+then start `ose ws` in another terminal. The console discovers the simulation server
 through the usual endpoint file and adds a **Simulation** page: pause/resume,
 instant or duration stepping, absolute targets, time breakpoints, optional
 microsteps and reset. Interactive servers retain the final snapshot until Ctrl+C.

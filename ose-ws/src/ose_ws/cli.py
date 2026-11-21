@@ -125,15 +125,9 @@ def serve(config):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="ose-ws", description=__doc__)
-    parser.add_argument("command", nargs="?", choices=("init", "check", "serve"), default="serve")
-    parser.add_argument("--root", help="application directory; enables application configuration and credential defaults")
-    parser.add_argument("--config", help="configuration file (default: ose-ws.json in --root or the launch directory)")
-    parser.add_argument("--working-directory", help="base for relative state and capture paths (default: launch directory)")
-    parser.add_argument("--endpoint", help="OSE endpoint file, relative to the calling directory")
-    parser.add_argument("--host", help="HTTP bind address; network access requires configured proxy authentication")
-    parser.add_argument("--port", type=int, help="HTTP port (default: 8080)")
-    parser.add_argument('--auth', action='store_true', help='require a browser access token (default: direct local access)')
+    from ose.web_cli import configure
+    parser = argparse.ArgumentParser(prog="ose ws", description=__doc__)
+    configure(parser, 'ws')
     args = parser.parse_args(argv)
     try:
         directory = Path(args.working_directory or '.').resolve()

@@ -9,6 +9,7 @@ import struct
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from ose.codec.sdl2 import SDL2
 from ose.execution.component_io import read_exact
 from ose.execution.input_ipc import unpack_publication
@@ -266,22 +267,47 @@ class NativeContainerTests(unittest.TestCase):
             with self.subTest(language=language):
                 root, plan = fixture['root'], fixture['plan']
                 binaries = {name: Path(node['command'][0]) for name, node in plan['components'].items()}
-                # Cargo can refresh the final binary even when the crate is
-                # fresh; rustc's dependency file changes only on compilation.
-                artifacts = (binaries if language == 'c' else {
-                    name: next((root / 'build/rust-target/release/deps').glob('ose_component_' + name + '-*.d'))
-                    for name in binaries})
-                before = {name: path.stat().st_mtime_ns for name, path in artifacts.items()}
-                build(root / 'model.json', root / 'deployment.json', SDL_ROOT, root / 'build')
-                self.assertEqual({name: path.stat().st_mtime_ns for name, path in artifacts.items()}, before)
+                before = {name: path.stat().st_mtime_ns for name, path in binaries.items()}
+                targets = {path.name: name for name, path in binaries.items()}
+                run = subprocess.run
+
+                def rebuild():
+                    fresh = {}
+
+                    def observe(command, *args, **kwargs):
+                        if command[:2] == ['cargo', 'build']:
+                            # Cargo reports compilation directly; dep-info names
+                            # and locations vary between toolchain versions.
+                            result = run([*command, '--message-format=json'], *args,
+                                         **dict(kwargs, stdout=subprocess.PIPE, text=True))
+                            for line in result.stdout.splitlines():
+                                message = json.loads(line)
+                                target = message.get('target', {}).get('name')
+                                if message.get('reason') == 'compiler-artifact' and target in targets:
+                                    fresh[targets[target]] = message['fresh']
+                            return result
+                        return run(command, *args, **kwargs)
+
+                    with patch('ose.modeling.compiler.subprocess.run', side_effect=observe):
+                        build(root / 'model.json', root / 'deployment.json', SDL_ROOT, root / 'build')
+                    return fresh
+
+                fresh = rebuild()
+                if language == 'rust':
+                    self.assertEqual(fresh, {name: True for name in binaries})
+                else:
+                    self.assertEqual({name: path.stat().st_mtime_ns for name, path in binaries.items()}, before)
                 handler = root / ('source' + fixture['suffix'])
                 original = handler.read_text()
                 try:
                     handler.write_text(original + '\n// edited handler\n')
-                    build(root / 'model.json', root / 'deployment.json', SDL_ROOT, root / 'build')
-                    self.assertNotEqual(artifacts['source'].stat().st_mtime_ns, before['source'])
-                    for name in ('echo', 'sink'):
-                        self.assertEqual(artifacts[name].stat().st_mtime_ns, before[name])
+                    fresh = rebuild()
+                    if language == 'rust':
+                        self.assertEqual(fresh, {name: name != 'source' for name in binaries})
+                    else:
+                        self.assertNotEqual(binaries['source'].stat().st_mtime_ns, before['source'])
+                        for name in ('echo', 'sink'):
+                            self.assertEqual(binaries[name].stat().st_mtime_ns, before[name])
                 finally:
                     handler.write_text(original)
 

@@ -83,7 +83,7 @@ def editor_check(commands, root, env):
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
     output = tempfile.TemporaryFile()
-    server = subprocess.Popen([str(commands / 'ose-editor'), '--auth', '--root', str(project), '--port', str(port)],
+    server = subprocess.Popen([str(commands / 'ose'), 'editor', '--auth', '--root', str(project), '--port', str(port)],
                               cwd=root, env=env, stdout=output, stderr=subprocess.STDOUT)
     try:
         token_path = project / '.ose-editor/access.token'
@@ -231,14 +231,14 @@ for row in pathlib.Path('/proc/self/maps').read_text().splitlines():
         endpoint = one / 'build/endpoint.json'
         wait_until(endpoint.is_file, [broker])
         config = one / 'web.json'
-        run('ose-ws', 'init', '--auth', '--config', config)
+        run('ose', 'ws', 'init', '--auth', '--config', config)
         settings = json.loads(config.read_text())
         settings['recording']['min_free_disk_mib'] = 0
         config.write_text(json.dumps(settings))
         with socket.socket() as reservation:
             reservation.bind(('127.0.0.1', 0))
             port = reservation.getsockname()[1]
-        web = start('ose-ws', '--auth', '--config', config, '--port', port)
+        web = start('ose', 'ws', '--auth', '--config', config, '--port', port)
         base = f'http://127.0.0.1:{port}'
         client = build_opener(HTTPCookieProcessor(CookieJar()))
         csrf = None

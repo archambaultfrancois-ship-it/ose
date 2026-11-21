@@ -28,14 +28,14 @@ def main():
         env = dict(os.environ, PYTHONPATH=str(installed) + os.pathsep + str(project.parent / "sdl/runtime/python"))
         env.pop("OSE_PARAMETER_TOKEN", None)
         config = root / "console.json"
-        subprocess.run([sys.executable, "-m", "ose_ws.cli", "init", "--auth", "--config", str(config)],
+        subprocess.run([sys.executable, "-m", "ose.cli", "ws", "init", "--auth", "--config", str(config)],
                        cwd=root, env=env, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        subprocess.run([sys.executable, "-m", "ose_ws.cli", "check", "--auth", "--config", str(config)],
+        subprocess.run([sys.executable, "-m", "ose.cli", "ws", "check", "--auth", "--config", str(config)],
                        cwd=root, env=env, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
-        server = subprocess.Popen([sys.executable, "-m", "ose_ws.cli", "--auth", "--config", str(config), "--port", str(port)],
+        server = subprocess.Popen([sys.executable, "-m", "ose.cli", "ws", "--auth", "--config", str(config), "--port", str(port)],
                                   cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         try:
             deadline = time.monotonic() + 15

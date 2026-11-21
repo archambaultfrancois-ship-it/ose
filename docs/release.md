@@ -162,7 +162,7 @@ The installed layout is:
 
 ```text
 <prefix>/
-  bin/                       # ose, sdl-recording; ose-ws, ose-editor, sdlc as selected
+  bin/                       # ose, sdl-recording; sdlc with the SDK profile
   .venv/                     # private Python executable, stdlib, native libraries and dependencies
     bin/python               # stable application entry point; also python3 and python3.x
     runtime.json             # bundled interpreter version and native library list
@@ -194,12 +194,16 @@ ose app --root /path/to/application run
 ose build --model model.json --deployment deployment.json
 
 # Observe an already-running application.
-ose-ws init --config /path/to/application/web.json
-ose-ws --config /path/to/application/web.json
+ose ws init --config /path/to/application/web.json
+ose ws --config /path/to/application/web.json
 
 # Edit application sources without starting OSE.
-ose-editor --root /path/to/application
+ose editor --root /path/to/application
 ```
+
+The optional browser applications are subcommands of `ose`: `ose ws` requires
+the `web` feature, and `ose editor` requires the `editor` feature and SDK profile.
+Reinstalling removes owned legacy `ose-ws` and `ose-editor` launchers.
 
 The application is compiled after installation. Existing plans refer to absolute
 paths and must be regenerated when the application or framework moves. A runtime

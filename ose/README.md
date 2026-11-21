@@ -38,7 +38,7 @@ and `deployment.json` by default. Override either path with `--model` or
 `--deployment`. Builds write to `build/` by default; `ose run` reads
 `build/plan.json`.
 
-Enable Bash completion with `source <(ose completion bash)` (also suitable
+Enable Bash completion with `source <(ose --completion bash)` (also suitable
 for `~/.bashrc`). The framework's `setenv.sh` enables it automatically in
 interactive Bash terminals. Completion covers commands, nested parameter actions,
 options and option choices, with Bash's usual filename fallback.

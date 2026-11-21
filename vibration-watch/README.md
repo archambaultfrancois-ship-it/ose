@@ -62,7 +62,7 @@ in the application directory. `ose app record` prepares missing recording/filter
 dependencies and opens the external console. `ose app env` shows the selected paths; `ose app --help` lists workflows.
 Interactive Bash terminals also enable `ose` completion for commands,
 subcommands, options and option choices. Source `./setenv.sh`, then press Tab.
-The `ose-editor` command opens this application's graphical model editor at
+The `ose editor` command opens this application's graphical model editor at
 `http://127.0.0.1:8082`, using the same PATH Python as the application.
 `ose app record inspect FILE` displays all recorded messages; use `--limit N` to show
 only the first N selected messages.
@@ -95,13 +95,13 @@ optional Python dependencies once (no Node.js build is needed):
 
 ```sh
 source ./setenv.sh
-ose-ws setup
+ose ws setup
 ```
 
 The console uses the same PATH Python as the application and editor. `setup`
 installs its dependencies into the framework's `build/python-deps` directory
 and builds the SDL services. The framework provides this launcher for every
-application, like `ose-editor`; Vibration Watch has no separate web-console
+application, like `ose editor`; Vibration Watch has no separate web-console
 script. Missing Python dependencies are also prepared on the first server
 launch. Help, `init` and `check` do not prepare dependencies.
 
@@ -116,14 +116,14 @@ In a second Bash terminal:
 
 ```sh
 source ./setenv.sh
-ose-ws
+ose ws
 ```
 
-Open **http://127.0.0.1:8080** for direct local access. Use `ose-ws --auth` to
+Open **http://127.0.0.1:8080** for direct local access. Use `ose ws --auth` to
 require the token from `vibration-watch/.ose-ws/access.token`. The first launch
 exclusively creates `ose-ws.json`; a missing owner-only token is created when
 `--auth` is requested. These local
-files and the capture/database state are ignored by Git. `ose-ws` discovers the
+files and the capture/database state are ignored by Git. `ose ws` discovers the
 current `build/endpoint.json` and loads the `operator` parameter token from the
 current `build/plan.json`, falling back to `deployment.json` before a build.
 An explicit `OSE_PARAMETER_TOKEN` takes precedence. Sourcing the environment
@@ -131,8 +131,8 @@ does not read or export credentials. The web login token and OSE parameter
 client token are separate credentials.
 
 State and captures are written under `.ose-ws/` in the current directory where
-you launch `ose-ws`, even after sourcing the environment from elsewhere. Use
-`ose-ws --working-directory PATH` to select another existing runtime directory.
+you launch `ose ws`, even after sourcing the environment from elsewhere. Use
+`ose ws --working-directory PATH` to select another existing runtime directory.
 The configuration, login token, application endpoint and parameter credentials
 remain attached to the application. Relative `state_dir` and `OSE_WS_STATE_DIR`
 paths follow the runtime directory; absolute state paths retain their location.
@@ -141,8 +141,8 @@ Launch from the same directory to reopen its database and captures.
 The launcher works from another directory after sourcing this application's
 environment. Every command uses the same detected interpreter from `PATH`.
 
-Use `ose-ws --port 8081` for another HTTP port, `ose-ws check` to check an existing
-configuration, or `ose-ws --config /path/to/console.json` for an explicit
+Use `ose ws --port 8081` for another HTTP port, `ose ws check` to check an existing
+configuration, or `ose ws --config /path/to/console.json` for an explicit
 configuration (which must already exist). Endpoint overrides follow the caller's
 directory. Closing the console leaves the application running. After replacing
 the framework, restart the application when new engine capabilities are needed.
@@ -155,7 +155,7 @@ network access and the complete-block parameter overwrite semantics.
 source ./setenv.sh
 ose app simulate --duration 60 --interactive
 # In another terminal, source ./setenv.sh, then:
-ose-ws
+ose ws
 ```
 
 Open **Simulation** to advance virtual time. The run starts paused; the server
@@ -442,7 +442,7 @@ is a present label. `machine_ids` filters only the observer's terminal output.
 An empty list shows all machines. Sensor generation,
 analysis and alarm processing continue for every machine.
 
-In **ose-ws → Parameters → observer → display**, toggle the presence of `label`
+In **ose ws → Parameters → observer → display**, toggle the presence of `label`
 or `output`, add or remove `machine_ids` elements, and expand `output` then
 `format` to edit the third-level options. Validate the draft, then apply the
 complete block.

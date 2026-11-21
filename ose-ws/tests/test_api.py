@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import copy
+import io
 import os
 from pathlib import Path
 import socket
@@ -500,10 +501,26 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.broker.recording.sessions, {})
 
     async def test_live_file_size_grows_and_final_size_matches_download(self):
+        for format in ('pcapng', 'mcap'):
+            with self.subTest(format=format):
+                await self.check_live_file_size(format)
+
+    async def check_live_file_size(self, format):
+        from ose.recording.rotation import OutputFiles
+        open_next = OutputFiles.open_next
+
+        def buffered_output(files):
+            stream = open_next(files)
+            # Keep both batches below the output buffer on every Python version.
+            # The monitor must flush the writer, including MCAP's own chunks.
+            files.stream = io.BufferedWriter(stream.detach(), buffer_size=1024**2)
+            return files.stream
+
         created = await self.wait_operation(await self.request('POST', '/recordings', {
-            'selection': ['source.settings'], 'format': 'pcapng'}))
+            'selection': ['source.settings'], 'format': format}))
         identity = created['result']['id']
-        await self.wait_operation(await self.request('POST', f'/recordings/{identity}/start'))
+        with patch.object(OutputFiles, 'open_next', buffered_output):
+            await self.wait_operation(await self.request('POST', f'/recordings/{identity}/start'))
         manager = self.app.state.recordings
         payload = self.broker.codec.wrap(CATALOGUE, self.broker.parameters.service.values['machine/settings'])
 
@@ -529,6 +546,9 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         artifact = (await self.client.get(f'/api/v1/recordings/{identity}/files')).json()['items'][0]
         self.assertGreater(final['status']['file_size_bytes'], first_size)
         self.assertEqual(final['status']['file_size_bytes'], artifact['size'])
+        download = await self.client.get(f'/api/v1/files/{artifact["id"]}/download')
+        self.assertEqual(download.status_code, 200)
+        self.assertEqual(len(download.content), final['status']['file_size_bytes'])
         self.assertEqual(final['status']['topics'][point], 400)
         _, encoded = self.broker.codec.api.unpack_envelope(payload)
         self.assertEqual(final['status']['topic_bytes'][point], 400 * len(encoded))

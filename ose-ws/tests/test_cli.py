@@ -51,6 +51,19 @@ class DirectoryTests(unittest.TestCase):
         # Programmatic reads without a runtime directory keep configuration-relative paths.
         self.assertEqual(read(self.config)['state_dir'], str(self.application / '.ose-ws'))
 
+    def test_installed_ose_ws_init_keeps_application_relative_to_explicit_configuration(self):
+        from ose import cli as ose_cli, web_cli
+        configuration = self.application / 'installed-console.json'
+        environment = {key: value for key, value in os.environ.items() if key != 'OSE_APP_ROOT'}
+        with patch.dict(os.environ, environment, clear=True), \
+                patch.object(web_cli, '__file__', str(self.root / 'installed/framework/ose/src/ose/web_cli.py')), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(ose_cli.main(['ws', 'init', '--config', str(configuration)]), 0)
+        settings = read(configuration)
+        self.assertEqual(settings['application']['root'], str(self.application))
+        self.assertEqual(settings['application']['endpoint'], str(self.application / 'build/endpoint.json'))
+        self.assertEqual(Path.cwd(), self.caller)
+
     def test_auth_flag_selects_token_mode_without_changing_existing_configuration(self):
         self.assertEqual(self.launch()['auth']['mode'], 'none')
         self.assertEqual(self.launch('--auth')['auth']['mode'], 'local_token')

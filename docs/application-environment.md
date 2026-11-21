@@ -35,33 +35,41 @@ processes to adopt this setting. Existing source-side caches are left in place.
 Interactive Bash terminals also enable `ose` completion for commands,
 options and option choices. Press Tab after `ose`, `ose app parameter`,
 or an option such as `ose run --mode` followed by a space.
+To load completion without sourcing the application environment, use
+`source <(ose --completion bash)`. The global `--completion bash` option prints
+the Bash script and exits without requiring an OSE command.
 To switch applications in the same terminal, run `unset OSE_APP_ROOT`, enter the
 other repository, and source the script again.
 
-`ose-editor` opens the selected application's model editor at
+`ose editor` opens the selected application's model editor at
 `http://127.0.0.1:8082`, including when invoked from another directory:
 
 ```sh
-ose-editor
-ose-editor --port 8083
+ose editor
+ose editor --port 8083
 # Optional: prepare or repair dependencies without starting the editor.
-ose-editor setup
+ose editor setup
 ```
 
 The first launch installs missing editor dependencies into the checkout's
-`build/python-deps`; subsequent launches reuse them. `ose-editor setup` prepares
+`build/python-deps`; subsequent launches reuse them. `ose editor setup` prepares
 or repairs those dependencies explicitly. `--help` and `--check` never install
 anything. The editor, console, application and Make commands all use the same
 detected Python from `PATH`. The bundled frontend needs no Node.js build.
 
-`ose-ws` launches the selected application's web console through the framework's
+The browser commands are now `ose editor` and `ose ws`. Reload `setenv.sh` in
+existing terminals to refresh Bash completion and clear the old `ose-editor`
+and `ose-ws` shell functions. Their options and `setup` operation remain available
+through the new subcommands.
+
+`ose ws` launches the selected application's web console through the framework's
 `ose-ws/tools/console.py`, following the same checkout-launcher convention:
 
 ```sh
-ose-ws
-ose-ws --port 8081
-ose-ws check
-ose-ws setup
+ose ws
+ose ws --port 8081
+ose ws check
+ose ws setup
 ```
 
 The first server launch prepares missing Python dependencies; `setup` also

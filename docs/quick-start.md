@@ -277,8 +277,8 @@ Start `app-run SCENARIO=normal` again in terminal A. In terminal B, from the
 same directory and after `source ./setenv.sh`:
 
 ```sh
-ose-ws setup
-ose-ws
+ose ws setup
+ose ws
 ```
 
 `setup` installs optional dependencies into the framework's `build/python-deps`
@@ -287,7 +287,7 @@ versioned commands such as `python3.12`. `make setup` at the repository root pre
 The frontend is included: no Node.js build is needed.
 
 Open **http://127.0.0.1:8080**: the local console opens directly.
-To require an access token, start it with `ose-ws --auth` instead. Read the
+To require an access token, start it with `ose ws --auth` instead. Read the
 file printed by the command and paste its contents into the sign-in page.
 The console remains limited to the loopback address in both local modes.
 Try this tour of the interface:
@@ -412,8 +412,8 @@ also provides a smaller exercise that requires neither C nor Rust compilation.
 | Connection refused or measurements unavailable | Wait for build/startup, then retry. Batch simulations close their server when finished; `--interactive` retains the server and final snapshot until stopped. |
 | The demo stops after three seconds | This is the default duration of `make demo-local`; use `app-run` to continue until Ctrl+C. |
 | The alarm stays active after restoring the threshold | Check that you started with `SCENARIO=normal`; the increasing profile keeps raising vibration levels. |
-| Web dependencies missing | Run `ose-ws setup`, then `ose-ws`, from the application's environment. |
-| Web port 8080 is occupied | Use `ose-ws --port 8081`, then open that address. |
+| Web dependencies missing | Run `ose ws setup`, then `ose ws`, from the application's environment. |
+| Web port 8080 is occupied | Use `ose ws --port 8081`, then open that address. |
 | Termux suspends processes | Keep the device awake; if available, use `termux-wake-lock`, then `termux-wake-unlock` after the demo. |
 
 OSE keeps message queues in RAM; stopping does not restore them. An
