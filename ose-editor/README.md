@@ -126,6 +126,18 @@ outside click or with **Escape**. The inspector uses collapsible sections for
 General, Execution, Reception and Contract where applicable, with removal
 commands under the initially collapsed **Advanced** section.
 
+Self-loops and links returning towards the left automatically take a short path
+around component cards. Internal feedback first routes within its expanded
+subsystem frame. External returns exit and approach their endpoint subsystems at
+the frame boundaries, routing around the outside of those frames. Unrelated
+subsystem frames are obstacles. Routes update while
+moving or resizing cards and frames, with the selected link style retained.
+
+**Auto layout** gives Push message links priority over passive Pull links when
+choosing the direction of a cycle. This places a processing chain in execution
+order (for thermal cells: plant → analyzer → controller → actuator), while keeping
+feedback and policy links visible as secondary connections.
+
 **Go to…** (**Ctrl+K** / **Cmd+K**) searches components, ports, subscription IDs,
 parameters, external topics, SDL declarations and project files. Search terms
 can include a filename or symbol kind. Use **Up/Down** then **Enter** to open a

@@ -5,6 +5,9 @@ export function layoutGraph(nodes: any[], edges: any[]) {
     'elk.hierarchyHandling': 'INCLUDE_CHILDREN', 'elk.spacing.nodeNode': '40',
     'elk.layered.spacing.nodeNodeBetweenLayers': '70' }
   const containers = new Map<string, any>()
+  const byId = new Map(nodes.map(node => [node.id, node]))
+  // Any active message link outweighs all passive Pull links when breaking cycles.
+  const activePriority = edges.length + 1
   for (const node of nodes.filter(node => node.data.kind === 'definition')) {
     containers.set(node.data.name, { id: node.id, width: 344, height: 244, children: [],
       layoutOptions: { ...options, 'elk.padding': '[top=100,left=24,bottom=24,right=24]',
@@ -35,7 +38,11 @@ export function layoutGraph(nodes: any[], edges: any[]) {
     siblings.push(leaf)
   }
   return { id: 'root', layoutOptions: options, children,
-    edges: edges.map(edge => ({ id: edge.id, sources: [edge.source + ':' + edge.sourceHandle], targets: [edge.target + ':' + edge.targetHandle] })),
+    edges: edges.map(edge => {
+      const input = byId.get(edge.target)?.data.inputs.find((port: any) => port.endpoint === edge.targetHandle)
+      return { id: edge.id, sources: [edge.source + ':' + edge.sourceHandle], targets: [edge.target + ':' + edge.targetHandle],
+        layoutOptions: { 'elk.layered.priority.direction': input?.mode === 'pull' ? '0' : String(activePriority) } }
+    }),
   }
 }
 

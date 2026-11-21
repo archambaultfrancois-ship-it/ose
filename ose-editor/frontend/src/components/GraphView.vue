@@ -12,9 +12,10 @@ import SubsystemFrame from './SubsystemFrame.vue'
 import ComponentEditor from './ComponentEditor.vue'
 import SubsystemTools from './SubsystemTools.vue'
 import ToolbarMenu from './ToolbarMenu.vue'
+import AutomaticEdge from './AutomaticEdge.vue'
 import { graphModel, subsystemGraph, definitionScopes } from '../subsystems'
 import { useProject } from '../store'
-import { topology, downstream, type LinkStyle } from '../graph'
+import { topology, downstream, nodeSize, type LinkStyle } from '../graph'
 import { layoutGraph, layoutPositions, type FrameLayout } from '../layout'
 import { assessConnection, inputs, publishers, statusLabel, type Publisher } from '../connections'
 defineEmits<{ 'add-component': [] }>()
@@ -37,7 +38,12 @@ const targetOptions = computed(() => inputs(model.value).map(endpoint => ({ endp
 const assessment = computed(() => chosenSource.value && target.value ? assessConnection(store.project, chosenSource.value, target.value) : null)
 // Configure key filters through the store: Vue Flow's prop validator only
 // accepts booleans even though its selection engine supports key arrays.
-const { fitView, getViewport, setViewport, getSelectedNodes, selectionKeyCode } = useVueFlow()
+const { fitView, getViewport, setViewport, getNodes, getSelectedNodes, selectionKeyCode } = useVueFlow()
+const routingNodes = computed(() => getNodes.value.map(node => {
+  const size = nodeSize(node), frame = node.data.kind === 'definition'
+  return { id: node.id, name: node.data.name, frame, x: node.position.x, y: node.position.y,
+    width: frame ? size.width : node.dimensions.width || size.width, height: frame ? size.height : node.dimensions.height || size.height }
+}))
 selectionKeyCode.value = ['Shift', 'Control', 'Meta']
 let overviewViewport: ReturnType<typeof getViewport> | null = null
 watch(() => store.editingComponent, async (name, previous) => {
@@ -293,10 +299,13 @@ onBeforeUnmount(() => worker.terminate())
     <p v-if="store.project.model !== store.project.root_model" class="definition-notice">Editing shared definition: {{ store.project.model }}. Changes affect every instance of this definition.</p>
     <SubsystemTools :selected="extraction" :group="selectedGroups.length === 1 ? selectedGroups[0] : undefined" />
     <div class="graph-toolbar">
+      <div class="toolbar-actions">
       <Button label="Add component" :disabled="!!store.pending || store.busy" @click="$emit('add-component')" />
       <InputText v-model="search" placeholder="Find a component…" aria-label="Find a component" />
       <Button ref="connectButton" label="Connect ports" severity="secondary" :disabled="!!store.pending" @click="openAssistant()" />
-      <Button label="Auto layout" severity="secondary" :loading="layoutBusy" @click="layout" />
+      </div>
+      <Button class="auto-layout" label="Auto layout" severity="secondary" :loading="layoutBusy" @click="layout" />
+      <div class="toolbar-menus">
       <ToolbarMenu label="Groups">
         <Button label="Group selection" severity="secondary" :disabled="!selectedMembers.length && !selectedGroups.length" @click="group" />
         <Button :label="hasExpandedGroups ? 'Collapse all groups' : 'Expand all groups'" severity="secondary" :disabled="!hasGroups" @click="toggleGroups" />
@@ -307,6 +316,7 @@ onBeforeUnmount(() => worker.terminate())
         <label v-if="model?.version === 2" class="inline"><input type="checkbox" v-model="showActivations" aria-label="Show activation links"> Activation links</label>
         <label>Link style<Select v-model="linkStyle" :options="linkStyles" option-label="label" option-value="value" append-to="self" aria-label="Link style" /></label>
       </ToolbarMenu>
+      </div>
     </div>
     <form v-if="assistant" class="connection-assistant" aria-label="Connect ports" @submit.prevent="previewConnection" @keydown.esc.stop="closeAssistant">
       <label>Publisher<select ref="sourceSelect" v-model="sourceKey" aria-label="Connection publisher"><option value="" disabled>Choose an output</option><option v-for="source in sourceOptions" :key="source.key" :value="source.key">{{ source.endpoint }}{{ source.external ? ' (external topic)' : '' }}</option></select></label>
@@ -317,6 +327,9 @@ onBeforeUnmount(() => worker.terminate())
     </form>
     <p v-if="connectionFeedback" class="connection-feedback" role="status">{{ connectionFeedback }}</p>
     <VueFlow v-model:nodes="nodes" v-model:edges="edges" fit-view-on-init :is-valid-connection="validConnection" :multi-selection-key-code="['Shift', 'Control', 'Meta']" :delete-key-code="null" :min-zoom="0.15" :max-zoom="2" @nodes-initialized="revealNavigation" @node-click="selected" @node-double-click="expand" @edge-click="event => store.select(event.edge.data.model || store.project.model, ['subscriptions', String(event.edge.data.index)])" @connect-start="startConnection" @connect-end="drag = null" @connect="connect" @node-drag-start="startPosition" @node-drag="movePosition" @node-drag-stop="position">
+      <template #edge-default="edgeProps"><AutomaticEdge v-bind="edgeProps" :nodes="routingNodes" /></template>
+      <template #edge-straight="edgeProps"><AutomaticEdge v-bind="edgeProps" :nodes="routingNodes" /></template>
+      <template #edge-smoothstep="edgeProps"><AutomaticEdge v-bind="edgeProps" :nodes="routingNodes" /></template>
       <template #node-subsystem-frame="nodeProps"><SubsystemFrame v-bind="nodeProps" @resize="resizeFrame" /></template>
       <template #node-component="nodeProps"><ComponentNode v-bind="nodeProps" @port-hover="message => connectionFeedback = message" @input-select="inspectInput" @edit-component="editComponent" @open-subsystem="openDefinition" /></template>
       <Background :gap="24" pattern-color="#c8d5e5" /><MiniMap pannable zoomable /><Controls />
@@ -327,11 +340,18 @@ onBeforeUnmount(() => worker.terminate())
 </template>
 
 <style scoped>
-.graph-toolbar { gap: 6px; padding: 6px 12px; }
-.graph-toolbar > :deep(.p-button), .graph-toolbar > :deep(.p-inputtext) { min-height: 28px; padding: 5px 8px; font-size: 11px !important; line-height: 16px; }
+.graph-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px; padding: 6px 12px; }
+.toolbar-actions, .toolbar-menus { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.toolbar-actions :deep(.p-button), .graph-toolbar > :deep(.p-button), .toolbar-actions :deep(.p-inputtext) { min-height: 28px; padding: 5px 8px; font-size: 11px !important; line-height: 16px; }
+.toolbar-actions :deep(.p-button) { flex-shrink: 0; white-space: nowrap; }
+.toolbar-actions :deep(.p-inputtext) { flex: 1; min-width: 60px; max-width: 160px; width: 100%; }
+.auto-layout { grid-column: 2; justify-self: center; white-space: nowrap; }
+.toolbar-menus { grid-column: 3; justify-self: end; }
+@container (max-width: 680px) { .toolbar-actions { grid-column: 1 / -1; flex-wrap: wrap; } }
+@container (max-width: 420px) { .toolbar-menus { grid-column: 1 / -1; } }
 .subsystem-breadcrumbs, .definition-notice { padding: 8px 16px; margin: 0; font-size: 12px; background: #edf3fc; }
 .subsystem-breadcrumbs button { border: none; background: none; color: #3159a4; cursor: pointer; }
-.graph-overview { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.graph-overview { display: flex; flex-direction: column; flex: 1; min-height: 0; container-type: inline-size; }
 .graph-overview :deep(.vue-flow) { flex: 1; min-height: 0; }
 .connection-assistant { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 14px 16px; background: #f7f9fd; border-bottom: 1px solid #dce4ef; }
 .connection-assistant label { min-width: 150px; flex: 1; font-size: 11px; }

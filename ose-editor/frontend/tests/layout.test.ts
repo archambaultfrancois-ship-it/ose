@@ -1,9 +1,38 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import ELK from 'elkjs/lib/elk.bundled.js'
 import { topology } from '../src/graph'
 import { layoutGraph, layoutPositions, resizeLayout } from '../src/layout'
+import { subsystemGraph } from '../src/subsystems'
 
 describe('auto layout port order', () => {
+  it('starts every thermal cell with plant, retaining Pull feedback and external policy links', async () => {
+    const read = (file: string) => JSON.parse(readFileSync(new URL('../../../thermal-workshop/' + file, import.meta.url), 'utf8'))
+    const root = read('model.json'), documents: Record<string, any> = { 'model.json': { value: root } }, instances: Record<string, any> = {}
+    for (const [name, instance] of Object.entries(root.subsystems) as any) {
+      const definition = instance.source, manifest = read(definition), directory = definition.slice(0, definition.lastIndexOf('/') + 1)
+      const model = directory + manifest.model
+      documents[definition] = { value: manifest }; documents[model] = { value: read(model) }
+      const ports = (direction: string) => Object.fromEntries(Object.entries(manifest.interface[direction] || {}).map(([alias, reference]: any) => {
+        const [component, port] = reference[direction === 'inputs' ? 'to' : 'from'].split('.')
+        return [alias, documents[model].value.components[component][direction][port]]
+      }))
+      instances[name] = { definition, model, inputs: ports('inputs'), outputs: ports('outputs') }
+    }
+    const project = { model: 'model.json', documents, subsystems: { 'model.json': instances } }
+    for (const expanded of [['cell_1'], Object.keys(root.subsystems)]) {
+      const graph = topology(subsystemGraph(project, expanded), {})
+      const before = JSON.stringify(graph), result = await new ELK().layout(layoutGraph(graph.nodes, graph.edges))
+      const positions = layoutPositions(result)
+      for (const name of expanded.filter(name => name.startsWith('cell_'))) {
+        const x = ['plant', 'analyzer', 'controller', 'actuator'].map(component => positions[name + '.' + component].x)
+        expect(x[0]).toBeLessThan(x[1]); expect(x[1]).toBeLessThan(x[2]); expect(x[2]).toBeLessThan(x[3])
+        expect(graph.edges.some(edge => edge.id === name + '.feedback')).toBe(true)
+      }
+      expect(graph.edges.some(edge => edge.id === 'policy_1')).toBe(true)
+      expect(JSON.stringify(graph)).toBe(before)
+    }
+  })
   it('places branch 1 above branch 2 to match the visible alarm input order', async () => {
     const port = { root: 'Reading' }
     const model = { version: 2, components: {

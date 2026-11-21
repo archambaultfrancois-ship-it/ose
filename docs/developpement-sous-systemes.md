@@ -306,6 +306,18 @@ le convertir avec **Convert group to subsystem** ; la conversion conserve sa
 position et reste annulable. **Add component** est disponible dans la barre du
 graphe, y compris dans une définition et quand l'explorateur est masqué.
 
+Les boucles sur un composant et les liens de retour vers la gauche contournent
+automatiquement les cartes par un trajet local. Un retour interne cherche d’abord
+un passage dans le cadre du sous-système déplié. Un retour externe rejoint le bord
+des cadres concernés puis les contourne par l’extérieur ; les cadres sans rapport
+avec ce lien sont également contournés. Le tracé se recalcule pendant les déplacements et les
+redimensionnements, avec le style de lien sélectionné.
+
+**Auto layout** privilégie les liens Push par rapport aux entrées Pull passives
+pour orienter les cycles. La cellule thermal se place ainsi dans l’ordre
+`plant → analyzer → controller → actuator`, en conservant les liens de retour et
+de politique comme connexions secondaires.
+
 ## Observer la hiérarchie dans la console
 
 Après avoir reconstruit le plan et relancé l'application, la vue **Application
