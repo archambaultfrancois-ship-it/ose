@@ -3,125 +3,62 @@
   "process_names": {
     "prefix": "tw"
   },
-  "components": {
-    "plant_1": {
-      "container": {
-        "language": "python",
-        "handler": "components/plant.py"
+  "components": {},
+  "subsystems": {
+    "cell_1": {
+      "components": {
+        "plant": {
+          "env": {
+            "THERMAL_CELL": "1"
+          }
+        },
+        "controller": {
+          "env": {
+            "THERMAL_CELL": "1"
+          }
+        }
       }
     },
-    "analyzer_1": {
-      "container": {
-        "language": "c",
-        "handler": "components/analyzer.c"
+    "cell_2": {
+      "components": {
+        "plant": {
+          "env": {
+            "THERMAL_CELL": "2"
+          }
+        },
+        "controller": {
+          "env": {
+            "THERMAL_CELL": "2"
+          }
+        }
       }
     },
-    "controller_1": {
-      "container": {
-        "language": "python",
-        "handler": "components/controller.py"
+    "cell_3": {
+      "components": {
+        "plant": {
+          "env": {
+            "THERMAL_CELL": "3"
+          }
+        },
+        "controller": {
+          "env": {
+            "THERMAL_CELL": "3"
+          }
+        }
       }
     },
-    "actuator_1": {
-      "container": {
-        "language": "python",
-        "handler": "components/actuator.py"
-      }
-    },
-    "plant_2": {
-      "container": {
-        "language": "python",
-        "handler": "components/plant.py"
-      }
-    },
-    "analyzer_2": {
-      "container": {
-        "language": "c",
-        "handler": "components/analyzer.c"
-      }
-    },
-    "controller_2": {
-      "container": {
-        "language": "python",
-        "handler": "components/controller.py"
-      }
-    },
-    "actuator_2": {
-      "container": {
-        "language": "python",
-        "handler": "components/actuator.py"
-      }
-    },
-    "plant_3": {
-      "container": {
-        "language": "python",
-        "handler": "components/plant.py"
-      }
-    },
-    "analyzer_3": {
-      "container": {
-        "language": "c",
-        "handler": "components/analyzer.c"
-      }
-    },
-    "controller_3": {
-      "container": {
-        "language": "python",
-        "handler": "components/controller.py"
-      }
-    },
-    "actuator_3": {
-      "container": {
-        "language": "python",
-        "handler": "components/actuator.py"
-      }
-    },
-    "plant_4": {
-      "container": {
-        "language": "python",
-        "handler": "components/plant.py"
-      }
-    },
-    "analyzer_4": {
-      "container": {
-        "language": "c",
-        "handler": "components/analyzer.c"
-      }
-    },
-    "controller_4": {
-      "container": {
-        "language": "python",
-        "handler": "components/controller.py"
-      }
-    },
-    "actuator_4": {
-      "container": {
-        "language": "python",
-        "handler": "components/actuator.py"
-      }
-    },
-    "fusion": {
-      "container": {
-        "language": "python",
-        "handler": "components/fusion.py"
-      }
-    },
-    "supervisor": {
-      "container": {
-        "language": "python",
-        "handler": "components/supervisor.py"
-      }
-    },
-    "historian": {
-      "container": {
-        "language": "python",
-        "handler": "components/historian.py"
-      }
-    },
-    "audit": {
-      "container": {
-        "language": "python",
-        "handler": "components/audit.py"
+    "cell_4": {
+      "components": {
+        "plant": {
+          "env": {
+            "THERMAL_CELL": "4"
+          }
+        },
+        "controller": {
+          "env": {
+            "THERMAL_CELL": "4"
+          }
+        }
       }
     }
   },

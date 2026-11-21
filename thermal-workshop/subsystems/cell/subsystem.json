@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "model": "model.json",
+  "deployment": "deployment.json",
+  "interface": {
+    "inputs": {
+      "policy": {
+        "to": "controller.policy"
+      }
+    },
+    "outputs": {
+      "frame": {
+        "from": "plant.frame"
+      },
+      "analysis": {
+        "from": "analyzer.analysis"
+      }
+    },
+    "parameters": {
+      "workload": {
+        "path": "workload"
+      },
+      "settings": {
+        "path": "settings"
+      }
+    }
+  }
+}

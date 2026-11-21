@@ -7,7 +7,7 @@ It uses the actual SDL generated codecs, OSE processes, queues and parameter RPC
 
 ## Graph
 
-Each cell contains `plant_N`, `analyzer_N`, `controller_N`, `actuator_N`:
+Each `cell_N` instance contains `plant`, `analyzer`, `controller`, `actuator`:
 
 ```mermaid
 flowchart LR
@@ -36,6 +36,53 @@ one simulated instant. Forward paths use bounded FIFOs with `drop_oldest`; fusio
 uses `latest` buffers. Under overload, losses/replacements are expected and visible
 in the console. Runtime keeps its regular component diagnostics and real-time
 queue policies.
+
+## Subsystem composition
+
+The application model connects six instances of three definitions:
+
+| Definition | Instances | Local components | Public message ports |
+| --- | --- | --- | --- |
+| [Cell](subsystems/cell/subsystem.json) | `cell_1` … `cell_4` | plant, analyzer, controller, actuator | input `policy`; outputs `frame`, `analysis` |
+| [Supervision](subsystems/supervision/subsystem.json) | `supervision` | fusion, supervisor | inputs `cell_1` … `cell_4`; outputs `report`, `policy` |
+| [Recording](subsystems/recording/subsystem.json) | `recording` | historian, audit | inputs `report`, `policy`; output `archive` |
+
+The cell definition owns its complete local feedback loop. Supervision aggregates
+its four analysis inputs and produces the policy shared by all controllers.
+Recording owns the history timer and audit paths. The root model only connects
+these public ports; internal connections retain their original queue policies.
+Public ports are aliases and add no component or queue.
+
+The root still owns exactly five parameter blocks. Every instance binds its
+public `workload` parameter to the same root block; each cell's `settings` binds
+to `cells/N/settings`. Supervision binds to these same settings, so live edits
+remain shared between each control loop and the supervisor. Definition defaults
+are used only when a subsystem runs independently.
+
+Cell identity is fixed at process startup by `THERMAL_CELL` in the plant and
+controller deployments. The cell deployment defaults to `1`; the root deployment
+overrides it for each instance. This keeps one reusable model and leaves the SDL
+message and editable parameter contracts unchanged. To add a cell to this
+four-cell application, extend supervision's inputs/settings and the root wiring
+as well as instantiating the cell definition.
+
+From this directory, with `source ./setenv.sh` loaded:
+
+```sh
+ose-editor --root .
+ose subsystem validate subsystems/cell
+ose subsystem test subsystems/cell --build-dir build/cell-test
+```
+
+Open shared definitions in the editor to change all their instances. In the web
+console, use **Subsystem scope** to inspect a cell, supervision or recording and
+their crossing links. Logical leaf names are now `cell_1.plant`,
+`supervision.fusion`, etc.; execution uses generated stable IDs. Rebuild the plan
+and recreate watches referring to the old flat component or subscription IDs.
+
+The standalone cell test runs its real C analyzer, injects a supervisory policy,
+updates public settings and checks ten sensor frames and analyses. It uses the
+Python workload fallback; the full application build also enables native kernels.
 
 ## Start with the web console
 
@@ -180,8 +227,10 @@ and measurements. Rounding and simulation trace hashes can differ from Python.
 Workload logs retain their fields and cadence; C formats floating values with
 17 significant digits instead of Python's shortest representation.
 
-`model.json` and `deployment.json` are editable source files. The preparation
-script selects a load profile and resolves paths into ignored `build/prepared/`;
+`model.json`, `deployment.json` and `subsystems/*/*.json` are editable source
+files. The preparation script selects a load profile and copies the composed
+model, definitions and deployments into ignored `build/prepared/`, preserving
+hierarchy metadata and resolving schemas/handlers to their authored locations;
 generated containers and SDL bindings are in `build/components/`.
 Tests build the actual application in an isolated temporary directory, exercise
 all 20 subprocesses and feedback, round-trip changing nested messages through

@@ -1,0 +1,193 @@
+{
+  "version": 2,
+  "schemas": "../../schemas",
+  "components": {
+    "plant": {
+      "inputs": {
+        "clock": {
+          "kind": "timer",
+          "timer": {
+            "mode": "periodic",
+            "delay": 0.1
+          },
+          "activates": {
+            "timeout": [
+              "frame"
+            ]
+          }
+        },
+        "feedback": {
+          "root": "Actuation",
+          "mode": "pull"
+        }
+      },
+      "outputs": {
+        "frame": {
+          "root": "SensorFrame"
+        }
+      },
+      "parameter_bindings": {
+        "workload": {
+          "path": "workload",
+          "access": "read"
+        },
+        "cell": {
+          "path": "settings",
+          "access": "read"
+        }
+      }
+    },
+    "analyzer": {
+      "inputs": {
+        "input": {
+          "root": "SensorFrame",
+          "activates": {
+            "message": [
+              "analysis"
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "analysis": {
+          "root": "Analysis"
+        }
+      },
+      "parameter_bindings": {
+        "workload": {
+          "path": "workload",
+          "access": "read"
+        },
+        "cell": {
+          "path": "settings",
+          "access": "read"
+        }
+      }
+    },
+    "controller": {
+      "inputs": {
+        "input": {
+          "root": "Analysis",
+          "activates": {
+            "message": [
+              "command"
+            ]
+          }
+        },
+        "policy": {
+          "root": "Policy",
+          "mode": "pull"
+        }
+      },
+      "outputs": {
+        "command": {
+          "root": "Command"
+        }
+      },
+      "parameter_bindings": {
+        "workload": {
+          "path": "workload",
+          "access": "read"
+        },
+        "cell": {
+          "path": "settings",
+          "access": "read"
+        }
+      }
+    },
+    "actuator": {
+      "inputs": {
+        "input": {
+          "root": "Command",
+          "activates": {
+            "message": [
+              "applied"
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "applied": {
+          "root": "Actuation"
+        }
+      },
+      "parameter_bindings": {
+        "workload": {
+          "path": "workload",
+          "access": "read"
+        },
+        "cell": {
+          "path": "settings",
+          "access": "read"
+        }
+      }
+    }
+  },
+  "subscriptions": [
+    {
+      "id": "plant-analyzer-input",
+      "from": "plant.frame",
+      "to": "analyzer.input",
+      "qos": {
+        "buffer": "fifo",
+        "capacity": 8,
+        "overflow": "drop_oldest",
+        "ack": "received",
+        "retry": {}
+      }
+    },
+    {
+      "id": "analyzer-controller-input",
+      "from": "analyzer.analysis",
+      "to": "controller.input",
+      "qos": {
+        "buffer": "fifo",
+        "capacity": 16,
+        "overflow": "drop_oldest",
+        "ack": "received",
+        "retry": {}
+      }
+    },
+    {
+      "id": "controller-actuator-input",
+      "from": "controller.command",
+      "to": "actuator.input",
+      "qos": {
+        "buffer": "fifo",
+        "capacity": 16,
+        "overflow": "drop_oldest",
+        "ack": "received",
+        "retry": {}
+      }
+    },
+    {
+      "id": "actuator-plant-feedback",
+      "from": "actuator.applied",
+      "to": "plant.feedback",
+      "qos": {
+        "buffer": "latest"
+      }
+    }
+  ],
+  "shared_parameters": {
+    "workload": {
+      "root": "Workload",
+      "initial": {
+        "min_samples": 64,
+        "max_samples": 256,
+        "burst": 1,
+        "cpu_iterations": 0,
+        "log_every": 20,
+        "label": "nominal"
+      }
+    },
+    "settings": {
+      "root": "CellSettings",
+      "initial": {
+        "target": 59.0,
+        "gain": 0.012,
+        "ambient": 21.0
+      }
+    }
+  }
+}

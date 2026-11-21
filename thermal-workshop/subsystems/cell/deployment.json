@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "components": {
+    "plant": {
+      "container": {
+        "language": "python",
+        "handler": "../../components/plant.py"
+      },
+      "cwd": "../..",
+      "env": {
+        "THERMAL_CELL": "1"
+      }
+    },
+    "analyzer": {
+      "container": {
+        "language": "c",
+        "handler": "../../components/analyzer.c"
+      },
+      "cwd": "../.."
+    },
+    "controller": {
+      "container": {
+        "language": "python",
+        "handler": "../../components/controller.py"
+      },
+      "cwd": "../..",
+      "env": {
+        "THERMAL_CELL": "1"
+      }
+    },
+    "actuator": {
+      "container": {
+        "language": "python",
+        "handler": "../../components/actuator.py"
+      },
+      "cwd": "../.."
+    }
+  }
+}

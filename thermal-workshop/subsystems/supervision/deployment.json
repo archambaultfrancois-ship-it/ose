@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "components": {
+    "fusion": {
+      "container": {
+        "language": "python",
+        "handler": "../../components/fusion.py"
+      },
+      "cwd": "../.."
+    },
+    "supervisor": {
+      "container": {
+        "language": "python",
+        "handler": "../../components/supervisor.py"
+      },
+      "cwd": "../.."
+    }
+  }
+}

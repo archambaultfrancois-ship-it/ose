@@ -1,5 +1,6 @@
 """Bounded, deterministic workload shared by the workshop handlers."""
 import math
+import os
 try:
     from _thermal_native import samples, burn as _burn
 except ImportError:
@@ -14,7 +15,9 @@ def clamp(value, low, high):
 
 
 def start(ctx, *metrics):
-    ctx.cell = int(ctx.parameters.get('cell', 0))
+    # An instance's deployment supplies its immutable cell identity. Keep the
+    # local parameter fallback for independently exercised handlers.
+    ctx.cell = int(os.environ.get('THERMAL_CELL', ctx.parameters.get('cell', 0)))
     ctx.received = 0
     for metric in ('messages', *metrics):
         ctx.declare_measurement(metric)

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "model": "model.json",
+  "deployment": "deployment.json",
+  "interface": {
+    "inputs": {
+      "report": {
+        "to": "historian.input"
+      },
+      "policy": {
+        "to": "audit.policy"
+      }
+    },
+    "outputs": {
+      "archive": {
+        "from": "historian.archive"
+      }
+    },
+    "parameters": {
+      "workload": {
+        "path": "workload"
+      }
+    }
+  }
+}

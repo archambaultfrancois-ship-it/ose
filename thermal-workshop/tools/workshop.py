@@ -15,31 +15,65 @@ PROFILES = {
 }
 
 
-def prepare(load='nominal', analyzer=None, native_dir=None):
+def prepare(load='nominal', analyzer=None, native_dir=None, *, directory):
+    """Materialize a profiled hierarchy, retaining composition for the tools.
+
+    The returned application documents belong in directory. Definitions and
+    their models/deployments are copied there; authored sources stay untouched.
+    """
     profile = PROFILES[load]
-    model = json.loads((ROOT / 'model.json').read_text())
-    deployment = json.loads((ROOT / 'deployment.json').read_text())
-    model['schemas'] = str(ROOT / 'schemas')
+    directory = Path(directory).resolve()
     workload = {key: value for key, value in profile.items() if key != 'period'}
-    model['shared_parameters']['workload']['initial'] = dict(workload, label=load)
-    for name, component in model['components'].items():
-        if name.startswith('plant_'):
-            component['inputs']['clock']['timer']['delay'] = profile['period']
-        elif name == 'fusion':
-            component['inputs']['clock']['timer']['delay'] = profile['period'] * 2
-        elif name == 'historian':
-            component['inputs']['clock']['timer']['delay'] = profile['period'] * 5
-    for name, component in deployment['components'].items():
-        if analyzer is not None and name.startswith('analyzer_'):
-            suffix = 'c' if analyzer == 'c' else 'py'
-            component['container'] = dict(language=analyzer, handler=f'components/analyzer.{suffix}')
-        component['container']['handler'] = str(ROOT / component['container']['handler'])
-        component['cwd'] = str(ROOT)
-        if native_dir is not None:
-            environment = component.setdefault('env', {})
-            inherited = environment.get('PYTHONPATH', os.environ.get('PYTHONPATH', ''))
-            environment['PYTHONPATH'] = os.pathsep.join(filter(None, (str(Path(native_dir).resolve()), inherited)))
-    return model, deployment
+    definitions = {}
+
+    def write(source, value):
+        target = directory / source.relative_to(ROOT)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(value, indent=2) + '\n')
+        return target
+
+    def prepare_definition(source):
+        source = source.resolve()
+        if source.is_dir():
+            source /= 'subsystem.json'
+        if source not in definitions:
+            # Register before descending; the compiler reports reference cycles.
+            definitions[source] = directory / source.relative_to(ROOT)
+            definition = json.loads(source.read_text())
+            model_path = (source.parent / definition['model']).resolve()
+            deployment_path = (source.parent / definition['deployment']).resolve()
+            model, deployment = prepare_scope(model_path, deployment_path)
+            write(model_path, model)
+            write(deployment_path, deployment)
+            write(source, definition)
+        return definitions[source]
+
+    def prepare_scope(model_path, deployment_path):
+        model = json.loads(model_path.read_text())
+        deployment = json.loads(deployment_path.read_text())
+        model['schemas'] = str((model_path.parent / model['schemas']).resolve())
+        if 'workload' in model.get('shared_parameters', {}):
+            model['shared_parameters']['workload']['initial'] = dict(workload, label=load)
+        for name, component in model['components'].items():
+            multiplier = {'plant': 1, 'fusion': 2, 'historian': 5}.get(name)
+            if multiplier is not None:
+                component['inputs']['clock']['timer']['delay'] = profile['period'] * multiplier
+        for name, component in deployment['components'].items():
+            if analyzer is not None and name == 'analyzer':
+                suffix = 'c' if analyzer == 'c' else 'py'
+                component['container'] = dict(language=analyzer, handler=str(ROOT / f'components/analyzer.{suffix}'))
+            handler = component['container']['handler']
+            component['container']['handler'] = str((deployment_path.parent / handler).resolve())
+            component['cwd'] = str((deployment_path.parent / component.get('cwd', '.')).resolve())
+            if native_dir is not None:
+                environment = component.setdefault('env', {})
+                inherited = environment.get('PYTHONPATH', os.environ.get('PYTHONPATH', ''))
+                environment['PYTHONPATH'] = os.pathsep.join(filter(None, (str(Path(native_dir).resolve()), inherited)))
+        for instance in model.get('subsystems', {}).values():
+            instance['source'] = str(prepare_definition(model_path.parent / instance['source']))
+        return model, deployment
+
+    return prepare_scope(ROOT / 'model.json', ROOT / 'deployment.json')
 
 
 def main():
@@ -58,7 +92,7 @@ def main():
         build_native(native_dir)
     prepared = build_dir / 'prepared'
     prepared.mkdir(parents=True, exist_ok=True)
-    for name, value in zip(('model', 'deployment'), prepare(args.load, args.analyzer, native_dir)):
+    for name, value in zip(('model', 'deployment'), prepare(args.load, args.analyzer, native_dir, directory=prepared)):
         (prepared / (name + '.json')).write_text(json.dumps(value, indent=2) + '\n')
     environment = dict(os.environ)
     framework = ROOT.parent

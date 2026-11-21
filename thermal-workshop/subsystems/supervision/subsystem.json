@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "model": "model.json",
+  "deployment": "deployment.json",
+  "interface": {
+    "inputs": {
+      "cell_1": {
+        "to": "fusion.cell_1"
+      },
+      "cell_2": {
+        "to": "fusion.cell_2"
+      },
+      "cell_3": {
+        "to": "fusion.cell_3"
+      },
+      "cell_4": {
+        "to": "fusion.cell_4"
+      }
+    },
+    "outputs": {
+      "report": {
+        "from": "fusion.report"
+      },
+      "policy": {
+        "from": "supervisor.policy"
+      }
+    },
+    "parameters": {
+      "workload": {
+        "path": "workload"
+      },
+      "cell_1": {
+        "path": "cells/1/settings"
+      },
+      "cell_2": {
+        "path": "cells/2/settings"
+      },
+      "cell_3": {
+        "path": "cells/3/settings"
+      },
+      "cell_4": {
+        "path": "cells/4/settings"
+      }
+    }
+  }
+}

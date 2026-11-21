@@ -1,0 +1,93 @@
+{
+  "version": 2,
+  "schemas": "../../schemas",
+  "components": {
+    "historian": {
+      "inputs": {
+        "input": {
+          "root": "FleetReport",
+          "mode": "pull"
+        },
+        "clock": {
+          "kind": "timer",
+          "timer": {
+            "mode": "periodic",
+            "delay": 0.5
+          },
+          "activates": {
+            "timeout": [
+              "archive"
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "archive": {
+          "root": "FleetReport"
+        }
+      },
+      "parameters": {
+        "cell": 0
+      },
+      "parameter_bindings": {
+        "workload": {
+          "path": "workload",
+          "access": "read"
+        }
+      }
+    },
+    "audit": {
+      "inputs": {
+        "report": {
+          "root": "FleetReport",
+          "activates": {
+            "message": []
+          }
+        },
+        "policy": {
+          "root": "Policy",
+          "activates": {
+            "message": []
+          }
+        }
+      },
+      "outputs": {},
+      "parameters": {
+        "cell": 0
+      },
+      "parameter_bindings": {
+        "workload": {
+          "path": "workload",
+          "access": "read"
+        }
+      }
+    }
+  },
+  "subscriptions": [
+    {
+      "id": "historian-audit-report",
+      "from": "historian.archive",
+      "to": "audit.report",
+      "qos": {
+        "buffer": "fifo",
+        "capacity": 16,
+        "overflow": "drop_oldest",
+        "ack": "received",
+        "retry": {}
+      }
+    }
+  ],
+  "shared_parameters": {
+    "workload": {
+      "root": "Workload",
+      "initial": {
+        "min_samples": 64,
+        "max_samples": 256,
+        "burst": 1,
+        "cpu_iterations": 0,
+        "log_every": 20,
+        "label": "nominal"
+      }
+    }
+  }
+}

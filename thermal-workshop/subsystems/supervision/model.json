@@ -1,0 +1,161 @@
+{
+  "version": 2,
+  "schemas": "../../schemas",
+  "components": {
+    "fusion": {
+      "inputs": {
+        "clock": {
+          "kind": "timer",
+          "timer": {
+            "mode": "periodic",
+            "delay": 0.2
+          },
+          "activates": {
+            "timeout": [
+              "report"
+            ]
+          }
+        },
+        "cell_1": {
+          "root": "Analysis",
+          "activates": {
+            "message": []
+          }
+        },
+        "cell_2": {
+          "root": "Analysis",
+          "activates": {
+            "message": []
+          }
+        },
+        "cell_3": {
+          "root": "Analysis",
+          "activates": {
+            "message": []
+          }
+        },
+        "cell_4": {
+          "root": "Analysis",
+          "activates": {
+            "message": []
+          }
+        }
+      },
+      "outputs": {
+        "report": {
+          "root": "FleetReport"
+        }
+      },
+      "parameters": {
+        "cell": 0
+      },
+      "parameter_bindings": {
+        "workload": {
+          "path": "workload",
+          "access": "read"
+        }
+      }
+    },
+    "supervisor": {
+      "inputs": {
+        "input": {
+          "root": "FleetReport",
+          "activates": {
+            "message": [
+              "policy"
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "policy": {
+          "root": "Policy"
+        }
+      },
+      "parameters": {
+        "cell": 0
+      },
+      "parameter_bindings": {
+        "workload": {
+          "path": "workload",
+          "access": "read"
+        },
+        "cell_1": {
+          "path": "cells/1/settings",
+          "access": "read"
+        },
+        "cell_2": {
+          "path": "cells/2/settings",
+          "access": "read"
+        },
+        "cell_3": {
+          "path": "cells/3/settings",
+          "access": "read"
+        },
+        "cell_4": {
+          "path": "cells/4/settings",
+          "access": "read"
+        }
+      }
+    }
+  },
+  "subscriptions": [
+    {
+      "id": "fusion-supervisor-input",
+      "from": "fusion.report",
+      "to": "supervisor.input",
+      "qos": {
+        "buffer": "fifo",
+        "capacity": 16,
+        "overflow": "drop_oldest",
+        "ack": "received",
+        "retry": {}
+      }
+    }
+  ],
+  "shared_parameters": {
+    "workload": {
+      "root": "Workload",
+      "initial": {
+        "min_samples": 64,
+        "max_samples": 256,
+        "burst": 1,
+        "cpu_iterations": 0,
+        "log_every": 20,
+        "label": "nominal"
+      }
+    },
+    "cells/1/settings": {
+      "root": "CellSettings",
+      "initial": {
+        "target": 59.0,
+        "gain": 0.012,
+        "ambient": 21.0
+      }
+    },
+    "cells/2/settings": {
+      "root": "CellSettings",
+      "initial": {
+        "target": 63.0,
+        "gain": 0.012,
+        "ambient": 22.0
+      }
+    },
+    "cells/3/settings": {
+      "root": "CellSettings",
+      "initial": {
+        "target": 67.0,
+        "gain": 0.012,
+        "ambient": 23.0
+      }
+    },
+    "cells/4/settings": {
+      "root": "CellSettings",
+      "initial": {
+        "target": 71.0,
+        "gain": 0.012,
+        "ambient": 24.0
+      }
+    }
+  }
+}

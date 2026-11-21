@@ -1,2 +1,3 @@
 /build/
+/subsystems/*/build/
 /ose-ws.json

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "components": {
+    "historian": {
+      "container": {
+        "language": "python",
+        "handler": "../../components/historian.py"
+      },
+      "cwd": "../.."
+    },
+    "audit": {
+      "container": {
+        "language": "python",
+        "handler": "../../components/audit.py"
+      },
+      "cwd": "../.."
+    }
+  }
+}

@@ -44,14 +44,16 @@ class AnalyzerCTests(unittest.IsolatedAsyncioTestCase):
         directory = tempfile.TemporaryDirectory(prefix='thermal-analyzer-c-test-')
         cls.addClassCleanup(directory.cleanup)
         cls.root = Path(directory.name)
-        for name, value in zip(('model', 'deployment'), prepare('stress', 'c')):
+        for name, value in zip(('model', 'deployment'), prepare('stress', 'c', directory=cls.root)):
             (cls.root / (name + '.json')).write_text(json.dumps(value))
         path = build(cls.root / 'model.json', cls.root / 'deployment.json',
-                     FRAMEWORK / 'sdl', cls.root / 'build', component='analyzer_1')
+                     FRAMEWORK / 'sdl', cls.root / 'build', component='cell_1.analyzer')
         cls.plan = json.loads(path.read_text())
+        cls.ids = {'.'.join(source['path']): name
+                   for name, source in cls.plan['composition']['components'].items()}
         cls.codec = SDL2(FRAMEWORK / 'sdl')
         cls.messages = module('_thermal_analyzer_test_messages',
-                              cls.root / 'build/components/plant_1/types/messages.py')
+                              cls.root / 'build/components' / cls.ids['cell_1.plant'] / 'types/messages.py')
         # analyzer.py imports the generated module by its usual name.
         previous = sys.modules.get('messages')
         sys.modules['messages'] = cls.messages
@@ -64,7 +66,7 @@ class AnalyzerCTests(unittest.IsolatedAsyncioTestCase):
                 sys.modules['messages'] = previous
 
     async def asyncSetUp(self):
-        self.node = copy.deepcopy(self.plan['components']['analyzer_1'])
+        self.node = copy.deepcopy(self.plan['components'][self.ids['cell_1.analyzer']])
         self.now, self.index = 0, 0
         self.buffer = Buffer(SubscriptionPolicy(), MemoryStore(), lambda: self.now / 1e9)
         self.scheduler = InputScheduler(self.node, {'input': self.buffer})

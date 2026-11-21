@@ -1,969 +1,130 @@
 {
   "version": 2,
   "schemas": "schemas",
-  "components": {
-    "plant_1": {
-      "inputs": {
-        "clock": {
-          "kind": "timer",
-          "timer": {
-            "mode": "periodic",
-            "delay": 0.1
-          },
-          "activates": {
-            "timeout": [
-              "frame"
-            ]
-          }
-        },
-        "feedback": {
-          "root": "Actuation",
-          "mode": "pull"
-        }
-      },
-      "outputs": {
-        "frame": {
-          "root": "SensorFrame"
-        }
-      },
-      "parameters": {
-        "cell": 1
-      },
+  "components": {},
+  "subsystems": {
+    "cell_1": {
+      "source": "subsystems/cell/subsystem.json",
       "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/1/settings",
-          "access": "read"
-        }
+        "workload": "workload",
+        "settings": "cells/1/settings"
       }
     },
-    "analyzer_1": {
-      "inputs": {
-        "input": {
-          "root": "SensorFrame",
-          "activates": {
-            "message": [
-              "analysis"
-            ]
-          }
-        }
-      },
-      "outputs": {
-        "analysis": {
-          "root": "Analysis"
-        }
-      },
-      "parameters": {
-        "cell": 1
-      },
+    "cell_2": {
+      "source": "subsystems/cell/subsystem.json",
       "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/1/settings",
-          "access": "read"
-        }
+        "workload": "workload",
+        "settings": "cells/2/settings"
       }
     },
-    "controller_1": {
-      "inputs": {
-        "input": {
-          "root": "Analysis",
-          "activates": {
-            "message": [
-              "command"
-            ]
-          }
-        },
-        "policy": {
-          "root": "Policy",
-          "mode": "pull"
-        }
-      },
-      "outputs": {
-        "command": {
-          "root": "Command"
-        }
-      },
-      "parameters": {
-        "cell": 1
-      },
+    "cell_3": {
+      "source": "subsystems/cell/subsystem.json",
       "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/1/settings",
-          "access": "read"
-        }
+        "workload": "workload",
+        "settings": "cells/3/settings"
       }
     },
-    "actuator_1": {
-      "inputs": {
-        "input": {
-          "root": "Command",
-          "activates": {
-            "message": [
-              "applied"
-            ]
-          }
-        }
-      },
-      "outputs": {
-        "applied": {
-          "root": "Actuation"
-        }
-      },
-      "parameters": {
-        "cell": 1
-      },
+    "cell_4": {
+      "source": "subsystems/cell/subsystem.json",
       "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/1/settings",
-          "access": "read"
-        }
+        "workload": "workload",
+        "settings": "cells/4/settings"
       }
     },
-    "plant_2": {
-      "inputs": {
-        "clock": {
-          "kind": "timer",
-          "timer": {
-            "mode": "periodic",
-            "delay": 0.1
-          },
-          "activates": {
-            "timeout": [
-              "frame"
-            ]
-          }
-        },
-        "feedback": {
-          "root": "Actuation",
-          "mode": "pull"
-        }
-      },
-      "outputs": {
-        "frame": {
-          "root": "SensorFrame"
-        }
-      },
-      "parameters": {
-        "cell": 2
-      },
+    "supervision": {
+      "source": "subsystems/supervision/subsystem.json",
       "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/2/settings",
-          "access": "read"
-        }
+        "workload": "workload",
+        "cell_1": "cells/1/settings",
+        "cell_2": "cells/2/settings",
+        "cell_3": "cells/3/settings",
+        "cell_4": "cells/4/settings"
       }
     },
-    "analyzer_2": {
-      "inputs": {
-        "input": {
-          "root": "SensorFrame",
-          "activates": {
-            "message": [
-              "analysis"
-            ]
-          }
-        }
-      },
-      "outputs": {
-        "analysis": {
-          "root": "Analysis"
-        }
-      },
-      "parameters": {
-        "cell": 2
-      },
+    "recording": {
+      "source": "subsystems/recording/subsystem.json",
       "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/2/settings",
-          "access": "read"
-        }
-      }
-    },
-    "controller_2": {
-      "inputs": {
-        "input": {
-          "root": "Analysis",
-          "activates": {
-            "message": [
-              "command"
-            ]
-          }
-        },
-        "policy": {
-          "root": "Policy",
-          "mode": "pull"
-        }
-      },
-      "outputs": {
-        "command": {
-          "root": "Command"
-        }
-      },
-      "parameters": {
-        "cell": 2
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/2/settings",
-          "access": "read"
-        }
-      }
-    },
-    "actuator_2": {
-      "inputs": {
-        "input": {
-          "root": "Command",
-          "activates": {
-            "message": [
-              "applied"
-            ]
-          }
-        }
-      },
-      "outputs": {
-        "applied": {
-          "root": "Actuation"
-        }
-      },
-      "parameters": {
-        "cell": 2
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/2/settings",
-          "access": "read"
-        }
-      }
-    },
-    "plant_3": {
-      "inputs": {
-        "clock": {
-          "kind": "timer",
-          "timer": {
-            "mode": "periodic",
-            "delay": 0.1
-          },
-          "activates": {
-            "timeout": [
-              "frame"
-            ]
-          }
-        },
-        "feedback": {
-          "root": "Actuation",
-          "mode": "pull"
-        }
-      },
-      "outputs": {
-        "frame": {
-          "root": "SensorFrame"
-        }
-      },
-      "parameters": {
-        "cell": 3
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/3/settings",
-          "access": "read"
-        }
-      }
-    },
-    "analyzer_3": {
-      "inputs": {
-        "input": {
-          "root": "SensorFrame",
-          "activates": {
-            "message": [
-              "analysis"
-            ]
-          }
-        }
-      },
-      "outputs": {
-        "analysis": {
-          "root": "Analysis"
-        }
-      },
-      "parameters": {
-        "cell": 3
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/3/settings",
-          "access": "read"
-        }
-      }
-    },
-    "controller_3": {
-      "inputs": {
-        "input": {
-          "root": "Analysis",
-          "activates": {
-            "message": [
-              "command"
-            ]
-          }
-        },
-        "policy": {
-          "root": "Policy",
-          "mode": "pull"
-        }
-      },
-      "outputs": {
-        "command": {
-          "root": "Command"
-        }
-      },
-      "parameters": {
-        "cell": 3
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/3/settings",
-          "access": "read"
-        }
-      }
-    },
-    "actuator_3": {
-      "inputs": {
-        "input": {
-          "root": "Command",
-          "activates": {
-            "message": [
-              "applied"
-            ]
-          }
-        }
-      },
-      "outputs": {
-        "applied": {
-          "root": "Actuation"
-        }
-      },
-      "parameters": {
-        "cell": 3
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/3/settings",
-          "access": "read"
-        }
-      }
-    },
-    "plant_4": {
-      "inputs": {
-        "clock": {
-          "kind": "timer",
-          "timer": {
-            "mode": "periodic",
-            "delay": 0.1
-          },
-          "activates": {
-            "timeout": [
-              "frame"
-            ]
-          }
-        },
-        "feedback": {
-          "root": "Actuation",
-          "mode": "pull"
-        }
-      },
-      "outputs": {
-        "frame": {
-          "root": "SensorFrame"
-        }
-      },
-      "parameters": {
-        "cell": 4
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/4/settings",
-          "access": "read"
-        }
-      }
-    },
-    "analyzer_4": {
-      "inputs": {
-        "input": {
-          "root": "SensorFrame",
-          "activates": {
-            "message": [
-              "analysis"
-            ]
-          }
-        }
-      },
-      "outputs": {
-        "analysis": {
-          "root": "Analysis"
-        }
-      },
-      "parameters": {
-        "cell": 4
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/4/settings",
-          "access": "read"
-        }
-      }
-    },
-    "controller_4": {
-      "inputs": {
-        "input": {
-          "root": "Analysis",
-          "activates": {
-            "message": [
-              "command"
-            ]
-          }
-        },
-        "policy": {
-          "root": "Policy",
-          "mode": "pull"
-        }
-      },
-      "outputs": {
-        "command": {
-          "root": "Command"
-        }
-      },
-      "parameters": {
-        "cell": 4
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/4/settings",
-          "access": "read"
-        }
-      }
-    },
-    "actuator_4": {
-      "inputs": {
-        "input": {
-          "root": "Command",
-          "activates": {
-            "message": [
-              "applied"
-            ]
-          }
-        }
-      },
-      "outputs": {
-        "applied": {
-          "root": "Actuation"
-        }
-      },
-      "parameters": {
-        "cell": 4
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell": {
-          "path": "cells/4/settings",
-          "access": "read"
-        }
-      }
-    },
-    "fusion": {
-      "inputs": {
-        "clock": {
-          "kind": "timer",
-          "timer": {
-            "mode": "periodic",
-            "delay": 0.2
-          },
-          "activates": {
-            "timeout": [
-              "report"
-            ]
-          }
-        },
-        "cell_1": {
-          "root": "Analysis",
-          "activates": {
-            "message": []
-          }
-        },
-        "cell_2": {
-          "root": "Analysis",
-          "activates": {
-            "message": []
-          }
-        },
-        "cell_3": {
-          "root": "Analysis",
-          "activates": {
-            "message": []
-          }
-        },
-        "cell_4": {
-          "root": "Analysis",
-          "activates": {
-            "message": []
-          }
-        }
-      },
-      "outputs": {
-        "report": {
-          "root": "FleetReport"
-        }
-      },
-      "parameters": {
-        "cell": 0
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        }
-      }
-    },
-    "supervisor": {
-      "inputs": {
-        "input": {
-          "root": "FleetReport",
-          "activates": {
-            "message": [
-              "policy"
-            ]
-          }
-        }
-      },
-      "outputs": {
-        "policy": {
-          "root": "Policy"
-        }
-      },
-      "parameters": {
-        "cell": 0
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        },
-        "cell_1": {
-          "path": "cells/1/settings",
-          "access": "read"
-        },
-        "cell_2": {
-          "path": "cells/2/settings",
-          "access": "read"
-        },
-        "cell_3": {
-          "path": "cells/3/settings",
-          "access": "read"
-        },
-        "cell_4": {
-          "path": "cells/4/settings",
-          "access": "read"
-        }
-      }
-    },
-    "historian": {
-      "inputs": {
-        "input": {
-          "root": "FleetReport",
-          "mode": "pull"
-        },
-        "clock": {
-          "kind": "timer",
-          "timer": {
-            "mode": "periodic",
-            "delay": 0.5
-          },
-          "activates": {
-            "timeout": [
-              "archive"
-            ]
-          }
-        }
-      },
-      "outputs": {
-        "archive": {
-          "root": "FleetReport"
-        }
-      },
-      "parameters": {
-        "cell": 0
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        }
-      }
-    },
-    "audit": {
-      "inputs": {
-        "report": {
-          "root": "FleetReport",
-          "activates": {
-            "message": []
-          }
-        },
-        "policy": {
-          "root": "Policy",
-          "activates": {
-            "message": []
-          }
-        }
-      },
-      "outputs": {},
-      "parameters": {
-        "cell": 0
-      },
-      "parameter_bindings": {
-        "workload": {
-          "path": "workload",
-          "access": "read"
-        }
+        "workload": "workload"
       }
     }
   },
   "subscriptions": [
     {
-      "id": "plant_1-analyzer_1-input",
-      "from": "plant_1.frame",
-      "to": "analyzer_1.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 8,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
-      "id": "analyzer_1-controller_1-input",
-      "from": "analyzer_1.analysis",
-      "to": "controller_1.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 16,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
-      "id": "controller_1-actuator_1-input",
-      "from": "controller_1.command",
-      "to": "actuator_1.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 16,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
-      "id": "actuator_1-plant_1-feedback",
-      "from": "actuator_1.applied",
-      "to": "plant_1.feedback",
-      "qos": {
-        "buffer": "latest"
-      }
-    },
-    {
       "id": "analyzer_1-fusion-cell_1",
-      "from": "analyzer_1.analysis",
-      "to": "fusion.cell_1",
+      "from": "cell_1.analysis",
+      "to": "supervision.cell_1",
       "qos": {
         "buffer": "latest"
       }
     },
     {
       "id": "supervisor-controller_1-policy",
-      "from": "supervisor.policy",
-      "to": "controller_1.policy",
-      "qos": {
-        "buffer": "latest"
-      }
-    },
-    {
-      "id": "plant_2-analyzer_2-input",
-      "from": "plant_2.frame",
-      "to": "analyzer_2.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 8,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
-      "id": "analyzer_2-controller_2-input",
-      "from": "analyzer_2.analysis",
-      "to": "controller_2.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 16,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
-      "id": "controller_2-actuator_2-input",
-      "from": "controller_2.command",
-      "to": "actuator_2.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 16,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
-      "id": "actuator_2-plant_2-feedback",
-      "from": "actuator_2.applied",
-      "to": "plant_2.feedback",
+      "from": "supervision.policy",
+      "to": "cell_1.policy",
       "qos": {
         "buffer": "latest"
       }
     },
     {
       "id": "analyzer_2-fusion-cell_2",
-      "from": "analyzer_2.analysis",
-      "to": "fusion.cell_2",
+      "from": "cell_2.analysis",
+      "to": "supervision.cell_2",
       "qos": {
         "buffer": "latest"
       }
     },
     {
       "id": "supervisor-controller_2-policy",
-      "from": "supervisor.policy",
-      "to": "controller_2.policy",
-      "qos": {
-        "buffer": "latest"
-      }
-    },
-    {
-      "id": "plant_3-analyzer_3-input",
-      "from": "plant_3.frame",
-      "to": "analyzer_3.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 8,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
-      "id": "analyzer_3-controller_3-input",
-      "from": "analyzer_3.analysis",
-      "to": "controller_3.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 16,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
-      "id": "controller_3-actuator_3-input",
-      "from": "controller_3.command",
-      "to": "actuator_3.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 16,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
-      "id": "actuator_3-plant_3-feedback",
-      "from": "actuator_3.applied",
-      "to": "plant_3.feedback",
+      "from": "supervision.policy",
+      "to": "cell_2.policy",
       "qos": {
         "buffer": "latest"
       }
     },
     {
       "id": "analyzer_3-fusion-cell_3",
-      "from": "analyzer_3.analysis",
-      "to": "fusion.cell_3",
+      "from": "cell_3.analysis",
+      "to": "supervision.cell_3",
       "qos": {
         "buffer": "latest"
       }
     },
     {
       "id": "supervisor-controller_3-policy",
-      "from": "supervisor.policy",
-      "to": "controller_3.policy",
-      "qos": {
-        "buffer": "latest"
-      }
-    },
-    {
-      "id": "plant_4-analyzer_4-input",
-      "from": "plant_4.frame",
-      "to": "analyzer_4.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 8,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
-      "id": "analyzer_4-controller_4-input",
-      "from": "analyzer_4.analysis",
-      "to": "controller_4.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 16,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
-      "id": "controller_4-actuator_4-input",
-      "from": "controller_4.command",
-      "to": "actuator_4.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 16,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
-      "id": "actuator_4-plant_4-feedback",
-      "from": "actuator_4.applied",
-      "to": "plant_4.feedback",
+      "from": "supervision.policy",
+      "to": "cell_3.policy",
       "qos": {
         "buffer": "latest"
       }
     },
     {
       "id": "analyzer_4-fusion-cell_4",
-      "from": "analyzer_4.analysis",
-      "to": "fusion.cell_4",
+      "from": "cell_4.analysis",
+      "to": "supervision.cell_4",
       "qos": {
         "buffer": "latest"
       }
     },
     {
       "id": "supervisor-controller_4-policy",
-      "from": "supervisor.policy",
-      "to": "controller_4.policy",
+      "from": "supervision.policy",
+      "to": "cell_4.policy",
       "qos": {
         "buffer": "latest"
-      }
-    },
-    {
-      "id": "fusion-supervisor-input",
-      "from": "fusion.report",
-      "to": "supervisor.input",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 16,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
       }
     },
     {
       "id": "fusion-historian-input",
-      "from": "fusion.report",
-      "to": "historian.input",
+      "from": "supervision.report",
+      "to": "recording.report",
       "qos": {
         "buffer": "latest"
       }
     },
     {
-      "id": "historian-audit-report",
-      "from": "historian.archive",
-      "to": "audit.report",
-      "qos": {
-        "buffer": "fifo",
-        "capacity": 16,
-        "overflow": "drop_oldest",
-        "ack": "received",
-        "retry": {}
-      }
-    },
-    {
       "id": "supervisor-audit-policy",
-      "from": "supervisor.policy",
-      "to": "audit.policy",
+      "from": "supervision.policy",
+      "to": "recording.policy",
       "qos": {
         "buffer": "fifo",
         "capacity": 16,

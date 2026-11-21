@@ -32,6 +32,10 @@ class WorkshopTests(unittest.IsolatedAsyncioTestCase):
         subprocess.run([sys.executable, str(ROOT / 'tools/workshop.py'), 'build', '--build-dir', str(cls.build_dir)], cwd=ROOT, check=True,
                        stdout=subprocess.DEVNULL)
         cls.plan = read_plan(cls.build_dir / 'plan.json')
+        cls.ids = {'.'.join(source['path']): name
+                   for name, source in cls.plan['composition']['components'].items()}
+        cls.subscriptions = {'.'.join(source['path']): name
+                             for name, source in cls.plan['composition']['subscriptions'].items()}
 
     async def test_native_workload_kernels_and_bounds(self):
         binary, = (self.build_dir / 'native').glob('_thermal_native*.so')
@@ -84,11 +88,12 @@ class WorkshopTests(unittest.IsolatedAsyncioTestCase):
         snapshot = server.snapshot()
         for name, component in snapshot['components'].items():
             self.assertGreater(component['measurements']['messages'], 0, name)
-        plant = snapshot['components']['plant_1']['measurements']
-        self.assertGreater(plant['temperature'], 22)
-        self.assertNotEqual(plant['power'], .25)
-        self.assertGreater(snapshot['components']['supervisor']['measurements']['correction'], 0)
-        self.assertEqual(snapshot['components']['fusion']['measurements']['cells'], 4)
+        for i in range(1, 5):
+            plant = snapshot['components'][self.ids[f'cell_{i}.plant']]['measurements']
+            self.assertGreater(plant['temperature'], 22)
+            self.assertNotEqual(plant['power'], .25)
+        self.assertGreater(snapshot['components'][self.ids['supervision.supervisor']]['measurements']['correction'], 0)
+        self.assertEqual(snapshot['components'][self.ids['supervision.fusion']]['measurements']['cells'], 4)
         self.assertEqual(sum(len(component['measurements']) for component in snapshot['components'].values()), 83)
         await self.command(server, 'break_add', time_ns='1500000000', persistent=True)
         await self.command(server, 'reset')
@@ -96,7 +101,7 @@ class WorkshopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(server.execution()['position_ns'], '0')
 
     async def test_nested_variable_messages_round_trip_and_bounds(self):
-        sys.path.insert(0, str(self.build_dir / 'components/plant_1/types'))
+        sys.path.insert(0, str(self.build_dir / 'components' / self.ids['cell_1.plant'] / 'types'))
         sys.path.insert(0, str(ROOT / 'components'))
         from messages import Workload, CellSettings, Actuation, Header
         import plant
@@ -129,7 +134,7 @@ class WorkshopTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(frame.note is not None for frame in ctx.frames))
         self.assertTrue(any(frame.diagnostic is not None for frame in ctx.frames))
         from ose_ws.schema.adapter import SchemaAdapter
-        descriptor = self.plan['components']['plant_1']['outputs']['frame']
+        descriptor = self.plan['components'][self.ids['cell_1.plant']]['outputs']['frame']
         adapter = SchemaAdapter(descriptor['catalogue'], 'SensorFrame')
         codec = adapter.values.api.prepare(descriptor['catalogue'], [type(ctx.frames[0])])
         lengths = set()
@@ -180,6 +185,9 @@ class WorkshopTests(unittest.IsolatedAsyncioTestCase):
         await collected('0')
         components = (await client.get('/api/v1/components')).json()
         self.assertEqual(len(components['components']), 20)
+        topology = components['topology']['composition']
+        self.assertEqual(set(topology['instances']), set(self.plan['composition']['instances']))
+        self.assertEqual(topology['components'][self.ids['cell_1.plant']]['path'], ['cell_1', 'plant'])
         measures = (await client.get('/api/v1/measurements')).json()['items']
         self.assertEqual(len(measures), 83)
         identity = measures[0]['id']
@@ -231,7 +239,7 @@ class WorkshopTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(.05)
         self.assertIsNone(app.state.collector.error, app.state.collector.error)
         response = await client.post('/api/v1/flow-watches', json={
-            'subscription': 'plant_1-analyzer_1-input', 'epoch': snapshot['epoch']}, headers=csrf)
+            'subscription': self.subscriptions['cell_1.plant-analyzer-input'], 'epoch': snapshot['epoch']}, headers=csrf)
         self.assertEqual(response.status_code, 200, response.text)
         identity = response.json()['id']
         preview = None
