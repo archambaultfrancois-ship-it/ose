@@ -157,6 +157,16 @@ parameter values in URLs.
 
 ## 5. Graph workspace
 
+Subsystem instances are semantic model boundaries, distinct from visual groups.
+They expose only public ports and can be opened recursively through shared
+definition models. Navigation MUST identify shared-definition edits explicitly
+and preserve each model's layout. Instantiation, creation, public-port exposure
+and component extraction MUST use the normal preview/undo/save protocol.
+Extraction MUST preserve internal subscriptions, public parent exposures,
+registered deployment variants, shared-parameter bindings and file/substitution
+contexts. Unsaved composed models MUST use the engine's composition resolver
+before authoritative validation. Sources outside configured roots are rejected.
+
 Component nodes MUST show their name, input/output handles, logical message port
 types and input activation summary. The graph MUST include external topic
 publishers and support fan-out and multiple producers per input. Push, Pull and

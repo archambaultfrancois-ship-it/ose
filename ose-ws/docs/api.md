@@ -63,6 +63,13 @@ freshness. Component health and rates remain in the enclosing `components`
 array. Older version 1 runtimes can omit outputs, roots and external topic
 metadata. Graph refreshes use the shared collector.
 
+Composed plans add optional `composition`: `components` and `subscriptions`
+map runtime IDs to `{path: [logical, names]}`; `instances` maps qualified instance
+paths to public `interface.inputs` and `interface.outputs` endpoint aliases.
+This projection omits source filenames, definition paths and parameter values.
+Clients can navigate subsystem scopes without changing runtime IDs in diagnostics,
+message watches or commands. Missing composition metadata means a flat topology.
+
 Link contracts are fetched on demand with `GET /flow/schema`, using a subscription
 ID and the epoch from `GET /components`. The response uses the same schema
 description as parameter and recording contracts (`root`, `schema_digest`,

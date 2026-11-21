@@ -1,5 +1,20 @@
 # Validation record
 
+Subsystem navigation was checked on 2026-11-21 on Android/Termux ARM64:
+
+- The complete frontend suite passed: 68 Vitest cases and 7 Node helper tests,
+  including logical-path navigation, flat-runtime fallback, preserved runtime
+  identities and both directions of crossing subscriptions.
+- All 3 topology/status backend cases passed, including composition projection
+  without source locations or parameter values and retained offline topology.
+- Vue/TypeScript checking and the production Vite build passed; embedded asset
+  references were verified.
+- The engine's 7 composition unit cases and 8 subsystem simulation cases passed,
+  including a real native component and recursive interfaces.
+
+These checks qualify automated scope navigation and metadata handling; they do
+not add desktop-browser or production distributed-load certification.
+
 The initial implementation was checked on Termux / Android arm64 with Python
 3.13.13, Node.js 24.17.0 and npm 11.17.0. The primary Python dependency versions
 are recorded in `requirements.lock`; frontend versions are locked in

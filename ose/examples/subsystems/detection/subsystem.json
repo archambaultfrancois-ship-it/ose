@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "model": "model.json",
+  "deployment": "deployment.json",
+  "interface": {
+    "inputs": {
+      "in": {
+        "to": "processor.input"
+      }
+    },
+    "outputs": {
+      "out": {
+        "from": "processor.out"
+      }
+    },
+    "parameters": {
+      "threshold": {
+        "path": "settings"
+      }
+    }
+  }
+}

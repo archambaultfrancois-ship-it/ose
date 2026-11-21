@@ -9,6 +9,9 @@ detailed guides.
 
 Updated through commit `b25accb` (15 November 2026), including application model
 v2, interactive simulation, Thermal Workshop and direct local browser access.
+Subsystem composition and autonomous CLI harness terminology was added on
+21 November 2026; graphical subsystem authoring and hierarchical console views
+remain separate follow-up work.
 
 ## Projects and interfaces
 
@@ -102,9 +105,9 @@ References: [wire format](sdl/docs/wire_descriptor.md),
 | Term | Meaning |
 | --- | --- |
 | **Application / component graph** | A set of modeled components and their typed connections, together with execution configuration. Data connections can contain feedback through passive Pull inputs. Activating cycles require simulated execution with `--microsteps`. |
-| **Model** | The version 2 JSON document describing components, message/timer inputs, outputs, per-event output permissions, subscriptions and shared parameters independently of executable placement. Deployment and scenario versions are independent. |
-| **Deployment** | The document associating model components with commands or generated containers, environment settings, transports and placement. |
-| **Resolved plan** | The compiled execution description, usually `build/plan.json`. It contains resolved contracts, policies and absolute paths and is tied to the matching build/runtime. |
+| **Model** | The version 2 JSON document describing components, optional subsystem instances, message/timer inputs, outputs, per-event output permissions, subscriptions and shared parameters independently of executable placement. Deployment and scenario versions are independent. |
+| **Deployment** | The document associating model components with commands or generated containers, environment settings, transports and placement. Composed deployments select defaults or alternative deployment files per subsystem instance, with explicit environment/placement overrides. |
+| **Resolved plan** | The compiled execution description, usually `build/plan.json`. It contains resolved contracts, policies and absolute paths and is tied to the matching build/runtime. Composed sources produce a flat executable graph plus hierarchy/source metadata. |
 | **Component** | A logical application node running business code, such as acquisition, analysis or alarm handling. Its name identifies it in the graph and console. |
 | **Adapter** | The OSE process managing one component's network delivery, queues, scheduling and local IPC. In real-time execution it is separate from the component executable. |
 | **Broker** | The routing service managing publications and independent per-subscription delivery queues. Local execution hosts it alongside supervision; simulation uses centrally managed logical admissions rather than network delivery queues. |
@@ -142,6 +145,30 @@ References: [architecture](ose/docs/architecture.md),
 [distributed execution](ose/docs/distributed.md),
 [model v2 migration](ose/docs/model-v2-migration.md),
 [component supervision](ose/docs/component-supervision.md).
+
+## Subsystems and autonomous integration
+
+| Term | Meaning |
+| --- | --- |
+| **Subsystem definition** | A reusable version 1 `subsystem.json` referencing an internal model, a default deployment and a public interface. Internal subscriptions are imported automatically when instantiated. |
+| **Subsystem instance** | A named occurrence of a definition in a model. Each instance has independent component processes, state and parameter blocks unless parameter sharing is explicitly bound. Definitions can contain child instances. |
+| **Subsystem interface / port exposure** | Public input/output aliases resolving to local message ports or a child's public ports, plus exposed shared parameter aliases. Aliases add no runtime relay, queue or callback. Model connections cannot bypass a child's interface; runtime client permissions remain a separate concern. |
+| **Composition / flattening** | Recursive source assembly followed by expansion into ordinary OSE components and subscriptions. Definition reference cycles are rejected; message feedback follows the usual activation rules. |
+| **Qualified instance path** | The logical path of an instance or leaf component, such as `monitoring.detection.processor`. Runtime IDs are distinct portable identifiers; the plan retains the correspondence. |
+| **Source map** | Plan metadata associating resolved elements with their logical instance paths and originating model/deployment documents. |
+| **Shared definition editing** | Editing a subsystem's source model rather than one instance. Changes apply to every instance referencing that definition; per-instance parameters and deployment selections remain explicit. |
+| **Subsystem scope** | A console navigation view of one instance and its descendants, retaining crossing links and runtime component identities. It adds no execution boundary. |
+| **Test harness** | A graph surrounding a subsystem with explicit real neighbors, test doubles, stimulus injection and output collection. |
+| **SUT — Subsystem under test** | The explicitly targeted subsystem, instantiated as `sut` in an OSE harness model. The general testing abbreviation can also mean system under test. |
+| **Integration profile** | A named harness assembly selecting a model/deployment, injected and collected public ports and applicable cases. Selected with `--integration-profile`; distinct from deployment `--profile local\|cluster`. |
+| **Stimulus injector** | The generic harness facility encoding scenario JSON values into SDL messages and publishing them at scheduled virtual times to public inputs. It does not invent reactive business behavior. |
+| **Output collector** | A generic CH/2 component subscribed to a public output. It records actual callback receptions, their virtual times and decoded values within explicit budgets. This does not prove another subscriber processed the message. |
+| **Behavioral test double** | A replacement neighbor implemented with ordinary OSE components whose logic responds to input messages. A fixed scenario injector supplies predefined stimuli instead. |
+| **Temporal assertion** | A test expectation over collected messages in an absolute virtual-time window, including presence, absence, counts, value matching and ordered sequences. The initial syntax uses half-open windows and does not correlate relative deadlines automatically. |
+
+References: [development and integration guide](docs/developpement-sous-systemes.md),
+[subsystem reference](ose/docs/subsystems.md),
+[executable example](ose/examples/subsystems/README.md).
 
 ## Model authoring and source editing
 

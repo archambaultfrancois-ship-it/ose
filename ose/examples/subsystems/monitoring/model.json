@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "schemas": "../detection/schemas/value.sdl",
+  "components": {},
+  "subsystems": {
+    "detection": {
+      "source": "../detection/subsystem.json"
+    }
+  },
+  "subscriptions": []
+}

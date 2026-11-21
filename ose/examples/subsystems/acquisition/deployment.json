@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "components": {
+    "sensor": {
+      "container": {
+        "language": "python",
+        "handler": "sensor.py"
+      }
+    }
+  }
+}

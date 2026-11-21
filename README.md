@@ -34,6 +34,10 @@ Pour créer une application depuis un dossier vide, suivez le
 Il part d'une spécification simple et couvre les handlers Push, les lectures
 Pull/get par identifiant, les timers, la compilation et les exécutions locales.
 
+Pour développer des parties de l'application séparément, consultez le
+[guide de développement et d'intégration avec sous-systèmes](docs/developpement-sous-systemes.md) :
+interfaces publiques, tests autonomes, profils d'intégration et composition récursive.
+
 OSE depends on SDL's public generator and runtime APIs. SDL builds and
 runs independently of OSE. Each project owns its sources, tests,
 examples, documentation, dependencies, and build outputs.

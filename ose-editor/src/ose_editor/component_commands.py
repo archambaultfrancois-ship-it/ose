@@ -1,6 +1,7 @@
 """Atomic component edits with the same structural rules as OSE execution."""
 from copy import deepcopy
 import json
+from pathlib import Path
 
 from ose.modeling.activation import component_inputs
 from ose.modeling.validation import validate_graph
@@ -8,6 +9,29 @@ from ose.modeling.validation import validate_graph
 
 def validate(project, model=None):
     model = model if model is not None else json.loads(project.document(project.model).text)
+    if model.get('subsystems') or project.model_contexts.get(project.model, {}).get('definitions'):
+        from .subsystems import flatten, read
+        from ose.modeling.composition import resolve
+        for key in project.deployments:
+            flat, deployment, _, _ = flatten(project, deployment_key=key, model=model)
+            validate_graph(flat, deployment)
+            for sub in flat['subscriptions']:
+                target, port = sub['to'].split('.')
+                consumer = flat['components'][target]['inputs'][port]
+                if 'from_topic' in sub:
+                    publisher = flat['external_topics'][sub['from_topic']]
+                else:
+                    source, output = sub['from'].split('.')
+                    publisher = flat['components'][source]['outputs'][output]
+                check_contract(project, flat, publisher, consumer)
+        for definition in project.model_contexts.get(project.model, {}).get('definitions', []):
+            manifest = json.loads(project.document(definition).text)
+            context = project.subsystem_definitions[definition]
+            flat, deployment, _, _ = resolve(project.document(project.model).path,
+                project.document(context['deployment']).path, interface=manifest['interface'],
+                loader=lambda path, version=1: model if Path(path).resolve() == project.document(project.model).path else read(project, path, version=version))
+            validate_graph(flat, deployment)
+        return
     deployments = [json.loads(project.document(key).text) for key in project.deployments]
     # A model-only project still needs all structural checks. The placeholder
     # commands are validation data and are never executed.
@@ -32,10 +56,16 @@ def check_contract(project, model, publisher, consumer):
         raise ValueError('Connected roots must have the same logical name')
     validation = project.last_validation
     if validation and validation['revision'] == project.revision:
+        def token(desc):
+            from .subsystems import schema_token
+            value = desc.get('schema', model['schemas'])
+            if Path(value).is_absolute():
+                return schema_token(project, value)
+            return project.schema_contexts.get(project.model, {}).get(value, value)
         for report in validation.get('connection_contracts', []):
             if (report['root'] == publisher['root']
-                    and report['publisher_schema'] == publisher.get('schema', model['schemas'])
-                    and report['consumer_schema'] == consumer.get('schema', model['schemas'])
+                    and report['publisher_schema'] == token(publisher)
+                    and report['consumer_schema'] == token(consumer)
                     and not report['compatible']):
                 raise ValueError('Incompatible SDL contract: ' + report['code']
                                  + (' at ' + report['path'] if report.get('path') else ''))
@@ -94,6 +124,8 @@ def execute(project, command):
     elif action == 'remove_port':
         if port not in ports:
             raise ValueError('Unknown port')
+        from .subsystems import require_private
+        require_private(project, name + '.' + port, direction)
         project.json_set(project.model, path, remove=True)
         if direction == 'outputs':
             for origin, desc in node['inputs'].items():

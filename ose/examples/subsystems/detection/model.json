@@ -1,0 +1,38 @@
+{
+  "version": 2,
+  "schemas": "schemas/value.sdl",
+  "components": {
+    "processor": {
+      "inputs": {
+        "input": {
+          "root": "Value",
+          "activates": {
+            "message": [
+              "out"
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "out": {
+          "root": "Value"
+        }
+      },
+      "parameter_bindings": {
+        "settings": {
+          "path": "settings",
+          "access": "read"
+        }
+      }
+    }
+  },
+  "subscriptions": [],
+  "shared_parameters": {
+    "settings": {
+      "root": "Settings",
+      "initial": {
+        "limit": 80
+      }
+    }
+  }
+}

@@ -3,10 +3,16 @@ import { computed, nextTick, ref, useId, watch, shallowRef } from 'vue'
 import { layout, inputSummary, inputDetails, portY, nodeWidth, type FlowNode, type FlowEdge, type Topology } from '../flow-graph'
 import { metrics, metricValue, linkHealth, FlowHistory, sparkline, sparkPaths, stateTransitions, type Metric } from '../flow-metrics'
 import LinkContract from './LinkContract.vue'
+import { logicalName, scopedTopology, subsystemChildren, subsystemMembers } from '../hierarchy'
 const props = withDefaults(defineProps<{ timestamp?: string; topology?: Topology | null; components: any[]; epoch?: string | null; error?: string | null; matching: string[]; selected?: string | null; active?: boolean; connected?: boolean; frozen?: boolean; liveAvailable?: boolean }>(), { liveAvailable: true })
 const emit = defineEmits<{ select: [name: string] }>()
 const ports = ref(false), historyVisible = ref(true), metric = ref<Metric>('cpu')
-const graph = computed(() => layout(props.topology, ports.value))
+const subsystem = ref('')
+const graph = computed(() => layout(scopedTopology(props.topology, subsystem.value), ports.value))
+const children = computed(() => subsystemChildren(props.topology, subsystem.value))
+const members = computed(() => subsystemMembers(props.topology, subsystem.value))
+const componentName = (name: string) => logicalName(props.topology, name)
+watch(() => props.topology, topology => { if (subsystem.value && !topology?.composition?.instances[subsystem.value]) subsystem.value = '' })
 const history = new FlowHistory(), histories = shallowRef(new Map(history.rows))
 watch(() => [props.timestamp, props.components, props.epoch, props.error, props.frozen, props.active], () => {
   if (props.frozen || props.active === false) { history.interrupted = true; return }
@@ -45,12 +51,18 @@ function schedule(node: FlowNode) {
 function short(value: string, limit = 28) { return value.length > limit ? value.slice(0, limit - 1) + '…' : value }
 function edgeTitle(edge: FlowEdge) {
   const policy = edge.policy || {}
-  return `${edge.id}\n${edge.from} → ${edge.to}\n${edge.mode === 'pull' ? 'Pull' : 'Push'} input${edge.feedback ? ' · feedback loop' : ''}${edge.root ? '\nSDL type: ' + edge.root : ''}\n${edge.routing || 'broker'} · ${policy.transport || 'tcp'}${policy.buffer ? '\nBuffer: ' + policy.buffer : ''}${policy.capacity ? ' · capacity ' + policy.capacity : ''}${policy.overflow ? ' · ' + policy.overflow : ''}${policy.ack ? '\nACK: ' + policy.ack : ''}`
+  return `${props.topology?.composition?.subscriptions?.[edge.id]?.path.join('.') || edge.id}\n${edge.from} → ${edge.to}\n${edge.mode === 'pull' ? 'Pull' : 'Push'} input${edge.feedback ? ' · feedback loop' : ''}${edge.root ? '\nSDL type: ' + edge.root : ''}\n${edge.routing || 'broker'} · ${policy.transport || 'tcp'}${policy.buffer ? '\nBuffer: ' + policy.buffer : ''}${policy.capacity ? ' · capacity ' + policy.capacity : ''}${policy.overflow ? ' · ' + policy.overflow : ''}${policy.ack ? '\nACK: ' + policy.ack : ''}`
 }
 </script>
 <template>
   <section class="panel flow-panel" aria-label="Application flow graph">
     <div class="section-title"><div><h2>Application flow</h2><p class="muted small">{{ graph.nodes.filter(n => n.kind === 'component').length }} components · {{ graph.edges.length }} subscriptions · source → consumer</p></div><div class="actions" v-if="graph.nodes.length"><label>Metric<select v-model="metric"><option v-for="(description, key) in metrics" :key="key" :value="key">{{ description.label }}</option></select></label><label class="inline"><input type="checkbox" v-model="ports" /> Ports</label><label class="inline"><input type="checkbox" v-model="historyVisible" /> History</label><label class="inline"><input type="checkbox" v-model="labels" /> Link labels</label><button class="quiet" aria-label="Zoom out" :disabled="zoom <= 0.1" @click="zoom = Math.max(0.1, zoom - 0.1)">−</button><span class="small">{{ Math.round(zoom * 100) }}%</span><button class="quiet" aria-label="Zoom in" :disabled="zoom >= 2" @click="zoom = Math.min(2, zoom + 0.1)">+</button><button class="quiet" @click="fit">Fit</button></div></div>
+    <nav v-if="Object.keys(topology?.composition?.instances || {}).length" class="subsystem-navigation" aria-label="Subsystem hierarchy">
+      <label>Subsystem<select v-model="subsystem" aria-label="Subsystem scope"><option value="">Application</option><option v-for="name in Object.keys(topology?.composition?.instances || {}).sort()" :key="name" :value="name">{{ name }}</option></select></label>
+      <button v-if="subsystem" class="quiet" @click="subsystem = subsystem.split('.').slice(0, -1).join('.')">Parent subsystem</button>
+      <button v-for="child in children" :key="child" class="quiet" @click="subsystem = child">Open {{ child.split('.').at(-1) }} ({{ subsystemMembers(topology, child).length }})</button>
+      <span class="muted small">{{ members.length }} components in scope; crossing links retain neighboring components.</span>
+    </nav>
     <p v-if="!topology" class="muted">Flow topology is unavailable. Connect to an OSE broker or coordinator with observation metadata.</p>
     <template v-else>
       <p v-if="error" class="notice warning" role="status">Last known topology. Live component states are unavailable.</p>
@@ -61,13 +73,14 @@ function edgeTitle(edge: FlowEdge) {
             <title>{{ edgeTitle(edge) }}</title><path class="flow-hit" :d="edge.path" vector-effect="non-scaling-stroke" /><path class="flow-line" :d="edge.path" :marker-end="`url(#${marker})`" />
             <text v-if="labels" :x="edge.x" :y="edge.y - 7" text-anchor="middle">{{ short(edge.id, 22) }}<tspan :x="edge.x" dy="14">{{ rate(health(edge).rate) }}/s · Q {{ occupancy(health(edge).delivery) }}</tspan><tspan :x="edge.x" dy="14">Ref {{ rate(health(edge).refused) }} · Loss {{ rate(health(edge).lost) }}</tspan></text>
           </g>
-          <g v-for="node in graph.nodes" :key="node.id" class="flow-node" :class="{ external: node.kind === 'external', selected: selected === node.name && node.kind === 'component', dimmed: node.kind === 'component' && !matches.has(node.name) }" :data-state="node.kind === 'external' ? 'external' : reports.get(node.name)?.severity || 'error'" :transform="`translate(${node.x}, ${node.y})`" :role="node.kind === 'component' ? 'button' : 'group'" :tabindex="node.kind === 'component' ? 0 : undefined" :aria-label="`${node.name}: ${state(node)}`" @click="node.kind === 'component' && emit('select', node.name)" @keydown.enter.prevent="node.kind === 'component' && emit('select', node.name)" @keydown.space.prevent="node.kind === 'component' && emit('select', node.name)">
-            <title>{{ node.name }}
+          <g v-for="node in graph.nodes" :key="node.id" class="flow-node" :class="{ external: node.kind === 'external', selected: selected === node.name && node.kind === 'component', dimmed: node.kind === 'component' && !matches.has(node.name) }" :data-state="node.kind === 'external' ? 'external' : reports.get(node.name)?.severity || 'error'" :transform="`translate(${node.x}, ${node.y})`" :role="node.kind === 'component' ? 'button' : 'group'" :tabindex="node.kind === 'component' ? 0 : undefined" :aria-label="`${componentName(node.name)}: ${state(node)}`" @click="node.kind === 'component' && emit('select', node.name)" @keydown.enter.prevent="node.kind === 'component' && emit('select', node.name)" @keydown.space.prevent="node.kind === 'component' && emit('select', node.name)">
+            <title>{{ componentName(node.name) }}
+Runtime ID: {{ node.name }}
 {{ state(node) }} · {{ schedule(node) }}
 {{ inputDetails(node.inputs) }}
 {{ node.kind === 'component' ? 'Select to inspect component diagnostics.' : 'Declared external topic.' }}</title>
             <rect :width="nodeWidth" :height="node.height" rx="9" /><circle cx="16" cy="21" r="4" />
-            <text x="28" y="25" class="flow-name">{{ short(node.name, 25) }}</text><text x="16" y="45" class="flow-state">{{ state(node) }}</text>
+            <text x="28" y="25" class="flow-name">{{ short(componentName(node.name), 25) }}</text><text x="16" y="45" class="flow-state">{{ state(node) }}</text>
             <text x="16" y="64">{{ short(schedule(node), 32) }}</text>
             <text v-if="node.kind === 'component'" x="16" y="84">In {{ rate(reports.get(node.name)?.rates?.in) }}/s · Out {{ rate(reports.get(node.name)?.rates?.out) }}/s</text>
             <template v-if="node.kind === 'component'">

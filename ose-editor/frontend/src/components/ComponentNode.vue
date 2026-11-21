@@ -3,7 +3,7 @@ import { computed, useId } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { statusLabel } from '../connections'
 const props = defineProps<{ data: any; selected?: boolean }>()
-const emit = defineEmits<{ 'port-hover': [message: string]; 'input-select': [component: string, port: string]; 'edit-component': [component: string] }>()
+const emit = defineEmits<{ 'port-hover': [message: string]; 'input-select': [component: string, port: string]; 'edit-component': [component: string]; 'open-subsystem': [name: string] }>()
 const marker = useId()
 const component = computed(() => props.data.kind === 'component')
 const rows = computed(() => Math.max(props.data.inputs.length, props.data.outputs.length, 1))
@@ -19,7 +19,7 @@ function inspect(port: any) { emit('input-select', port.component, port.port) }
 <template>
   <div class="component-node" :class="[data.kind, { selected, 'execution-component': component }]">
     <header><span class="node-icon">{{ data.kind === 'external' ? '↗' : data.kind === 'group' ? '▣' : '◇' }}</span><strong>{{ data.name }}</strong><small>{{ data.kind }}</small><button v-if="component" class="nodrag nopan edit-component" :aria-label="'Edit component ' + data.name" title="Edit component" @click.stop="emit('edit-component', data.name)" @dblclick.stop>✎</button></header>
-    <div class="node-trigger">{{ component ? 'Per-input callbacks · ' + data.activations.length + ' activation link(s)' : data.kind === 'group' ? 'Visual group · double-click to expand' : 'External publisher' }}</div>
+    <div class="node-trigger">{{ component ? 'Per-input callbacks · ' + data.activations.length + ' activation link(s)' : data.kind === 'group' ? 'Visual group · double-click to expand' : data.kind === 'subsystem' ? 'Public interface' : 'External publisher' }}<button v-if="data.kind === 'subsystem'" class="nodrag nopan" :disabled="data.definition?.unresolved" @click.stop="emit('open-subsystem', data.name)">Open definition</button></div>
     <div v-if="component" class="execution-ports" :style="{ minHeight: rows * 64 + 'px' }">
       <svg v-if="data.showActivations" class="activation-arrows" :viewBox="'0 0 400 ' + rows * 64" aria-label="Input event to output activation links">
         <defs><marker :id="marker" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto-start-reverse"><path d="M 0 0 L 6 3 L 0 6 z" fill="context-stroke" /></marker></defs>

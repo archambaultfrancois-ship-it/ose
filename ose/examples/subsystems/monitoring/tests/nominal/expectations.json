@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "assertions": [
+    {
+      "output": "alarms",
+      "count": 1,
+      "value": {
+        "value": 90
+      }
+    }
+  ]
+}

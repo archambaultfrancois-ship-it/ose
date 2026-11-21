@@ -172,7 +172,7 @@ class ObservationDemand:
 
 def describe(plan):
     """Expose scheduling and queue policies, without commands, secrets or schemas."""
-    return {
+    result = {
         "version": 1,
         "components": {name: {"inputs": {
             port: {key: desc[key] for key in ("root", "timeout", "kind", "mode", "timer", "activates") if key in desc}
@@ -184,6 +184,15 @@ def describe(plan):
         "subscriptions": {sub["id"]: {key: sub[key] for key in ("from", "from_topic", "to", "policy", "routing") if key in sub}
                           for sub in plan["subscriptions"]},
     }
+    if plan.get('composition') is not None:
+        source = plan['composition']
+        result['composition'] = {
+            kind: {name: {'path': list(item['path'])} for name, item in source.get(kind, {}).items()}
+            for kind in ('components', 'subscriptions')}
+        result['composition']['instances'] = {name: {
+            'interface': {direction: dict(item['interface'].get(direction, {})) for direction in ('inputs', 'outputs')}
+            } for name, item in source.get('instances', {}).items()}
+    return result
 
 
 def subscription_schema(plan, sub, side="source"):

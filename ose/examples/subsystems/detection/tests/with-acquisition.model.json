@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "schemas": "../schemas/value.sdl",
+  "components": {},
+  "subsystems": {
+    "sut": {
+      "source": "../subsystem.json"
+    },
+    "acquisition": {
+      "source": "../../acquisition/subsystem.json"
+    }
+  },
+  "subscriptions": [
+    {
+      "id": "measurements",
+      "from": "acquisition.measurements",
+      "to": "sut.in"
+    }
+  ]
+}

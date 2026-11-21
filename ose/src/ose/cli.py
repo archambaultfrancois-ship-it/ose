@@ -62,8 +62,8 @@ def create_parser():
   ose replay capture.mcap
 
 Explicit model/plan workflow:
-  ose validate --model model.json --deployment deployment.json
-  ose build --model model.json --deployment deployment.json
+  ose validate
+  ose build
   ose run
 
 From another terminal while the application runs:
@@ -86,9 +86,11 @@ For remote distributed execution, start serve and worker instead of run.""")
             "Validate the SDL model and its deployment without compiling components." if name == "validate" else
             "Validate the model and deployment, write plan.json in the build directory and compile components.\n"
             "Use --component to rebuild one component while retaining the complete plan.",
-            [f"ose {name} --model model.json --deployment deployment.json"])
-        command.add_argument("--model", required=True, help="application model JSON file")
-        command.add_argument("--deployment", required=True, help="deployment JSON file")
+            [f"ose {name}", f"ose {name} --model application/model.json --deployment application/deployment.json"])
+        command.add_argument("--model", default="model.json",
+                             help="application model JSON file (default: model.json in the current directory)")
+        command.add_argument("--deployment", default="deployment.json",
+                             help="deployment JSON file (default: deployment.json in the current directory)")
         command.add_argument("--profile", choices=("local", "cluster"),
                              help="derive an execution profile (default: respect the deployment source)")
         command.add_argument("--routing", choices=("mixed", "broker"),
@@ -99,7 +101,7 @@ For remote distributed execution, start serve and worker instead of run.""")
                              help="SDL checkout (default: SDL_ROOT or the sibling sdl directory of the OSE source checkout)")
         command.add_argument("--build-dir", default="build", help="build output directory (default: build; build command only)")
         if name == "build":
-            command.add_argument("--component", help="compile only this component, retaining the complete plan")
+            command.add_argument("--component", help="compile one component by runtime ID or qualified subsystem path, retaining the complete plan")
     for name in ("serve", "worker", "cluster-status"):
         summaries = {"serve": "start the distributed coordinator",
                      "worker": "run one component of a distributed plan",
@@ -313,10 +315,12 @@ For remote distributed execution, start serve and worker instead of run.""")
     command.add_argument('--tls-key')
     from ose.app import add_parser
     add_parser(commands)
+    from ose.subsystems.cli import add_parser as subsystem_parser
+    subsystem_parser(commands)
     from ose.cli_help import group_commands
     group_commands(parser, commands, [
         ('1. Application environment', ('app', 'completion')),
-        ('2. Validation and build', ('validate', 'build')),
+        ('2. Validation and build', ('validate', 'build', 'subsystem')),
         ('3. Local execution and simulation', ('run', 'distributed-local')),
         ('4. Observation and control', ('top', 'logs', 'measure', 'inspect', 'parameter', 'component', 'cluster-status')),
         ('5. Recording and replay', ('record', 'replay')),
@@ -335,6 +339,9 @@ def execute(args, parser=None):
     try:
         if args.action == 'app':
             from ose.app import run
+            return run(args)
+        elif args.action == 'subsystem':
+            from ose.subsystems.cli import run
             return run(args)
         elif args.action == 'completion':
             from ose.completion import bash_completion

@@ -33,6 +33,13 @@ Model = {
   subscriptions: Array<Subscription>,
   external_topics?: Dictionary<SDLContract>,
   shared_parameters?: Dictionary<SharedParameter>
+  subsystems?: Dictionary<SubsystemInstance>
+}
+
+SubsystemInstance = {
+  source: Path,
+  parameters?: Dictionary<SDL_JSON_Value>,
+  parameter_bindings?: Dictionary<ParameterPath>
 }
 
 Component = {
@@ -83,15 +90,22 @@ exclusive choice between `from` and `from_topic`, are specified below.
 | --- | --- | --- | --- |
 | `version` | integer | Yes | Must be exactly `2`. |
 | `schemas` | nonempty string | Yes | Default SDL source file or directory. |
-| `components` | nonempty object | Yes | Dictionary of components, keyed by name. |
+| `components` | object | Yes | Local components keyed by name. May be empty when subsystems supply components; the resolved graph must be nonempty. |
 | `subscriptions` | array | Yes | Subscription list; `[]` is allowed. |
 | `external_topics` | object | No | Dictionary of external topics; defaults to `{}`. |
 | `shared_parameters` | object | No | Dictionary of shared parameter blocks; defaults to `{}`. |
+| `subsystems` | object | No | Named instances referencing subsystem definitions; defaults to `{}`. See [composition](subsystems.md). |
 
 `schemas` and every `schema` field are resolved relative to the **model file's
 directory**, including schemas for external topics, parameters and recording
 types. Absolute paths are also accepted. An omitted `schema` uses the model's
 global `schemas` value.
+
+Composition retains each imported document's original schema directory. Models
+may mix local components and instances, or contain only instances. Subscriptions
+can use `instance.public_port` endpoints; child internals cannot be addressed.
+Subsystem definitions and their public parameter/deployment rules are specified
+in the [subsystem reference](subsystems.md).
 
 ## Component definition
 

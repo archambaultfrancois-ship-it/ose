@@ -44,6 +44,8 @@ printf '%s\\n' "${COMPREPLY[@]}"
             (('parameter', 'get', '--ex'), '--export'),
             (('parameter', 'sync', '--de'), '--debounce'),
             (('run', '--du'), '--duration'),
+            (('subsystem', ''), 'test'),
+            (('subsystem', 'test', '--integration-'), '--integration-profile'),
             (('app', ''), 'run'),
             (('app', '--root', 'run', 'parameter', ''), 'get'),
             (('app', 'parameter', 'get', '--ex'), '--export'),

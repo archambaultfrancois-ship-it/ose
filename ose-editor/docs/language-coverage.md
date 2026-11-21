@@ -164,3 +164,16 @@ multilingual examples, Vibration Watch's contract override, SDL compatibility
 and representation fixtures, and the mixed-format SDL example. Their current
 CLI results are the baseline; the editor must add authoring/fidelity/refactoring
 evidence rather than assuming compiler tests prove UI coverage.
+
+## Subsystem composition extension
+
+The original inventory IDs above remain stable. The subsystem extension adds
+model/deployment `subsystems`, version 1 definitions and public input/output/
+parameter exposures. `subsystems.py`, model-scoped project commands,
+`subsystems.ts` and `SubsystemTools.vue` provide recursive discovery, graph
+interfaces, definition navigation, instantiation, creation and extraction.
+`tests/test_subsystems.py` and `frontend/tests/subsystems.test.ts` exercise source
+fidelity, instance isolation, boundary contracts, shared edits, undo, extraction
+and validation of unsaved nested models. The runtime console independently
+qualifies logical-path observation and scope navigation. These checks supplement
+the existing inventory without claiming complete desktop-browser qualification.

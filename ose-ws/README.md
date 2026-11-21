@@ -216,6 +216,14 @@ message deliveries. With an older runtime, port types and external-topic
 identification may be incomplete; update and restart the OSE runtime for the
 full metadata. During a disconnection, the graph keeps its last known topology
 with an explicit offline notice and unavailable component states.
+
+Composed plans also supply logical instance paths. The graph displays these
+names while retaining runtime IDs for selection, metrics, links and diagnostics.
+Use **Subsystem**, **Open** and **Parent subsystem** to navigate nested scopes.
+Immediate neighbors remain visible so crossing subscriptions stay inspectable.
+Older plans keep the flat view; rebuild and restart to obtain composition
+metadata. The observation projection includes public message aliases and logical
+paths, without source file locations or parameter values.
 Link contracts load on selection through OSE and show fields, nested types,
 enums, cardinalities, array dimensions and wire encodings. This uses
 `components.read` rights and works for local, direct and external subscriptions,

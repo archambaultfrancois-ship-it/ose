@@ -3,6 +3,10 @@
 ## Application models and builds
 
 - **[Component graphs](architecture.md#documents)**: describe typed Push/Pull inputs, timers, activation links, subscriptions and parameters in JSON.
+- **[Reusable subsystems](subsystems.md)**: mix local components and recursive instances with public interfaces, imported internal connections, isolated parameters and composed deployments.
+- **[Autonomous subsystem harnesses](subsystems.md#harness-document)**: inject typed scenarios, collect actual output receptions, run virtual-time assertions and export JUnit results without neighboring implementations.
+- **[Graphical subsystem authoring](../../ose-editor/README.md#editing-workflow)**: navigate shared definitions, expose public ports, instantiate reusable units and extract selected components through previewed, undoable edits.
+- **[Hierarchical runtime observation](../../ose-ws/README.md)**: inspect subsystem scopes and logical component paths while retaining crossing links and ordinary runtime diagnostics.
 - **[Separate deployments](architecture.md#documents)**: bind the same model to executable commands, generated containers and transport settings.
 - **[Contract validation](architecture.md#documents)**: check dynamic SDL publisher-to-consumer compatibility and check activation cycles against the selected execution mode.
 - **[Multilanguage components](callbacks.md)**: connect Python, C, Rust, Java and Ada implementations in one application.

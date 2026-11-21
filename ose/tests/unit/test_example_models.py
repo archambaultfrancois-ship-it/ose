@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from ose.modeling.validation import validate_graph
+from ose.modeling.composition import resolve
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -36,7 +37,8 @@ class RepositoryModelTests(unittest.TestCase):
                     self.assertNotIn("required", port)
             for deployment in path.parent.glob("*deployment*.json"):
                 with self.subTest(model=str(path), deployment=deployment.name):
-                    validate_graph(model, json.loads(deployment.read_text()))
+                    resolved_model, resolved_deployment, _, _ = resolve(path, deployment)
+                    validate_graph(resolved_model, resolved_deployment)
 
     def test_two_branch_join_waits_for_both_inputs_and_consumes_one_offset(self):
         module = handler("ose/examples/simulated/join.py")

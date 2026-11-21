@@ -6,6 +6,26 @@ language inventory rows or all desktop performance targets have been qualified.
 
 ## Executed workspace qualification
 
+Subsystem extension checked on 2026-11-21 with CPython 3.13.13 and Node.js
+24.17.0 on Android/Termux ARM64:
+
+| Check | Result |
+| --- | --- |
+| Complete editor backend suite | 108 tests passed, including 15 subsystem regressions and the thirty-component workload |
+| Complete editor frontend suite | 101 tests passed under Happy DOM |
+| Production frontend | TypeScript/Vue checks and Vite build passed; source fingerprint and packaged asset hashes verified |
+| Example opening | `ose-editor --root ose/examples/subsystems --check`: 12 documents, no diagnostics |
+| Extraction execution | Nested extraction saved, reopened, compiled and simulated; three `ALARM 90.0` outputs preserved |
+
+Subsystem cases cover public interfaces, private-port rejection, shared source
+edits, SDL renames across models, per-model deployment registration, multi-profile
+extraction, internal transports, parameter bindings, relative handler paths,
+`{project}`/`{generated}` contexts, undo, no-op saves and immutable validation
+during a nested edit. Validation still reports syntax-invalid sources as failed
+revisioned jobs. The pinned Starlette 1.10 TestClient uses `httpx2`; the test
+extra and lockfile include it on Python 3.11+. These checks do not claim desktop
+browser visual or accessibility qualification.
+
 The following checks passed on Android/Termux ARM64 with CPython 3.13.13 and
 Node.js 24.17.0 during this implementation session:
 

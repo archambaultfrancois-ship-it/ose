@@ -1,7 +1,8 @@
 export type Port = { root?: string; kind?: string; mode?: string; timeout?: number; timer?: { mode?: string; delay?: number; start?: string }; activates?: { message?: string[]; timeout?: string[] } }
 export type Component = { inputs?: Record<string, Port>; outputs?: Record<string, Port> }
 export type Subscription = { from: string; from_topic?: string; to: string; policy?: Record<string, any>; routing?: string }
-export type Topology = { version: number; components: Record<string, Component>; external_topics?: Record<string, Port>; subscriptions: Record<string, Subscription> }
+export type Topology = { version: number; components: Record<string, Component>; external_topics?: Record<string, Port>; subscriptions: Record<string, Subscription>;
+  composition?: { components: Record<string, { path: string[] }>; subscriptions?: Record<string, { path: string[] }>; instances: Record<string, { interface?: { inputs?: Record<string, string>; outputs?: Record<string, string> } }> } }
 export type FlowNode = { id: string; name: string; kind: 'component' | 'external'; inputs?: Component['inputs']; outputs?: Component['outputs']; height: number; root?: string; x: number; y: number }
 export type FlowEdge = Subscription & { id: string; source: string; target: string; root?: string; mode: 'push' | 'pull'; feedback: boolean; path: string; x: number; y: number }
 export const nodeWidth = 224, nodeHeight = 140

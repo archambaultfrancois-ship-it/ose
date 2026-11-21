@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "profiles": {
+    "standalone": {}
+  },
+  "cases": {
+    "nominal": {
+      "scenario": "nominal/scenario.json",
+      "expectations": "nominal/expectations.json"
+    }
+  }
+}

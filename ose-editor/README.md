@@ -78,6 +78,28 @@ or 24 and `make frontend-editor`.
 
 ## Editing workflow
 
+Subsystem instances appear as graph blocks with public inputs and outputs.
+**Open definition** or double-click enters their shared source model;
+breadcrumbs return to the parent. A notice identifies shared-definition edits,
+which affect every instance. Each model keeps its own graph layout.
+**Instantiate subsystem**, **New subsystem**, **Expose public port** and
+**Extract selection** prepare undoable diffs. Extraction moves selected local
+components and internal subscriptions into new model/definition/deployment
+drafts, preserving registered deployment variants, shared-parameter bindings,
+existing handler paths and schema/project substitution contexts. Handler files
+remain at their original locations. **Validate** resolves the entire unsaved
+composition without running application code. Dependencies outside the project
+must be configured with `--source-root`.
+
+Try this from `ose/examples/subsystems` with the checkout environment prepared:
+
+```sh
+ose-editor --root .
+```
+
+See the [subsystem development guide](../docs/developpement-sous-systemes.md)
+for CLI harnesses, extraction and hierarchical runtime observation.
+
 Use **Project** and **Inspector** above the workspace to hide or restore the
 side panels without losing the selection or unfinished property edits. Drag the
 separators to resize panels, or focus a separator and use the arrow keys

@@ -41,10 +41,11 @@ function navigate(target: NavigationTarget, source = false) {
   if (!store.project?.documents[target.file]) return
   const path = target.path || [], doc = store.project.documents[target.file]
   store.closeComponent()
+  if (!source && store.project.model_contexts?.[target.file]) store.openModel(target.file)
   if (!source && !doc.stale && target.file === store.project.model && path[0] === 'components' && path.length >= 4) store.editComponent(path[1])
   store.select(target.file, path, target.sdl)
   inspectorOpen.value = true
-  if (source || target.line || doc.stale || target.sdl || target.file !== store.project.model || !['components', 'subscriptions', 'external_topics'].includes(path[0]) || !path.length) {
+  if (source || target.line || doc.stale || target.sdl || target.file !== store.project.model || !['components', 'subsystems', 'subscriptions', 'external_topics'].includes(path[0]) || !path.length) {
     sourceTarget.value = { ...target, path, request: ++sourceRequest }
     view.value = 'Sources'
   } else {
@@ -71,8 +72,8 @@ const errors = computed(() => currentDiagnostics(store.project, store.job))
 watch(() => errors.value.length, (count, previous) => { if (count > (previous || 0)) diagnosticsOpen.value = true }, { immediate: true })
 const dirtySource = computed(() => Object.keys(store.sourceDrafts).length > 0)
 const validationState = computed(() => store.job ? store.job.revision !== store.project?.revision ? 'Validation out of date' : store.job.status : store.project?.validation?.revision === store.project?.revision ? store.project.validation.status : 'Not validated')
-watch(() => store.project?.selected_deployment, value => { if (!deployment.value) deployment.value = value || '' })
-watch(deployment, value => { if (value && store.project && store.project.selected_deployment !== value) store.command({ action: 'select_deployment', file: value }, false) })
+watch(() => store.project?.root_selected_deployment, value => { deployment.value = value || '' })
+watch(deployment, value => { if (value && store.project && store.project.root_selected_deployment !== value) store.command({ action: 'select_deployment', file: value }, false) })
 function addComponent() { const name = window.prompt('New component name'); if (name) store.command({ action: 'add_component', name }) }
 function duplicate() {
   const selection = store.selection, path = selection?.path
@@ -93,14 +94,15 @@ function rename() {
   const name = window.prompt('New name; indexed references will be included in the preview'); if (!name) return
   const path = selection.path || []
   if (selection.sdl) store.command({ action: 'rename', kind: 'sdl', file: selection.file, path: selection.sdl, name })
+  else if (selection.file === store.project.model && path[0] === 'subsystems' && path.length === 2) store.command({ action: 'rename', kind: 'subsystem', old: path[1], name })
   else if (selection.file === store.project.model && path[0] === 'components' && path.length === 2) store.command({ action: 'rename', kind: 'component', old: path[1], name })
   else if (selection.file === store.project.model && path[0] === 'components' && path.length === 4 && ['inputs', 'outputs'].includes(path[2])) store.command({ action: 'rename', kind: 'port', old: path[1] + '.' + path[3], direction: path[2], name })
   else if (selection.file === store.project.model && path[0] === 'subscriptions' && path.length === 2) store.command({ action: 'rename', kind: 'subscription', old: atPath(selected.value.value, path).id, name })
   else if (selection.file === store.project.model && path[0] === 'shared_parameters' && path.length === 2) store.command({ action: 'rename', kind: 'parameter', old: path[1], name })
   else if (path.length) store.command({ action: 'rename_key', file: selection.file, path, name })
 }
-function remove() { const path = store.selection?.path || []; if (store.selection?.file === store.project.model && path[0] === 'components' && path.length === 2) store.command({ action: 'remove_component', name: path[1] }); else if (store.selection?.file === store.project.model && path[0] === 'components' && path.length === 4 && ['inputs', 'outputs'].includes(path[2])) store.command({ action: 'remove_port', component: path[1], direction: path[2], port: path[3] }); else if (path.length) store.command({ action: 'delete', file: store.selection?.file, path }) }
-function addDeployment() { const name = window.prompt('New deployment filename'); if (name) store.command({ action: 'deployment', name, copy: deployment.value }) }
+function remove() { const path = store.selection?.path || []; if (store.selection?.file === store.project.model && path[0] === 'subsystems' && path.length === 2) store.command({ action: 'remove_subsystem', name: path[1] }); else if (store.selection?.file === store.project.model && path[0] === 'components' && path.length === 2) store.command({ action: 'remove_component', name: path[1] }); else if (store.selection?.file === store.project.model && path[0] === 'components' && path.length === 4 && ['inputs', 'outputs'].includes(path[2])) store.command({ action: 'remove_port', component: path[1], direction: path[2], port: path[3] }); else if (path.length) store.command({ action: 'delete', file: store.selection?.file, path }) }
+function addDeployment() { const name = window.prompt('New deployment filename, relative to the current model'); if (name) store.command({ action: 'deployment', name, copy: store.project.selected_deployment }) }
 function addSchema() { const name = window.prompt('New schema filename, relative to the application root'); if (name) store.command({ action: 'create_document', name, text: name.endsWith('.sdl') ? 'message NewMessage {\n}\n' : '{"format":"sdl-schema","messages":{}}\n' }) }
 function exportSchema() { if (!store.selection) return; const format = window.prompt('Export format: sdl, json, yaml or xsd', 'json'); if (!format) return; const name = window.prompt('New filename outside schema inputs (conversion may normalize expressions, aliases and comments)', 'exports/schema.sdl.' + format); if (name) store.command({ action: 'export_schema', file: store.selection.file, format, name }) }
 async function showChanges() { diagnosticsOpen.value = true; bottom.value = 'Changes'; const result = await store.api('changes'); changes.value = result.changes }
@@ -116,7 +118,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', navigationShortcut
   </main>
   <div v-else class="app-shell">
     <header class="app-header"><div class="brand"><span class="brand-mark">◇</span><div><strong>OSE <span>Model Editor</span></strong><small>{{ store.project.name }} <span v-if="store.project.dirty || dirtySource">● Unsaved changes</span></small></div></div>
-      <div class="header-actions"><Button label="Go to…" title="Go to… (Ctrl/Cmd+K)" severity="secondary" :disabled="!!store.pending" @click="paletteOpen = true" /><Select v-model="deployment" :options="store.project.deployments" placeholder="Select deployment" aria-label="Deployment" /><span class="validation-badge" :data-state="validationState">{{ validationState }}</span><Button label="Validate" severity="secondary" :disabled="!!store.pending || !!store.job && ['queued','running'].includes(store.job.status)" @click="store.validate(deployment)" /><Button label="Save" :disabled="!!store.pending || dirtySource" @click="store.save()" /><Button label="Save draft" severity="secondary" :disabled="!!store.pending || dirtySource" @click="store.save(true)" /></div></header>
+      <div class="header-actions"><Button label="Go to…" title="Go to… (Ctrl/Cmd+K)" severity="secondary" :disabled="!!store.pending" @click="paletteOpen = true" /><Select v-model="deployment" :options="store.project.root_deployments" placeholder="Select deployment" aria-label="Deployment" /><span class="validation-badge" :data-state="validationState">{{ validationState }}</span><Button label="Validate" severity="secondary" :disabled="!!store.pending || !!store.job && ['queued','running'].includes(store.job.status)" @click="store.validate(deployment)" /><Button label="Save" :disabled="!!store.pending || dirtySource" @click="store.save()" /><Button label="Save draft" severity="secondary" :disabled="!!store.pending || dirtySource" @click="store.save(true)" /></div></header>
     <div v-if="store.error" class="error-banner" role="alert">{{ store.error }}<Button label="Refresh project" variant="text" @click="store.load" /></div>
     <div v-if="store.project.recovery" class="error-banner">An interrupted save needs recovery.<Button label="Restore previous files" @click="store.guard(async () => { store.project = await store.api('recovery', { choice: 'restore' }) })" /><Button label="Complete save" @click="store.guard(async () => { store.project = await store.api('recovery', { choice: 'complete' }) })" /></div>
     <div v-if="store.project.draft_recovery" class="error-banner">An unsaved authoring draft was recovered.<Button label="Restore draft" @click="store.guard(async () => { store.project = await store.api('draft-recovery', { revision: store.project.revision, restore: true }) })" /><Button label="Discard recovered draft" severity="secondary" @click="store.guard(async () => { store.project = await store.api('draft-recovery', { revision: store.project.revision, restore: false }) })" /></div>
@@ -146,6 +148,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', navigationShortcut
           <h3>{{ nodeLabel(node) || store.selection?.path?.at(-1) || (store.selection?.sdl ? 'SDL declaration' : 'Document properties') }}</h3>
           <small>{{ selected.role }} · {{ node?.kind || selected.format }}</small>
           <p v-if="selected.stale" class="error">This projection is stale. Repair the source to resume structured edits.</p>
+          <div v-if="modelSelection && selectionPath[0] === 'subsystems' && selectionPath.length === 2" class="inspector-section"><p>Public interface of {{ selectionPath[1] }}</p><Button label="Open shared definition" severity="secondary" :disabled="!store.project.subsystems?.[store.project.model]?.[selectionPath[1]]" @click="store.openSubsystem(selectionPath[1]); view = 'Graph'" /><p v-for="direction in ['inputs', 'outputs']" :key="direction">{{ direction }}: {{ Object.keys(store.project.subsystems?.[store.project.model]?.[selectionPath[1]]?.[direction] || {}).join(', ') || 'None' }}</p></div>
           <InspectorSection title="General">
             <div class="inspector-actions"><Button label="Rename references" size="small" severity="secondary" @click="rename" /><Button label="Duplicate" size="small" severity="secondary" @click="duplicate" /></div>
             <JsonTree v-if="node" :key="store.selection?.file + JSON.stringify(store.selection?.path) + store.project.revision" :node="node" :file="selected.id" :role="selected.role" :readonly="selected.stale" />

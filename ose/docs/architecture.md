@@ -26,6 +26,12 @@ Python runtime providing `validate_payload`; no native extension is required.
 
 ## Documents
 
+Composed source models pass through `modeling/composition` before ordinary graph
+validation and compilation. Recursive subsystem instances expand into a flat
+component/subscription graph with source maps and public interface metadata.
+See [subsystems](subsystems.md) for interfaces, deployment composition and
+autonomous harnesses. No additional subsystem process is introduced.
+
 Application models use integer `version: 2`; deployments and scenarios retain
 `version: 1`. Duplicate and unsupported keys are rejected. Model `schemas`
 names a source file or directory relative to the model. Components declare
@@ -38,12 +44,16 @@ Push inputs may declare a positive inactivity `timeout`. Explicit periodic or
 one-shot timer inputs have no SDL contract. There is no component trigger or
 joint-readiness `required` flag. See [model v2 migration](model-v2-migration.md).
 
-Names cannot contain dots; an endpoint is `component.port` and each output
+Executable component names cannot contain dots; an endpoint is `component.port` and each output
 endpoint is a separate topic. Subscriptions are `{id, from, to, qos?}` entries,
 with unique IDs, or use `from_topic` for a declared external topic. Multiple
 producers can share an input; subscriptions to that input share their
 [reception settings](delivery.md#shared-input-reception). Timers cannot receive
 subscriptions.
+
+Source models additionally accept `instance.public_port` endpoints. The resolver
+expands their interface aliases before this executable endpoint grammar is used.
+Logical instance paths remain metadata and are separate from executable IDs.
 
 Connected roots have the same logical name. Dynamic publisher-to-consumer SDL
 compatibility uses `require_required=True` for schema fields, independently of

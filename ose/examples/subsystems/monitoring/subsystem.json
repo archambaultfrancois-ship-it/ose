@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "model": "model.json",
+  "deployment": "deployment.json",
+  "interface": {
+    "inputs": {
+      "measurements": {
+        "to": "detection.in"
+      }
+    },
+    "outputs": {
+      "alarms": {
+        "from": "detection.out"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "schemas": "../detection/schemas/value.sdl",
+  "components": {
+    "sensor": {
+      "inputs": {
+        "clock": {
+          "kind": "timer",
+          "timer": {
+            "mode": "periodic",
+            "delay": 0.1
+          },
+          "activates": {
+            "timeout": [
+              "out"
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "out": {
+          "root": "Value"
+        }
+      }
+    }
+  },
+  "subscriptions": []
+}

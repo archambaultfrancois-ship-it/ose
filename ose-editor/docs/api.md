@@ -25,6 +25,12 @@ outside JavaScript integer precision and exact decimal values use
 as strings. Syntax-invalid documents retain an explicitly stale last valid
 projection where available.
 
+Projects also expose `model_contexts` (definition/deployment IDs per model),
+`definitions` (manifest IDs and their source model/default deployment),
+`subsystems` (per-model instance interfaces with resolved public port contracts)
+and `schema_contexts` (local schema spellings mapped to project input scopes).
+Nested source documents use the same registered file IDs and revision protocol.
+
 ## Shared commands
 
 `POST /commands/prepare` accepts `{revision, command}` and returns a prepared
@@ -42,7 +48,12 @@ invalid commands return 422 and missing objects/previews return 404.
 | `set` | `file`, `path` array, exact JSON `literal`; use `-` to append an array item |
 | `delete` | `file`, `path` |
 | `rename_key` | `file`, `path`, `name`; local property rename only |
-| `rename` | `kind`, `old`, `name`; kinds `component`, `port`, `subscription`, `parameter`; ports require `direction` |
+| `rename` | `kind`, `old`, `name`; kinds `component`, `subsystem`, `port`, `subscription`, `parameter`; ports require `direction` |
+| `instantiate_subsystem` | `name`, definition `source` relative to the edited model |
+| `create_subsystem` | `name`, new relative `directory`; prepares empty definition/model/deployment drafts |
+| `remove_subsystem` | Instance `name`; removes parent subscriptions and deployment selections, keeps definition sources |
+| `expose_subsystem_port` | Loaded `definition` ID, `direction` (`inputs`/`outputs`/`parameters`), public `name`, internal `target` |
+| `extract_subsystem` | Local `components` array, instance `name`, new relative `directory`; derives interfaces and migrates internal subscriptions/deployments |
 | `rename` for SDL | `kind: "sdl"`, `file`, declaration `path`, `name`; scoped text-SDL references and roots |
 | `add_component` | `name`, optional `copy` component; copied handlers/parameter references stay shared |
 | `remove_component` | `name`; includes owned subscriptions and registered deployment entries |
@@ -57,7 +68,7 @@ invalid commands return 422 and missing objects/previews return 404.
 | `sdl_stabilize_ids` | SDL `file`; make current implicit IDs explicit before structural edits |
 | `comment` | SDL `file`, comment `index`, complete comment `value` |
 | `workspace` | Any of `positions`, `groups`, `views`, `pinned` |
-| `deployment` | New relative filename `name`, optional `copy` deployment ID |
+| `deployment` | New filename `name` relative to the edited model, optional `copy` deployment ID |
 | `select_deployment` | Registered deployment `file` |
 | `create_document` | New source filename `name`, optional exact `text` |
 | `export_schema` | Registered schema `file`, `format` (`sdl`, `json`, `yaml`, `xsd`), new filename `name` outside active inputs; conversion is previewed and preserves the original |
@@ -65,6 +76,14 @@ invalid commands return 422 and missing objects/previews return 404.
 JSON paths address structured properties, including descriptor fields. Text-SDL
 declaration paths identify the current projection's tree nodes and are revision
 bound. The source syntax tree remains distinct from resolved SDL catalogues.
+
+Commands may include a registered `model` ID to edit a nested definition.
+Omission targets the application model. Scoped commands update that model's
+registered deployments and public interface references together. Workspace
+positions/groups for nested models are stored under `workspace.models`.
+Definition edits affect every instance. All paths remain within configured
+source roots. Extraction preserves original handler locations through relative
+references and includes every new source in its preview, undo and save journal.
 
 `configure_input` also accepts `create: true` to reject an existing port instead
 of updating it. Port edits validate the resulting model and all registered
@@ -83,6 +102,10 @@ input name checks that source set independently. The response contains a job ID.
 `GET /validation/ID` returns status/progress, immutable snapshot revision,
 diagnostics, resolved descriptors, SDL catalogues, directional subscription
 reports and initial-value codec previews. `DELETE /validation/ID` cancels it.
+
+Composed applications resolve all definition drafts through the engine resolver
+before validation. `model_contracts` maps source model IDs to their subscription
+reports; `contracts` retains application-level authored subscription IDs.
 
 Full-application results also include `connection_contracts`: directional SDL
 reports for distinct publisher/consumer schema-input pairs sharing a logical

@@ -1,5 +1,6 @@
 import { receptionFor } from './reception'
 import { activationCycle, inputKind } from './execution'
+import { graphModel } from './subsystems'
 
 export type Publisher = { endpoint: string; external: boolean }
 export type Assessment = { status: 'compatible' | 'incompatible' | 'unknown'; message: string }
@@ -20,7 +21,7 @@ export function inputs(model: any): string[] {
 
 export function assessConnection(project: any, source: Publisher, target: string): Assessment {
   const reject = (message: string): Assessment => ({ status: 'incompatible', message })
-  const document = project?.documents[project.model], model = document?.value
+  const document = project?.documents[project.model], model = graphModel(project)
   if (!model || document.stale) return reject('Repair the model source before connecting ports.')
   if (model.version !== 2) return reject('Migrate the application model to v2 before connecting ports.')
   const [sourceComponent, output] = source.endpoint.split('.')

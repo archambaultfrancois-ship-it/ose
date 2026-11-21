@@ -1,0 +1,2 @@
+message Value { 1: required fl64 value; }
+message Settings { 1: required fl64 limit; }

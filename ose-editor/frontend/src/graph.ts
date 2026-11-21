@@ -35,13 +35,13 @@ export function topology(model: any, workspace: any, labels = true, linkStyle: L
     ...(direction === 'inputs' && inputKind(desc) !== 'timer' ? { reception: receptionFor(model, name + '.' + port) } : {}),
   })
   for (const [name, raw] of Object.entries(components)) {
-    const component = raw as any, id = collapsed.get(name) || 'component:' + name
+    const component = raw as any, kind = component._subsystem ? 'subsystem' : 'component', id = collapsed.get(name) || kind + ':' + name
     for (const direction of ['inputs', 'outputs']) for (const port of Object.keys(component[direction] || {})) endpoint.set(name + '.' + port, id)
     if (collapsed.has(name)) continue
     const ports = (direction: string) => Object.entries(component[direction] || {}).map(([port, desc]) => portData(name, direction, port, desc))
     nodes.push({ id, type: 'component', position: workspace?.positions?.[name] || { x: nodes.length % 4 * 440, y: Math.floor(nodes.length / 4) * 400 },
-      data: { name, kind: 'component', showActivations,
-        activations: activationLinks(component), inputs: ports('inputs'), outputs: ports('outputs') } })
+      data: { name, kind, definition: component._subsystem, showActivations,
+        activations: kind === 'component' ? activationLinks(component) : [], inputs: ports('inputs'), outputs: ports('outputs') } })
   }
   // A collapsed group exposes crossing connections and free ports, while
   // ports used exclusively by hidden internal links stay inside the group.

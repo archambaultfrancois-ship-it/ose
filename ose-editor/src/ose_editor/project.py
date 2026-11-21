@@ -120,6 +120,7 @@ class Project:
         self.workspace_baseline = deepcopy(self.workspace)
         self.recovery = self._read_recovery()
         self.model = self.load(self.resolve(model), 'model', create=create)
+        self.root_model = self.model
         candidates = list(deployments)
         if not candidates:
             # Remembered files may have been removed by a source refactoring.
@@ -176,40 +177,8 @@ class Project:
         return key
 
     def discover(self):
-        self.discovery_errors, self.schema_inputs = [], {}
-        try:
-            model = loads(self.documents[self.model].text)
-            if not isinstance(model, dict):
-                return
-            inputs = {model.get('schemas', 'schemas')}
-            descriptions = list(model.get('external_topics', {}).values()) + list(model.get('shared_parameters', {}).values())
-            for component in model.get('components', {}).values():
-                for direction in ('inputs', 'outputs', 'recording_types'):
-                    descriptions += list(component.get(direction, {}).values())
-            inputs.update(desc['schema'] for desc in descriptions if isinstance(desc, dict) and 'schema' in desc)
-            for source in inputs:
-                try:
-                    path = self.resolve(self.documents[self.model].path.parent / source)
-                    members = [path] if path.is_file() else sorted(path.rglob('*')) if path.is_dir() else []
-                    keys = []
-                    for member in members:
-                        if member.name.endswith(('.sdl', '.sdl.json', '.sdl.yaml', '.sdl.yml', '.sdl.xsd')):
-                            checked = self.resolve(member)
-                            known = self.documents.get(self.key(checked))
-                            if known is not None and known.deleted:
-                                continue
-                            keys.append(self.load(checked, 'schema'))
-                    # Newly authored source files may not exist on disk yet.
-                    for key, document in self.documents.items():
-                        if document.active and document.role == 'schema' and (document.path == path or path in document.path.parents) and key not in keys:
-                            keys.append(key)
-                    self.schema_inputs[source] = keys
-                    if not keys:
-                        self.discovery_errors.append({'severity': 'error', 'origin': 'project', 'file': self.model, 'message': 'Missing schema input: ' + source})
-                except (ValueError, OSError, TypeError) as error:
-                    self.discovery_errors.append({'severity': 'error', 'origin': 'project', 'message': str(error)})
-        except (ValueError, TypeError, AttributeError, KeyError):
-            pass  # Syntax and malformed draft diagnostics belong to projection().
+        from .subsystems import discover
+        discover(self)
 
     def check_revision(self, revision):
         if revision != self.revision:
@@ -258,10 +227,11 @@ class Project:
                 if len(self.prepared) > 32:
                     self.prepared.pop(next(iter(self.prepared)))
                 return {'id': token, 'revision': self.revision, 'changes': changes,
-                        'handlers_to_review': handlers if command.get('action', '').startswith(('rename', 'sdl', 'remove', 'configure_', 'duplicate_port')) else [],
+                        'handlers_to_review': handlers if command.get('action', '').startswith(('rename', 'sdl', 'remove', 'configure_', 'duplicate_port', 'extract_')) else [],
                         'external_consumers': 'Unregistered external consumers are not assessed.'}
             finally:
                 self.restore(before)
+                self.discover()
 
     def apply(self, token, revision):
         with self.mutex:
@@ -306,10 +276,32 @@ class Project:
         doc.text = parsed.delete(path) if remove else parsed.set(path, literal if literal is not None else dump(value))
 
     def execute(self, command):
+        model_key = command.get('model', self.model)
+        if model_key == self.model:
+            return self._execute(command)
+        if model_key not in self.model_contexts:
+            raise ValueError('Choose a loaded model before editing its definition')
+        original = self.model, self.deployments, self.selected_deployment, self.workspace
+        context = self.model_contexts[model_key]
+        workspace = self.workspace.setdefault('models', {}).setdefault(model_key, {
+            'positions': {}, 'groups': {}, 'views': {}, 'pinned': []})
+        try:
+            self.model, self.deployments = model_key, context['deployments'][:]
+            self.selected_deployment = workspace.get('selected_deployment') or (self.deployments[0] if self.deployments else None)
+            self.workspace = workspace
+            return self._execute(command)
+        finally:
+            self.model, self.deployments, self.selected_deployment, self.workspace = original
+            self.discover()
+
+    def _execute(self, command):
         action = command['action']
         if action in ('configure_input', 'configure_output', 'configure_activation', 'duplicate_port', 'remove_port', 'add_component', 'remove_component', 'connect', 'duplicate_subscription', 'set_reception', 'rename'):
             self.application_model()
-        if action == 'source':
+        if action in ('instantiate_subsystem', 'create_subsystem', 'remove_subsystem', 'expose_subsystem_port', 'extract_subsystem'):
+            from .subsystems import execute
+            execute(self, command)
+        elif action == 'source':
             text = command['text']
             if len(text.encode()) > self.max_document_bytes:
                 raise ValueError('Source exceeds the document limit')
@@ -367,7 +359,8 @@ class Project:
                 raise ValueError('Port already exists')
             node['inputs'][port] = description
             component_inputs(node)
-            activation_graph(model)
+            if not model.get('subsystems'):
+                activation_graph(model)
             validate(self, model)
             path = ['components', name, 'inputs', port]
             if previous is None:
@@ -381,7 +374,7 @@ class Project:
         elif action == 'add_component':
             name = command['name']
             model = loads(self.document(self.model).text)
-            if not name or '.' in name or name in model.get('components', {}):
+            if not name or '.' in name or name in model.get('components', {}) or name in model.get('subsystems', {}):
                 raise ValueError('Use a unique component name without dots')
             source = command.get('copy')
             if source:
@@ -395,6 +388,8 @@ class Project:
                 self.json_set(key, ['components', name], execution)
         elif action == 'remove_component':
             name = command['name']
+            from .subsystems import require_private
+            require_private(self, name)
             self.json_set(self.model, ['components', name], remove=True)
             model = loads(self.document(self.model).text)
             removed = []
@@ -427,7 +422,7 @@ class Project:
             if not isinstance(destination, str) or destination.count('.') != 1:
                 raise ValueError('Use a destination input in component.port form')
             component, port = destination.split('.')
-            if port not in model.get('components', {}).get(component, {}).get('inputs', {}):
+            if port not in self.connection_model().get('components', {}).get(component, {}).get('inputs', {}):
                 raise ValueError('Unknown destination input')
             subscription = {**deepcopy(source), 'id': name, 'to': destination}
             self._inherit_reception(subscription, subs)
@@ -471,7 +466,7 @@ class Project:
             self.selected_deployment = command['file']
             self.workspace['selected_deployment'] = command['file']
         elif action == 'deployment':
-            path = self.resolve(command['name'])
+            path = self.resolve(self.document(self.model).path.parent / command['name'])
             if self.reserved(path):
                 raise ValueError('Deployment path already exists')
             text = self.document(command['copy']).text if command.get('copy') else '{\n  "version": 1,\n  "components": {}\n}\n'
@@ -502,6 +497,19 @@ class Project:
         model = loads(self.document(self.model).text)
         deployments = [loads(self.document(key).text) for key in self.deployments] or [{}]
         for deployment in deployments:
+            if model.get('subsystems'):
+                from .subsystems import flatten
+                key = next(key for key in self.deployments if loads(self.document(key).text) == deployment)
+                flat, actual, metadata, _ = flatten(self, deployment_key=key)
+                component, port = target.split('.')
+                endpoint = metadata['instances'][component]['interface']['inputs'][port] if component in model['subsystems'] else target
+                resolved = []
+                for sub in flat['subscriptions']:
+                    if sub['to'] == endpoint:
+                        transport = actual.get('subscriptions', {}).get(sub['id'], {}).get('transport', 'tcp')
+                        resolved.append({'to': endpoint, 'policy': SubscriptionPolicy.resolve(sub.get('qos'), transport).to_dict()})
+                reception_policies(resolved)
+                continue
             resolved = []
             for sub in model.get('subscriptions', []):
                 if sub['to'] != target:
@@ -517,8 +525,12 @@ class Project:
             raise ValueError('Application model v2 is required; migrate v1 triggers and callbacks before using structured editing')
         return model
 
+    def connection_model(self):
+        from .subsystems import connection_model
+        return connection_model(self)
+
     def _check_connection(self, subscription):
-        model = self.application_model()
+        model = self.connection_model()
         target, input_name = subscription['to'].split('.')
         consumer = model['components'][target]['inputs'][input_name]
         if consumer.get('kind') == 'timer':
@@ -526,7 +538,7 @@ class Project:
         from ose.modeling.activation import activation_graph
         # Match OSE's JSON number types; the editor's Decimal values are
         # retained for source edits, but timer validation expects int/float.
-        activation_graph(json.loads(self.document(self.model).text))
+        activation_graph(model)
         if 'from' in subscription:
             source, output = subscription['from'].split('.')
             publisher = model['components'][source]['outputs'][output]
@@ -541,7 +553,23 @@ class Project:
         if not new or kind in ('component', 'port') and '.' in new:
             raise ValueError('Name must be nonempty and contain no dots for components/ports')
         model = loads(self.document(self.model).text)
-        if kind == 'component':
+        if kind in ('component', 'subsystem') and (new in model.get('components', {}) or new in model.get('subsystems', {})):
+            raise ValueError('Component or subsystem name already exists')
+        if kind == 'subsystem':
+            from .subsystems import name
+            name(new)
+            self.document(self.model).text = JsonSource(self.document(self.model).text).rename(['subsystems', old], new)
+            for index, sub in enumerate(model.get('subscriptions', [])):
+                for field in ('from', 'to'):
+                    if sub.get(field, '').startswith(old + '.'):
+                        self.json_set(self.model, ['subscriptions', str(index), field], new + sub[field][len(old):])
+            for key in self.deployments:
+                if old in loads(self.document(key).text).get('subsystems', {}):
+                    self.document(key).text = JsonSource(self.document(key).text).rename(['subsystems', old], new)
+            self.rename_exposures(old, new)
+            if 'subsystem:' + old in self.workspace['positions']:
+                self.workspace['positions']['subsystem:' + new] = self.workspace['positions'].pop('subsystem:' + old)
+        elif kind == 'component':
             self.document(self.model).text = JsonSource(self.document(self.model).text).rename(['components', old], new)
             for i, sub in enumerate(model.get('subscriptions', [])):
                 for endpoint in ('from', 'to'):
@@ -558,6 +586,7 @@ class Project:
                 self.workspace['positions'][new] = self.workspace['positions'].pop(old)
             for group in self.workspace['groups'].values():
                 group['members'] = [new if item == old else item for item in group.get('members', [])]
+            self.rename_exposures(old, new)
         elif kind == 'port':
             component, port = old.split('.')
             direction = command['direction']
@@ -572,6 +601,7 @@ class Project:
                 field = 'from' if direction == 'outputs' else 'to'
                 if sub.get(field) == old:
                     self.json_set(self.model, ['subscriptions', str(i), field], component + '.' + new)
+            self.rename_exposures(old, component + '.' + new, direction)
             from ose_editor.component_commands import validate
             validate(self)
         elif kind == 'subscription':
@@ -591,6 +621,14 @@ class Project:
                 for alias, binding in component.get('parameter_bindings', {}).items():
                     if binding['path'] == old:
                         self.json_set(self.model, ['components', name, 'parameter_bindings', alias, 'path'], new)
+            for instance, value in model.get('subsystems', {}).items():
+                for alias, path in value.get('parameter_bindings', {}).items():
+                    if path == old:
+                        self.json_set(self.model, ['subsystems', instance, 'parameter_bindings', alias], new)
+            for key in self.model_contexts.get(self.model, {}).get('definitions', []):
+                for alias, binding in loads(self.document(key).text)['interface'].get('parameters', {}).items():
+                    if binding['path'] == old:
+                        self.json_set(key, ['interface', 'parameters', alias, 'path'], new)
             for key in self.deployments:
                 data = loads(self.document(key).text)
                 for identity, permissions in data.get('parameter_clients', {}).items():
@@ -600,6 +638,17 @@ class Project:
                                 self.json_set(key, ['parameter_clients', identity, access, str(index)], new)
         else:
             self.rename_sdl(command)
+
+    def rename_exposures(self, old, new, direction=None):
+        for key in self.model_contexts.get(self.model, {}).get('definitions', []):
+            interface = loads(self.document(key).text)['interface']
+            for kind, field in (('inputs', 'to'), ('outputs', 'from')):
+                if direction and direction != kind:
+                    continue
+                for alias, binding in interface.get(kind, {}).items():
+                    value = binding[field]
+                    if value == old or not direction and value.startswith(old + '.'):
+                        self.json_set(key, ['interface', kind, alias, field], new + value[len(old):])
 
     def rename_sdl(self, command):
         key, path = command['file'], command['path']
@@ -624,16 +673,7 @@ class Project:
                             for match in re.finditer(r'(?<![\w.])' + re.escape(old) + r'(?=\.)', prop['value']):
                                 patches.append((prop['start'] + match.start(), prop['start'] + match.end(), new))
                 doc.text = parsed.patches(patches)
-            source = JsonSource(self.document(self.model).text)
-            def package_roots(item, pointer=()):
-                if isinstance(item.value, dict) and str(item.value.get('root', '')).startswith(old + '.'):
-                    schema = item.value.get('schema', source.root.value.get('schemas'))
-                    if affected.intersection(self.schema_inputs.get(schema, [])):
-                        yield (*pointer, 'root'), new + item.value['root'][len(old):]
-                for name, child in item.children.items():
-                    yield from package_roots(child, (*pointer, name))
-            for pointer, root in list(package_roots(source.root)):
-                self.json_set(self.model, pointer, root)
+            self.rename_model_roots(affected, lambda root: new + root[len(old):] if root.startswith(old + '.') else None)
             return
         if not re.fullmatch(r'[^\W\d]\w*', new):
             raise ValueError('Use a valid SDL declaration name')
@@ -663,17 +703,27 @@ class Project:
                             replacement = new if '.' not in ref else ('.' + new if ref.startswith('.') and not origin.package else full_new)
                             patches.append((prop['start'] + match.start(), prop['start'] + match.end(), replacement))
             doc.text = parsed.patches(patches)
-        # Roots in the model are complete logical names, scoped by schema input.
-        source = JsonSource(self.document(self.model).text)
-        def roots(node, pointer=()):
-            if isinstance(node.value, dict) and node.value.get('root') == full_old:
-                schema = node.value.get('schema', loads(self.document(self.model).text).get('schemas'))
-                if key in self.schema_inputs.get(schema, []):
-                    yield (*pointer, 'root')
-            for child_key, child in node.children.items():
-                yield from roots(child, (*pointer, child_key))
-        for pointer in list(roots(source.root)):
-            self.json_set(self.model, pointer, full_new)
+        self.rename_model_roots({key}, lambda root: full_new if root == full_old else None)
+
+    def rename_model_roots(self, affected, replacement):
+        for key in self.model_contexts:
+            model = loads(self.document(key).text)
+            descriptions = []
+            for name, component in model.get('components', {}).items():
+                for direction in ('inputs', 'outputs', 'recording_types'):
+                    descriptions.extend((['components', name, direction, port], desc)
+                                        for port, desc in component.get(direction, {}).items())
+            for kind in ('external_topics', 'shared_parameters'):
+                descriptions.extend(([kind, name], desc) for name, desc in model.get(kind, {}).items())
+            for path, desc in descriptions:
+                root = desc.get('root')
+                if not isinstance(root, str):
+                    continue
+                schema = desc.get('schema', model.get('schemas'))
+                schema = self.schema_contexts.get(key, {}).get(schema, schema)
+                changed = replacement(root)
+                if changed is not None and affected.intersection(self.schema_inputs.get(schema, [])):
+                    self.json_set(key, [*path, 'root'], changed)
 
     @staticmethod
     def identity_changes(key, old, new):
@@ -706,7 +756,9 @@ class Project:
 
     def handlers(self):
         result = set()
-        for key in self.deployments:
+        for key, document in self.documents.items():
+            if not document.active or document.role != 'deployment':
+                continue
             try:
                 for component in loads(self.document(key).text).get('components', {}).values():
                     handler = component.get('container', {}).get('handler')
@@ -717,7 +769,9 @@ class Project:
         return sorted(result)
 
     def projection(self):
-        result, diagnostics = {}, list(self.discovery_errors)
+        from .subsystems import port_projection
+        ports, composition_errors = port_projection(self)
+        result, diagnostics = {}, [*self.discovery_errors, *composition_errors]
         if self.recovery_warning:
             diagnostics.append({'severity': 'warning', 'origin': 'recovery', 'message': self.recovery_warning})
         for key, doc in self.documents.items():
@@ -745,6 +799,8 @@ class Project:
         return {'name': self.root.name, 'revision': self.revision, 'model': self.model, 'deployments': self.deployments,
                 'selected_deployment': self.selected_deployment, 'documents': result, 'schema_inputs': self.schema_inputs,
                 'workspace': deepcopy(self.workspace), 'diagnostics': diagnostics, 'validation': validation,
+                'subsystems': ports, 'model_contexts': deepcopy(self.model_contexts),
+                'definitions': deepcopy(self.subsystem_definitions), 'schema_contexts': deepcopy(self.schema_contexts),
                 'dirty': any(doc.dirty for doc in self.documents.values() if doc.active) or any(doc.deleted for doc in self.documents.values()) or self.workspace != self.workspace_baseline,
                 'can_undo': bool(self.history), 'can_redo': bool(self.redo_history), 'recovery': bool(self.recovery), 'draft_recovery': bool(self.draft_recovery)}
 

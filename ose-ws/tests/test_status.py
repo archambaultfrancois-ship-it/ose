@@ -8,6 +8,20 @@ from ose_ws.services.status import StatusCollector
 
 
 class FlowStatusTests(unittest.TestCase):
+    def test_composition_exposes_logical_paths_without_source_paths_or_secrets(self):
+        plan = {'components': {'ss_1': {'inputs': {}, 'outputs': {}}}, 'subscriptions': [],
+                'composition': {'components': {'ss_1': {'path': ['monitoring', 'detector'], 'model': '/private/source.json'}},
+                    'subscriptions': {}, 'instances': {'monitoring': {'source': '/private/subsystem.json',
+                        'interface': {'inputs': {}, 'outputs': {}, 'parameters': {'secret': 'private/value'}}}},
+                    'parameter_contracts': [{'initial': 'secret'}]}}
+        observation = describe(plan)
+        self.assertEqual(observation['composition']['components']['ss_1']['path'], ['monitoring', 'detector'])
+        self.assertNotIn('private', json.dumps(observation))
+        self.assertNotIn('secret', json.dumps(observation))
+        collector = StatusCollector({'collection': {'diagnostic_window_s': 5}}, SimpleNamespace(public=lambda: {}), None)
+        collector.snapshot, collector.report = {'observation': observation}, {'components': []}
+        self.assertEqual(collector.diagnostics()['topology']['composition'], observation['composition'])
+
     def test_model_metadata_preserves_external_and_direct_links_without_secrets(self):
         plan = {"components": {
             "source": {"inputs": {"clock": {"kind": "timer", "timer": {"mode": "periodic", "delay": .1},

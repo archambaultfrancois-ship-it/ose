@@ -9,6 +9,8 @@ import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import ComponentNode from './ComponentNode.vue'
 import ComponentEditor from './ComponentEditor.vue'
+import SubsystemTools from './SubsystemTools.vue'
+import { graphModel } from '../subsystems'
 import { useProject } from '../store'
 import { topology, downstream, type LinkStyle } from '../graph'
 import { layoutGraph } from '../layout'
@@ -18,7 +20,7 @@ const store = useProject(), nodes = ref<any[]>([]), edges = ref<any[]>([]), sear
 const linkStyle = ref<LinkStyle>('default')
 const showActivations = ref(false)
 const linkStyles = [{ label: 'Curved', value: 'default' }, { label: 'Straight', value: 'straight' }, { label: 'Right-angle', value: 'smoothstep' }]
-const model = computed(() => store.project?.documents[store.project.model]?.value)
+const model = computed(() => graphModel(store.project))
 const drag = ref<{ endpoint: string; type: string; external: boolean } | null>(null)
 const connectionFeedback = ref(''), assistant = ref(false), sourceKey = ref(''), target = ref(''), subscriptionId = ref('')
 const sourceSelect = ref<HTMLSelectElement>(), idInput = ref<HTMLInputElement>()
@@ -48,12 +50,12 @@ const selectedComponents = computed(() => getSelectedNodes.value.filter(node => 
 let graphInspection: typeof store.selection = null
 const worker = new Worker(new URL('../layout.worker.ts', import.meta.url), { type: 'module' })
 watch(() => store.project?.revision, () => { connectionFeedback.value = '' })
-watch(() => [store.project?.revision, store.project?.validation, labels.value, search.value, scope.value, linkStyle.value, showActivations.value, store.selection, drag.value], () => {
+watch(() => [store.project?.model, store.project?.revision, store.project?.validation, labels.value, search.value, scope.value, linkStyle.value, showActivations.value, store.selection, drag.value], () => {
   const graph = topology(model.value, store.project?.workspace, labels.value, linkStyle.value, showActivations.value)
   const inspectionChanged = store.selection !== graphInspection
   const selectedIds = new Set(getSelectedNodes.value.map(node => node.id))
-  const chosen = store.selection?.path?.[0] === 'components' ? store.selection.path[1] : ''
-  const inspectedId = chosen ? 'component:' + chosen : store.selection?.path?.[0] === 'external_topics' ? 'external:' + store.selection.path[1] : ''
+  const chosen = ['components', 'subsystems'].includes(store.selection?.path?.[0] || '') ? store.selection?.path?.[1] || '' : ''
+  const inspectedId = chosen ? (model.value?.components[chosen]?._subsystem ? 'subsystem:' : 'component:') + chosen : store.selection?.path?.[0] === 'external_topics' ? 'external:' + store.selection.path[1] : ''
   const highlighted = chosen && scope.value !== 'all' ? downstream(model.value, chosen, scope.value) : null
   graph.nodes.forEach(node => { node.class = search.value && !node.data.name.toLowerCase().includes(search.value.toLowerCase()) || highlighted && !highlighted.has(node.data.name) ? 'dimmed' : ''; node.selected = inspectionChanged ? node.id === inspectedId || !!chosen && !!node.data.members?.includes(chosen) : selectedIds.has(node.id) })
   if (drag.value) for (const node of graph.nodes) {
@@ -75,8 +77,8 @@ async function revealNavigation() {
   await nextTick()
   const path = store.selection?.path || []
   let ids: string[] = []
-  if (path[0] === 'components') {
-    const node = nodes.value.find(node => node.id === 'component:' + path[1] || node.data.members?.includes(path[1]))
+  if (['components', 'subsystems'].includes(path[0])) {
+    const node = nodes.value.find(node => node.id === 'component:' + path[1] || node.id === 'subsystem:' + path[1] || node.data.members?.includes(path[1]))
     if (node) ids = [node.id]
   } else if (path[0] === 'subscriptions') {
     const edge = edges.value.find(edge => edge.data.index === Number(path[1]))
@@ -138,7 +140,7 @@ async function previewConnection() {
 function selected(event: any) {
   const data = event.node.data
   if (data.kind === 'group') return
-  store.select(store.project.model, data.kind === 'external' ? ['external_topics', data.name] : ['components', data.name])
+  store.select(store.project.model, data.kind === 'external' ? ['external_topics', data.name] : data.kind === 'subsystem' ? ['subsystems', data.name] : ['components', data.name])
   graphInspection = store.selection
 }
 function inspectInput(component: string, port: string) {
@@ -146,6 +148,7 @@ function inspectInput(component: string, port: string) {
   graphInspection = store.selection
 }
 function expand(event: any) {
+  if (event.node.data.kind === 'subsystem') { store.openSubsystem(event.node.data.name); return }
   if (event.node.data.kind === 'component') { store.editComponent(event.node.data.name); return }
   if (event.node.data.kind !== 'group') return
   const groups = JSON.parse(JSON.stringify(store.project.workspace.groups))
@@ -181,6 +184,9 @@ onBeforeUnmount(() => worker.terminate())
   <div class="graph-workspace">
     <ComponentEditor v-if="store.editingComponent" />
     <div v-show="!store.editingComponent" class="graph-overview">
+    <nav v-if="store.modelTrail.length" class="subsystem-breadcrumbs" aria-label="Subsystem hierarchy"><button v-for="(item, index) in store.modelTrail" :key="index" @click="store.parentModel(index)">{{ index ? ' / ' : '' }}{{ item.name }}</button></nav>
+    <p v-if="store.project.model !== store.project.root_model" class="definition-notice">Editing shared definition: {{ store.project.model }}. Changes affect every instance of this definition.</p>
+    <SubsystemTools :selected="selectedComponents" />
     <div class="graph-toolbar">
       <InputText v-model="search" placeholder="Find a component…" aria-label="Find a component" />
       <Button ref="connectButton" label="Connect ports" severity="secondary" :disabled="!!store.pending" @click="openAssistant()" />
@@ -205,15 +211,17 @@ onBeforeUnmount(() => worker.terminate())
     </form>
     <p v-if="connectionFeedback" class="connection-feedback" role="status">{{ connectionFeedback }}</p>
     <VueFlow v-model:nodes="nodes" v-model:edges="edges" fit-view-on-init :is-valid-connection="validConnection" :multi-selection-key-code="['Shift', 'Control', 'Meta']" :delete-key-code="null" :min-zoom="0.15" :max-zoom="2" @nodes-initialized="revealNavigation" @node-click="selected" @node-double-click="expand" @edge-click="event => store.select(store.project.model, ['subscriptions', String(event.edge.data.index)])" @connect-start="startConnection" @connect-end="drag = null" @connect="connect" @node-drag-stop="position">
-      <template #node-component="nodeProps"><ComponentNode v-bind="nodeProps" @port-hover="message => connectionFeedback = message" @input-select="inspectInput" @edit-component="store.editComponent" /></template>
+      <template #node-component="nodeProps"><ComponentNode v-bind="nodeProps" @port-hover="message => connectionFeedback = message" @input-select="inspectInput" @edit-component="store.editComponent" @open-subsystem="store.openSubsystem" /></template>
       <Background :gap="24" pattern-color="#c8d5e5" /><MiniMap pannable zoomable /><Controls />
     </VueFlow>
-    <p class="graph-caption">{{ Object.keys(model?.components || {}).length }} components · {{ model?.subscriptions?.length || 0 }} subscriptions · {{ selectedComponents.length }} components selected · {{ selectedGroups.length }} groups selected · Shift/Ctrl/Cmd + click to select multiple · Shift + drag to select an area · drag between ports to connect</p>
+    <p class="graph-caption">{{ Object.keys(store.project.documents[store.project.model]?.value?.components || {}).length }} components · {{ Object.keys(model?.subsystems || {}).length }} subsystems · {{ model?.subscriptions?.length || 0 }} subscriptions · {{ selectedComponents.length }} components selected · {{ selectedGroups.length }} groups selected · Shift/Ctrl/Cmd + click to select multiple · Shift + drag to select an area · drag between ports to connect</p>
     </div>
   </div>
 </template>
 
 <style scoped>
+.subsystem-breadcrumbs, .definition-notice { padding: 8px 16px; margin: 0; font-size: 12px; background: #edf3fc; }
+.subsystem-breadcrumbs button { border: none; background: none; color: #3159a4; cursor: pointer; }
 .graph-overview { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .graph-overview :deep(.vue-flow) { flex: 1; min-height: 0; }
 .connection-assistant { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 14px 16px; background: #f7f9fd; border-bottom: 1px solid #dce4ef; }

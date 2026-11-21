@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "duration": 0.5,
+  "events": [
+    {
+      "at": 0.1,
+      "input": "measurements",
+      "value": {
+        "value": 90
+      }
+    }
+  ]
+}

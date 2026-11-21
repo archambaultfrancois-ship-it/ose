@@ -6,6 +6,11 @@ Executable component graphs with SDL2 contracts and per-subscription quality of
 service. See the [feature overview](docs/features.md) for the available user-facing services.
 The shared [technical glossary](../GLOSSARY.md) defines SDL, OSE and Web Console terminology.
 
+[Subsystem composition](docs/subsystems.md) adds reusable public interfaces,
+recursive instances and autonomous CLI test harnesses while preserving flat
+models. Follow the [French development and integration guide](../docs/developpement-sous-systemes.md)
+or run the [subsystem example](examples/subsystems/README.md).
+
 The [Push/Pull and CENV/2 transition](docs/cenv2-transition.md) tracks the staged
 execution-model and transport evolution. Python, Rust, C, Java and Ada components use model
 v2 input callbacks, timers and passive Pull inboxes in local/distributed real-time
@@ -27,6 +32,11 @@ The Python distribution, import namespace and command-line tool are named `ose`.
 Install with `python3 -m pip install .`, then use `ose --help` or
 `python3 -m ose.cli --help`. Rebuild application plans and generated containers
 after upgrading from an earlier package layout.
+
+From an application's directory, `ose validate` and `ose build` use `model.json`
+and `deployment.json` by default. Override either path with `--model` or
+`--deployment`. Builds write to `build/` by default; `ose run` reads
+`build/plan.json`.
 
 Enable Bash completion with `source <(ose completion bash)` (also suitable
 for `~/.bashrc`). The framework's `setenv.sh` enables it automatically in

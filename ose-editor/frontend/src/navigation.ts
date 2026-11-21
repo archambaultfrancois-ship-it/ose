@@ -11,13 +11,14 @@ export function navigationIndex(project: any): NavigationItem[] {
       items.push({ id: JSON.stringify([file, path, extra.sdl]), file, path, label, kind, context: file, stale: !!doc.stale, ...extra })
     }
     add(file, 'File')
-    if (file === project.model && doc.value?.version === 2) {
+    if ((file === project.model || project.model_contexts?.[file]) && doc.value?.version === 2) {
       for (const [name, node] of Object.entries(doc.value.components || {}) as [string, any][]) {
         add(name, 'Component', ['components', name])
         for (const direction of ['inputs', 'outputs']) for (const [port, desc] of Object.entries(node?.[direction] || {}) as [string, any][]) {
           add(name + '.' + port, direction === 'outputs' ? 'Output' : desc?.kind === 'timer' ? 'Timer' : 'Input', ['components', name, direction, port], { context: `${file} · ${desc?.root || 'Timer'}` })
         }
       }
+      for (const name of Object.keys(doc.value.subsystems || {})) add(name, 'Subsystem', ['subsystems', name])
       for (const [index, sub] of (Array.isArray(doc.value.subscriptions) ? doc.value.subscriptions : []).entries()) if (sub && typeof sub === 'object') add(sub.id || String(index), 'Subscription', ['subscriptions', String(index)], { context: `${file} · ${sub.from || sub.from_topic} → ${sub.to}` })
       for (const name of Object.keys(doc.value.shared_parameters || {})) add(name, 'Parameter', ['shared_parameters', name])
       for (const name of Object.keys(doc.value.external_topics || {})) add(name, 'External topic', ['external_topics', name])

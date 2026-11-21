@@ -9,7 +9,7 @@ import sys
 import tempfile
 from ose.codec.sdl2 import SDL2
 from ose.delivery.policies import SubscriptionPolicy
-from ose.modeling.model import load, fields
+from ose.modeling.model import fields
 from ose.modeling.validation import validate_graph
 from ose.modeling.containers import generate_python, scaffold_handler
 from ose.modeling.native_containers import generate_c, generate_rust, scaffold_native
@@ -21,9 +21,11 @@ BACKENDS = {"c": generate_c, "rust": generate_rust, "java": generate_java, "ada"
 
 
 def compile_plan(model_path, deployment_path, sdl_root, destination, *, profile=None,
-                 routing=None, development_tokens=False):
+                 routing=None, development_tokens=False, _documents=None):
     model_path, deployment_path = Path(model_path).resolve(), Path(deployment_path).resolve()
-    model, deployment = load(model_path, version=2), load(deployment_path)
+    from ose.modeling.composition import resolve
+    model, deployment, composition, _ = (_documents if _documents is not None
+                                         else resolve(model_path, deployment_path))
     validate_graph(model, deployment)
     deployment = deployment_profile(deployment, profile, routing=routing, development_tokens=development_tokens)
     if profile is not None:
@@ -36,11 +38,14 @@ def compile_plan(model_path, deployment_path, sdl_root, destination, *, profile=
     destination.mkdir(parents=True, exist_ok=True)
     codec, schema_cache, generated_paths = SDL2(sdl_root), {}, {}
     schema_languages = {}
+    component_schemas = {name: (composition['components'][name].get('schema', model['schemas'])
+                                if composition is not None else model['schemas'])
+                         for name in model['components']}
     parameter_defs = model.get("shared_parameters", {})
     for component, node in model["components"].items():
         language = deployment["components"][component].get("container", {}).get("language")
         if language:
-            schema_languages.setdefault((model_path.parent / model["schemas"]).resolve(), set()).add(language)
+            schema_languages.setdefault((model_path.parent / component_schemas[component]).resolve(), set()).add(language)
         descriptions = [desc for direction in ("inputs", "outputs", "recording_types") for desc in node.get(direction, {}).values() if desc.get("kind") != "timer"]
         descriptions += [parameter_defs[b["path"]] for b in node.get("parameter_bindings", {}).values()]
         for desc in descriptions:
@@ -59,8 +64,9 @@ def compile_plan(model_path, deployment_path, sdl_root, destination, *, profile=
     substitutions = {"project": str(model_path.parent), "build": str(destination),
                      "sdl_root": str(codec.root), "generated": str(destination / "generated/shared"),
                      "python": sys.executable}
-    def expand(value):
-        for key, replacement in substitutions.items():
+    def expand(value, generated=None):
+        replacements = {**substitutions, **({'generated': str(generated)} if generated is not None else {})}
+        for key, replacement in replacements.items():
             value = value.replace("{" + key + "}", replacement)
         return value
     handlers = {}
@@ -74,6 +80,14 @@ def compile_plan(model_path, deployment_path, sdl_root, destination, *, profile=
                 raise ValueError("container handler must be outside the generated build directory")
             handlers[name] = handler
     catalogue(model["schemas"])
+    if composition is not None:
+        for binding in composition['parameter_contracts']:
+            source, target = binding['source'], parameter_defs[binding['target']]
+            if source['root'] != target['root']:
+                raise ValueError('public parameter binding roots must match')
+            left, right = catalogue(source['schema']), catalogue(target['schema'])
+            codec.compare(left, right, source['root'])
+            codec.compare(right, left, source['root'])
     from ose.parameters.values import Values
     shared_parameters, parameter_codecs = {}, {}
     for path, desc in parameter_defs.items():
@@ -86,6 +100,8 @@ def compile_plan(model_path, deployment_path, sdl_root, destination, *, profile=
                                    "initial_payload": base64.b64encode(payload).decode()}
 
     for name, original in model["components"].items():
+        catalogue(component_schemas[name])
+        generated_dir = generated_paths[(model_path.parent / component_schemas[name]).resolve()]
         node = json.loads(json.dumps(original))
         node["execution_model"] = 2
         node["process_identity"] = {"prefix": process_names["prefix"], "component": name,
@@ -110,7 +126,7 @@ def compile_plan(model_path, deployment_path, sdl_root, destination, *, profile=
                                   for desc in [d for direction in ("inputs", "outputs", "recording_types") for d in node.get(direction, {}).values() if d.get("kind") != "timer"] +
                                   [parameter_defs[b["path"]] for b in node.get("parameter_bindings", {}).values()]])
             if not paths:
-                paths = {(model_path.parent / model["schemas"]).resolve(): None}
+                paths = {(model_path.parent / component_schemas[name]).resolve(): None}
             node["recording_catalogues"] = {}
             for path in paths:
                 text = catalogue(str(path))
@@ -133,10 +149,10 @@ def compile_plan(model_path, deployment_path, sdl_root, destination, *, profile=
                 types, node["command"], generated_build = generated["types"], generated["command"], generated["build"]
             node["container"] = {**execution["container"], "handler": str(handler), "types": types}
         else:
-            node["command"] = [expand(v) for v in execution["command"]]
-        node["build"] = [[expand(v) for v in command] for command in execution.get("build", [])] + generated_build
-        node["cwd"] = str((deployment_path.parent / expand(execution.get("cwd", "."))).resolve())
-        node["env"] = {k: expand(v) for k, v in execution.get("env", {}).items()}
+            node["command"] = [expand(v, generated_dir) for v in execution["command"]]
+        node["build"] = [[expand(v, generated_dir) for v in command] for command in execution.get("build", [])] + generated_build
+        node["cwd"] = str((deployment_path.parent / expand(execution.get("cwd", "."), generated_dir)).resolve())
+        node["env"] = {k: expand(v, generated_dir) for k, v in execution.get("env", {}).items()}
         if "placement" in execution:
             node["placement"] = execution["placement"]
         node.pop("recording_catalogues", None)  # Generator-only descriptors; do not duplicate them in INIT.
@@ -179,7 +195,8 @@ def compile_plan(model_path, deployment_path, sdl_root, destination, *, profile=
             raise ValueError(f"invalid {key}")
     from ose.parameters.service import ParameterService
     ParameterService({"shared_parameters": shared_parameters, "max_frame": deployment.get("max_frame", 1024 * 1024)}, codec)
-    return {"version": model["version"], "process_names": process_names, "execution": deployment.get("execution", "local"), "sdl_root": str(codec.root), "components": components, "subscriptions": subscriptions,
+    return {**({'composition': composition} if composition is not None else {}),
+            "version": model["version"], "process_names": process_names, "execution": deployment.get("execution", "local"), "sdl_root": str(codec.root), "components": components, "subscriptions": subscriptions,
             "shared_parameters": shared_parameters, "parameter_clients": deployment.get("parameter_clients", {}),
             "external_topics": external_topics, "broker": deployment.get("broker", {}), "build_dir": str(destination), "max_frame": deployment.get("max_frame", 1024 * 1024),
             "max_datagram": deployment.get("max_datagram", 1200)}
@@ -187,6 +204,11 @@ def compile_plan(model_path, deployment_path, sdl_root, destination, *, profile=
 
 def build(model, deployment, sdl_root, destination, component=None, **profile_options):
     plan = compile_plan(model, deployment, sdl_root, destination, **profile_options)
+    if component is not None and component not in plan['components']:
+        matches = [name for name, source in plan.get('composition', {}).get('components', {}).items()
+                   if '.'.join(source['path']) == component]
+        if len(matches) == 1:
+            component = matches[0]
     if component is not None and component not in plan["components"]:
         raise ValueError("unknown component to build")
     nodes = plan["components"].values() if component is None else [plan["components"][component]]

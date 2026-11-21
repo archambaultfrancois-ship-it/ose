@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "schemas": "detection/schemas/value.sdl",
+  "components": {
+    "display": {
+      "inputs": {
+        "input": {
+          "root": "Value"
+        }
+      },
+      "outputs": {}
+    }
+  },
+  "subsystems": {
+    "acquisition": {
+      "source": "acquisition/subsystem.json"
+    },
+    "monitoring": {
+      "source": "monitoring/subsystem.json"
+    }
+  },
+  "subscriptions": [
+    {
+      "id": "measurements",
+      "from": "acquisition.measurements",
+      "to": "monitoring.measurements"
+    },
+    {
+      "id": "alarms",
+      "from": "monitoring.alarms",
+      "to": "display.input"
+    }
+  ]
+}

@@ -1,7 +1,8 @@
 export function keysFor(role: string, path: string[], model?: any): Record<string, string> {
   const last = path.at(-1), depth = path.length
   if (role === 'model') {
-    if (!depth) return { version: '2', schemas: '"schemas"', components: '{}', subscriptions: '[]', external_topics: '{}', shared_parameters: '{}' }
+    if (!depth) return { version: '2', schemas: '"schemas"', components: '{}', subscriptions: '[]', external_topics: '{}', shared_parameters: '{}', subsystems: '{}' }
+    if (path[0] === 'subsystems' && depth === 2) return { source: '"subsystem.json"', parameters: '{}', parameter_bindings: '{}' }
     if (path[0] === 'components' && depth === 2) return { inputs: '{}', outputs: '{}', parameters: '{}', parameter_bindings: '{}', recording_types: '{}' }
     if (path[2] === 'inputs' && depth === 4) {
       const desc = atPath(model, path)
@@ -22,7 +23,8 @@ export function keysFor(role: string, path: string[], model?: any): Record<strin
     if (last === 'retry') return { max_retries: '3', ack_timeout_ms: '100', backoff_multiplier: '2' }
   }
   if (role === 'deployment') {
-    if (!depth) return { version: '1', components: '{}', subscriptions: '{}', execution: '"local"', max_frame: '1048576', max_datagram: '1200', broker: '{}', process_names: '{}', parameter_clients: '{}' }
+    if (!depth) return { version: '1', components: '{}', subscriptions: '{}', execution: '"local"', max_frame: '1048576', max_datagram: '1200', broker: '{}', process_names: '{}', parameter_clients: '{}', subsystems: '{}' }
+    if (path[0] === 'subsystems' && depth === 2) return { source: '"deployment.json"', components: '{}' }
     if (path[0] === 'components' && depth === 2) return { command: '["{python}","handler.py"]', container: '{"language":"python","handler":"handler.py"}', build: '[]', cwd: '"."', env: '{}', placement: '"local"' }
     if (last === 'container') return { language: '"python"', handler: '""', class: '""', unit: '""' }
     if (last === 'placement') return { node_selector: '{}', resources: '{}' }
@@ -32,6 +34,11 @@ export function keysFor(role: string, path: string[], model?: any): Record<strin
     if (last === 'external') return { enabled: 'true', max_clients: '32', max_subscriptions: '256', max_capacity: '4096', max_topics: '1024', max_catalogues: '4096', max_wait_timeout_ms: '1000' }
     if (last === 'process_names') return { prefix: '"ose"', components: '{}' }
     if (path[0] === 'parameter_clients' && depth === 2) return { read: '[]', write: '[]', token: '""' }
+  }
+  if (role === 'subsystem') {
+    if (!depth) return { version: '1', model: '"model.json"', deployment: '"deployment.json"', interface: '{}' }
+    if (path[0] === 'interface' && depth === 1) return { inputs: '{}', outputs: '{}', parameters: '{}' }
+    if (path[0] === 'interface' && depth === 3) return path[1] === 'inputs' ? { to: '"component.input"' } : path[1] === 'outputs' ? { from: '"component.output"' } : { path: '"settings"' }
   }
   if (role === 'schema') {
     if (!depth) return { format: '"sdl-schema"', version: '1', package: '""', doc: '""', constants: '{}', aliases: '{}', enums: '{}', messages: '{}' }

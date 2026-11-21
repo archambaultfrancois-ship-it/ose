@@ -89,7 +89,8 @@ def create_app(project, sdl_root, token=None):
         coverage = Path(__file__).with_name('coverage.json')
         return {'editor': __version__, 'ose': engine, 'model_version': 2, 'model_versions': [2], 'sdl': 'SDL2/source-v1', 'sdl_root': str(validator.sdl_root),
                 'coverage': json.loads(coverage.read_text()) if coverage.exists() else [],
-                'formats': ['json', 'sdl', 'yaml', 'xsd'], 'validation': True, 'business_code_execution': False}
+                'formats': ['json', 'sdl', 'yaml', 'xsd'], 'validation': True, 'subsystems': True,
+                'business_code_execution': False}
 
     @app.get('/api/v1/document')
     def document(file: str):

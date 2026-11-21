@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "profiles": {
+    "standalone": {
+      "cases": [
+        "nominal",
+        "threshold"
+      ]
+    },
+    "with-acquisition": {
+      "model": "with-acquisition.model.json",
+      "deployment": "with-acquisition.deployment.json",
+      "inject": [],
+      "cases": [
+        "integration"
+      ]
+    }
+  },
+  "cases": {
+    "nominal": {
+      "scenario": "nominal/scenario.json",
+      "expectations": "nominal/expectations.json"
+    },
+    "threshold": {
+      "scenario": "threshold/scenario.json",
+      "expectations": "threshold/expectations.json"
+    },
+    "integration": {
+      "scenario": "integration/scenario.json",
+      "expectations": "integration/expectations.json"
+    }
+  }
+}

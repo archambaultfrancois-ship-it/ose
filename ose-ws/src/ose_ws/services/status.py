@@ -81,7 +81,8 @@ class StatusCollector:
                 name: {key: desc[key] for key in ("inputs", "outputs") if key in desc}
                 for name, desc in observation.get("components", {}).items()},
                 "subscriptions": observation.get("subscriptions", {}),
-                "external_topics": observation.get("external_topics", {})}
+                "external_topics": observation.get("external_topics", {}),
+                **({'composition': observation['composition']} if 'composition' in observation else {})}
         return self.report | {"execution": self.snapshot.get('execution'), "error": self.error or self.report.get("error"), "observed_at": self.last_success,
                               "age_ms": self.application()["age_ms"], "topology": topology}
 

@@ -46,10 +46,32 @@ class Validator:
             snapshot = self.project.snapshot()
             paths = {key: doc.path for key, doc in self.project.documents.items() if doc.active}
             inputs = dict(self.project.schema_inputs)
+            try:
+                model = loads(snapshot['documents'][self.project.root_model])
+            except ValueError:
+                model = None  # The immutable job reports the source syntax error.
+            selected = deployment or self.project.selected_deployment
+            if isinstance(model, dict) and model.get('subsystems'):
+                from .subsystems import flatten, schema_token
+                try:
+                    flat, execution, metadata, _ = flatten(self.project, deployment_key=selected)
+                    flat['schemas'] = schema_token(self.project, flat['schemas'])
+                    descriptions = list(flat.get('external_topics', {}).values()) + list(flat.get('shared_parameters', {}).values())
+                    for component in flat['components'].values():
+                        for direction in ('inputs', 'outputs', 'recording_types'):
+                            descriptions.extend(component.get(direction, {}).values())
+                    for desc in descriptions:
+                        if 'schema' in desc:
+                            desc['schema'] = schema_token(self.project, desc['schema'])
+                    snapshot['documents'][self.project.model] = dump(flat)
+                    snapshot['documents'][selected] = dump(execution)
+                    snapshot['composition'] = metadata
+                except (ValueError, OSError, KeyError, TypeError) as error:
+                    snapshot['composition_error'] = str(error)
         for job in list(self.jobs.values()):
             if job['status'] in ('queued', 'running'):
                 self.cancel(job['id'])
-        job = {'id': secrets.token_hex(12), 'revision': revision, 'deployment': deployment or self.project.selected_deployment,
+        job = {'id': secrets.token_hex(12), 'revision': revision, 'deployment': selected,
                'schema': schema, 'status': 'queued', 'diagnostics': [], 'resolved': {}, 'contracts': {}, 'connection_contracts': [], 'catalogues': {}, 'started': time.time()}
         self.jobs[job['id']] = job
         while len(self.jobs) > 20:
@@ -102,9 +124,11 @@ class Validator:
         if job['status'] == 'cancelled':
             return
         self.update(job, status='running')
-        active_file = self.project.model
+        active_file = self.project.root_model
         staged_files = {}
         try:
+            if snapshot.get('composition_error'):
+                raise ValueError(snapshot['composition_error'])
             with tempfile.TemporaryDirectory(prefix='ose-editor-validate-') as directory:
                 stage = Path(directory)
                 roots = {root: stage / str(i) for i, root in enumerate(self.project.roots)}
@@ -118,7 +142,7 @@ class Validator:
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     destination.write_bytes(text.encode())
                 staged_files = {str(staged(path)): key for key, path in paths.items()}
-                model_key = self.project.model
+                model_key = self.project.root_model
                 model_path = staged(paths[model_key])
                 model = JsonSource(snapshot['documents'][model_key])
                 def fix_paths(node, pointer=()):
@@ -193,6 +217,7 @@ class Validator:
                         for i, (publisher, consumer, root) in enumerate(pairs)])
                     pair_reports = {pair: reports[str(i)] for i, pair in enumerate(pairs)}
                     contracts = {}
+                    model_contracts = {}
                     for sub in authored_model.get('subscriptions', []):
                         target, port = sub['to'].split('.')
                         consumer = authored_model['components'][target]['inputs'][port]
@@ -204,8 +229,15 @@ class Validator:
                         if publisher['root'] == consumer['root']:
                             pair = (publisher.get('schema', authored_model['schemas']),
                                     consumer.get('schema', authored_model['schemas']), publisher['root'])
-                            contracts[sub['id']] = pair_reports[pair]
-                    self.update(job, contracts=contracts)
+                            origin = snapshot.get('composition', {}).get('subscriptions', {}).get(sub['id'])
+                            if origin:
+                                file = self.project.key(Path(origin['model']))
+                                model_contracts.setdefault(file, {})[origin['path'][-1]] = pair_reports[pair]
+                                if file == model_key:
+                                    contracts[origin['path'][-1]] = pair_reports[pair]
+                            else:
+                                contracts[sub['id']] = pair_reports[pair]
+                    self.update(job, contracts=contracts, model_contracts=model_contracts)
                 if not job['schema']:
                     if not job['deployment']:
                         raise ValueError('Select a deployment to validate the complete application')
@@ -242,6 +274,10 @@ class Validator:
                         message = message.replace(staged_name, key)
                 for original in self.project.roots:
                     message = message.replace(str(original), '.')
+                for name, source in snapshot.get('composition', {}).get('components', {}).items():
+                    if name in message:
+                        active_file = self.project.key(Path(source['model']))
+                        message = message.replace(name, '.'.join(source['path']))
                 file = job.get('deployment') if 'deployment' in message.lower() and job.get('deployment') else active_file
                 diagnostic = source_diagnostic(ValueError(message), file, snapshot['documents'].get(file, ''), 'SDL/OSE', job['revision'])
                 self.update(job, status='failed', diagnostics=[diagnostic])

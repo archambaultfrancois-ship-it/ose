@@ -75,6 +75,11 @@ test-parameters:
 test-simulated:
 	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest discover -s tests/simulation -v
 
+.PHONY: test-subsystems
+test-subsystems:
+	"$(PYTHON)" -m unittest tests.unit.test_composition tests.unit.test_subsystem_assertions tests.unit.test_subsystem_cli -v
+	SDL_ROOT="$(SDL_ROOT)" "$(PYTHON)" -m unittest tests.simulation.test_subsystems -v
+
 # Recording and content filtering use the required SDL services.
 .PHONY: test-recording
 test-recording:
