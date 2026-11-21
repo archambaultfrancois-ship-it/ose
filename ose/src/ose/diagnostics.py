@@ -2,6 +2,7 @@
 from collections import deque
 from datetime import datetime, timezone
 import time
+from ose.names import split_endpoint, endpoint_name
 
 COUNTERS = ("accepted", "refused", "dropped_oldest", "failed", "retries", "replaced")
 
@@ -28,10 +29,10 @@ class Observer:
             queues = []
             for port, values in metrics.get("inputs", {}).items():
                 sub = next((sub for sub in observation["subscriptions"].values()
-                            if sub["to"] == f"{name}.{port}"), {})
+                            if sub["to"] == endpoint_name(name, port)), {})
                 queues.append({"name": port, "scope": "input", "policy": sub.get("policy", {}), **values})
             for identity, sub in observation["subscriptions"].items():
-                if sub["from"].split(".")[0] != name:
+                if split_endpoint(sub["from"])[0] != name:
                     continue
                 values = (metrics.get("direct", {}) if sub.get("routing") == "direct"
                           else snapshot.get("subscriptions", {})).get(identity)

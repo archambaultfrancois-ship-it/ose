@@ -1,4 +1,5 @@
 """Canonical logical waves, bounded parallel subprocess calculations and virtual time."""
+from ose.names import endpoint_name
 import asyncio
 from contextlib import ExitStack
 from collections import deque
@@ -143,7 +144,7 @@ class Simulation:
         async def declare(local, desc):
             capture.declare(name, local, desc)
         def emit(local, desc, payload):
-            self.diagnostics[name].append((f'{name}.record.{local}', self.codec.wrap(desc['catalogue'], payload)))
+            self.diagnostics[name].append((endpoint_name(name, f'record.{local}'), self.codec.wrap(desc['catalogue'], payload)))
         if capture is not None:
             from ose.recording.inputs import InputRecording, input_key
             self.input_recorders[name] = InputRecording(self.codec, self.plan['components'][name],
@@ -201,7 +202,7 @@ class Simulation:
         for name in names:
             self.schedules[name].tick_index += 1
             if self.microstep_limit is not None:
-                self.recent_activations.append(f"{name}.{selected[name].port}:{selected[name].event}")
+                self.recent_activations.append(endpoint_name(name, f"{selected[name].port}:{selected[name].event}"))
             snapshot = {selected[name].port: selected[name].record}
             if self.capture is not None:
                 self.input_recorders[name].observe(snapshot, self.schedules[name].tick_index)
@@ -253,7 +254,7 @@ class Simulation:
                     index, output = tick.outputs.popleft()
                     port, body = output[:2]
                     identity = f"{name}:{self.schedules[name].tick_index}:{index}"
-                    tick.publication = self.router.publish_validated(f"{name}.{port}", body, identity,
+                    tick.publication = self.router.publish_validated(endpoint_name(name, port), body, identity,
                         app_id=output[2])
                     changed = True
                     processed += 1
@@ -316,7 +317,7 @@ class Simulation:
         return min(times) if times else None
 
     def _snapshot(self):
-        waiting = [f"{name}.{port}" for name, schedule in self.schedules.items()
+        waiting = [endpoint_name(name, port) for name, schedule in self.schedules.items()
                    for port, desc in schedule.node["inputs"].items()
                    if desc.get("kind") != "timer" and desc.get("mode", "push") != "pull"
                    and (port not in schedule.buffers or schedule.buffers[port].take() is None)]

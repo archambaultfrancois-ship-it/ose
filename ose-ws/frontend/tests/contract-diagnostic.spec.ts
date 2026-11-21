@@ -107,3 +107,19 @@ it('keeps the source schema available and retries an unsupported or failed diagn
   expect(root.querySelector('.contract-diagnostic [role="alert"]')).toBeNull()
   expect(fetch).toHaveBeenCalledTimes(3)
 })
+
+
+it('renders subsystem endpoint paths while requesting the original subscription ID', async () => {
+  const data = report()
+  data.source.endpoint = 'cell_1.plant:frame'; data.destination.endpoint = 'cell_1.analyzer:input'
+  const fetch = vi.fn(async () => new Response(JSON.stringify(data)))
+  vi.stubGlobal('fetch', fetch)
+  const root = document.createElement('div'); document.body.append(root)
+  app = createApp(ContractDiagnostic, { subscription: 'cell_1.frames', epoch: 'epoch' }); app.mount(root)
+  ;(root.querySelector('button') as HTMLButtonElement).click()
+  await until(() => !!root.querySelector('.diagnostic-result'))
+  expect(root.textContent).toContain('cell_1.plant:frame')
+  expect(root.textContent).toContain('cell_1.analyzer:input')
+  expect(root.textContent).not.toContain('ss_')
+  expect(fetch.mock.calls[0][0]).toContain('subscription=cell_1.frames')
+})

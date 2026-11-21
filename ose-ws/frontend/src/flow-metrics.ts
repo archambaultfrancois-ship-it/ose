@@ -1,3 +1,4 @@
+import { splitEndpoint } from './hierarchy'
 // Diagnostics values keep the semantics and units of ose top.
 export const metrics = {
   cpu: { label: 'Component CPU', unit: '%', value: (r: any) => r.resources?.component?.cpu_percent },
@@ -21,11 +22,11 @@ export function metricValue(row: any, metric: Metric): number | null {
 }
 
 export function linkHealth(edge: { id: string; from: string; to: string; source: string }, rows: Map<string, any>, error = false) {
-  const source = rows.get(edge.from.split('.')[0]), target = rows.get(edge.to.split('.')[0])
+  const source = rows.get(splitEndpoint(edge.from)[0]), target = rows.get(splitEndpoint(edge.to)[0])
   const delivery = !error && edge.source.startsWith('component:') && available(source)
     ? source.queues?.find((q: any) => q.scope === 'delivery' && q.name === edge.id) : undefined
   const input = !error && available(target)
-    ? target.queues?.find((q: any) => q.scope === 'input' && q.name === edge.to.slice(edge.to.indexOf('.') + 1)) : undefined
+    ? target.queues?.find((q: any) => q.scope === 'input' && q.name === splitEndpoint(edge.to)[1]) : undefined
   const recent = source?.rate_span_seconds > 0 ? delivery?.recent : undefined
   const rate = recent?.accepted == null ? null : recent.accepted / source.rate_span_seconds
   const refused = recent?.refused ?? null

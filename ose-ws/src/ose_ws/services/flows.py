@@ -1,4 +1,5 @@
 """Leased, shared latest-message previews. No files or business subscriptions."""
+from ose.names import split_endpoint
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import math
@@ -266,7 +267,7 @@ class FlowManager:
             require(source is None or source.error is None, "Previous source observation failed; stop Live before retrying.", 409)
             if source is None:
                 require(len(self.sources) < self.settings["max_sources"], "Live source quota reached.", 429, "FLOW_QUOTA")
-                component = topic.split(".")[0]
+                component = split_endpoint(topic)[0]
                 external = "from_topic" in sub or topic in observation.get("external_topics", {}) or component not in observation.get("components", {})
                 generation = observation.get("components", {}).get(component, {}).get("generation") if not external else None
                 source = FlowSource(self, key, topic, generation)

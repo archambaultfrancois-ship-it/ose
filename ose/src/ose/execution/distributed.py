@@ -3,6 +3,7 @@
 The coordinator authorizes every admission. Leases alone do not fence a partitioned
 sender; direct receivers check the current generation with the coordinator too.
 """
+from ose.names import split_endpoint, endpoint_name
 import asyncio
 from collections import Counter, OrderedDict
 import hashlib
@@ -144,8 +145,8 @@ class Coordinator:
         # No input replay or sender state survives a component generation change.
         for key, delivery in self.engines.items():
             sub = self.subscriptions[key]
-            if name == sub["to"].split(".")[0] or ("from_topic" not in sub and name == sub["from"].split(".")[0]):
-                if name == sub['to'].split('.')[0]:
+            if name == split_endpoint(sub["to"])[0] or ("from_topic" not in sub and name == split_endpoint(sub["from"])[0]):
+                if name == split_endpoint(sub['to'])[0]:
                     delivery.store.close()
                 else:
                     for record in delivery.store.records():
@@ -193,7 +194,7 @@ class Coordinator:
                                        self.activated and name in nodes, endpoint))
         for name, session in self.sessions.items():
             for local, desc in session.get("recording_points", {}).items():
-                topic = f"{name}.record.{local}"
+                topic = endpoint_name(name, f"record.{local}")
                 points[topic] = dict(desc, topic=topic, kind="internal", component=name, name=local,
                     available=self.activated and name in nodes, generation=session["token"],
                     endpoint={"host": session["host"], "port": session["port"], "identity": name})
@@ -212,8 +213,8 @@ class Coordinator:
         elif 'from_topic' in sub:
             raise ValueError('obsolete external publisher generation')
         else:
-            self.current(sub['from'].split('.')[0], source_token, ready=True)
-        self.current(sub["to"].split(".")[0], target_token, ready=True)
+            self.current(split_endpoint(sub['from'])[0], source_token, ready=True)
+        self.current(split_endpoint(sub["to"])[0], target_token, ready=True)
 
     def release_external(self, peer):
         session = self.external_peers.pop(peer, None)
@@ -307,9 +308,9 @@ class Coordinator:
             return {}, None
         if op == 'list_topics':
             return {'topics': [dict(topic=t, root=d['root'], catalogue_id=self.codec.identity(d['catalogue']),
-                publisher_connected=t in self.external_owners or t.split('.')[0] in self.sessions,
-                producer_count=len(self.external_owners.get(t, ())) + int(t.split('.')[0] in self.sessions
-                    and self.components.observed[t.split('.')[0]] is not False))
+                publisher_connected=t in self.external_owners or split_endpoint(t)[0] in self.sessions,
+                producer_count=len(self.external_owners.get(t, ())) + int(split_endpoint(t)[0] in self.sessions
+                    and self.components.observed[split_endpoint(t)[0]] is not False))
                 for t, d in self.producers.topics.items()]}, None
         if op == 'catalogue':
             text = self.catalogues.get(header['catalogue_id'])
@@ -356,7 +357,7 @@ class Coordinator:
             if sub["from"] != record["topic"] or (not external and sub.get('routing') == 'direct'):
                 return None
             try:
-                target_name = sub['to'].split('.')[0]
+                target_name = split_endpoint(sub['to'])[0]
                 if self.components.observed[target_name] is False:
                     return key, 'disabled'
                 target = self.current(target_name, ready=True)
@@ -413,7 +414,7 @@ class Coordinator:
             accepted = self.components.acknowledge(name, header['version'], header['enabled'])
             if accepted and header['enabled'] is False:
                 for key, sub in self.subscriptions.items():
-                    if sub['to'].split('.')[0] == name and key in self.engines:
+                    if split_endpoint(sub['to'])[0] == name and key in self.engines:
                         for record in self.engines[key].store.records():
                             self.engines[key].store.remove(record['id'])
             return {}, None
@@ -428,7 +429,7 @@ class Coordinator:
                 version = self.recording.activation_version
                 deadline = time.monotonic() + 5
                 while any(s.get('output_recording_version', -1) < version for name, s in self.sessions.items()
-                          if any(t.startswith(name + '.') for t in selected)):
+                          if any(t.startswith(endpoint_name(name, '')) for t in selected)):
                     if time.monotonic() >= deadline:
                         await self.recording.request(peer, dict(op='recording_close', session=result[0]['session']))
                         raise ValueError('workers did not acknowledge output recording activation')
@@ -498,7 +499,7 @@ class Coordinator:
         if op == "recording_declare":
             local = validate_name(header["name"])
             points = session.setdefault("recording_points", {})
-            if (session["ready"] and self.components.observed[name] is True) or local in points or f"{name}.record.{local}" in self.plan.get("external_topics", {}) or len(points) >= MAX_POINTS:
+            if (session["ready"] and self.components.observed[name] is True) or local in points or endpoint_name(name, f"record.{local}") in self.plan.get("external_topics", {}) or len(points) >= MAX_POINTS:
                 raise ValueError("recording declarations require initialization and unique names")
             root, description, catalogue = header["root"], header.get("description", ""), body.decode()
             if not isinstance(description, str) or len(description.encode()) > 1024 or "\0" in description:
@@ -539,7 +540,7 @@ class Coordinator:
             return reporting, None
         if op == "authorize":
             sub = self.subscriptions[header["subscription"]]
-            if sub["to"].split(".")[0] != name:
+            if split_endpoint(sub["to"])[0] != name:
                 raise ValueError("authorization must come from the recipient")
             self.authorize(sub, header["source_token"], session["token"])
             return {"epoch": self.epoch}, None
@@ -548,7 +549,7 @@ class Coordinator:
             if not self.activated:
                 raise ValueError("graph is not activated")
             topic = header["topic"]
-            source, port = topic.split(".")
+            source, port = split_endpoint(topic)
             if source != name or port not in self.plan["components"][name]["outputs"]:
                 raise ValueError("publication from wrong component")
             desc = self.plan["components"][name]["outputs"][port]
@@ -564,7 +565,7 @@ class Coordinator:
         if op in ("poll", "ack"):
             key = header["subscription"]
             sub = self.subscriptions[key]
-            if sub["to"].split(".")[0] != name:
+            if split_endpoint(sub["to"])[0] != name:
                 raise ValueError("invalid broker subscription")
             delivery = self.engines.get(key)
             if delivery is None:
@@ -642,9 +643,9 @@ class Worker(RealtimeRuntime):
         self.context = client_context
         self.codec = SDL2(plan["sdl_root"])
         self.subscriptions = {s["id"]: s for s in plan["subscriptions"]}
-        self.incoming = {key: s for key, s in self.subscriptions.items() if s["to"].split(".")[0] == name}
+        self.incoming = {key: s for key, s in self.subscriptions.items() if split_endpoint(s["to"])[0] == name}
         self.outgoing = {key: s for key, s in self.subscriptions.items()
-                         if s["from"].split(".")[0] == name and s.get("routing", "broker") == "direct"}
+                         if split_endpoint(s["from"])[0] == name and s.get("routing", "broker") == "direct"}
         self.setup_execution(self.incoming.values(), working_directory=working_directory)
         self.locks = {key: asyncio.Lock() for key in self.incoming}
         self.engines = {key: engine(sub) for key, sub in self.outgoing.items()}
@@ -667,12 +668,12 @@ class Worker(RealtimeRuntime):
         self.direct_clients = {}
 
     def recording_points(self):
-        points = {f"{self.name}.{port}": dict(topic=f"{self.name}.{port}", root=desc["root"], catalogue=desc["catalogue"], kind="output",
+        points = {endpoint_name(self.name, port): dict(topic=endpoint_name(self.name, port), root=desc["root"], catalogue=desc["catalogue"], kind="output",
                     generation=getattr(self, "token", None), available=self.started.is_set(), endpoint=None)
                 for port, desc in self.node["outputs"].items()}
         points.update(input_points(self.plan, self.name, getattr(self, "token", None), self.started.is_set()))
         for local, desc in self.internal_recording.points.items():
-            topic = f"{self.name}.record.{local}"
+            topic = endpoint_name(self.name, f"record.{local}")
             points[topic] = dict(desc, topic=topic, kind="internal", component=self.name, name=local,
                 generation=getattr(self, "token", None), available=self.started.is_set(), endpoint=None)
         return points
@@ -692,11 +693,11 @@ class Worker(RealtimeRuntime):
                            root=desc["root"], description=desc["description"])
 
     def _active_recording(self):
-        prefix = f"{self.name}.record."
+        prefix = endpoint_name(self.name, "record.")
         return [topic[len(prefix):] for topic in self.recording.active_points() if topic.startswith(prefix)]
 
     def _emit_recording(self, name, desc, payload):
-        topic = f"{self.name}.record.{name}"
+        topic = endpoint_name(self.name, f"record.{name}")
         if topic not in self.recording.active_points():
             return
         envelope = self.codec.wrap(desc["catalogue"], payload)
@@ -861,7 +862,7 @@ class Worker(RealtimeRuntime):
             return await self.recording.request(peer, header)
         key = header["subscription"]
         sub = self.incoming[key]
-        source = sub["from"].split(".")[0]
+        source = split_endpoint(sub["from"])[0]
         caller = identity(peer.writer)
         if header["op"] != "deliver" or sub.get("routing") != "direct" or (caller is not None and caller != source):
             raise ValueError("invalid direct sender or route")
@@ -886,9 +887,9 @@ class Worker(RealtimeRuntime):
         if "from_topic" in sub:
             desc = self.plan["external_topics"][sub["from_topic"]]
         else:
-            source_name, source_port = sub["from"].split(".")
+            source_name, source_port = split_endpoint(sub["from"])
             desc = self.plan["components"][source_name]["outputs"][source_port]
-        port = sub["to"].split(".")[1]
+        port = split_endpoint(sub["to"])[1]
         catalogue = await self.decode_input(port, body, self.control, desc)
         value = dict(record, body=body, payload=body[self.codec.api.ENVELOPE_HEADER_SIZE:], catalogue=catalogue,
                      **application_id(record))
@@ -932,7 +933,7 @@ class Worker(RealtimeRuntime):
         extra = {"app_id": validate_app_id(app_id)} if app_id is not None else {}
         self.sequence += 1
         if self.recording.sessions:
-            desc = self.node["outputs"][topic.split(".")[1]]
+            desc = self.node["outputs"][split_endpoint(topic)[1]]
             self.recording.observe(topic, body, generation=self.token, sequence=self.sequence,
                                    catalogue=desc["catalogue"], root=desc["root"], **extra)
         record = dict(id=f"{self.token}:{self.sequence}", epoch=self.epoch, sequence=self.sequence,
@@ -945,7 +946,7 @@ class Worker(RealtimeRuntime):
         for key, sub in self.outgoing.items():
             if sub["from"] != topic:
                 continue
-            target = self.directory["nodes"].get(sub["to"].split(".")[0])
+            target = self.directory["nodes"].get(split_endpoint(sub["to"])[0])
             if target is None:
                 self.metrics["unavailable"] += 1
                 continue
@@ -963,7 +964,7 @@ class Worker(RealtimeRuntime):
 
     async def _send(self, key):
         sub, delivery = self.outgoing[key], self.engines[key]
-        name = sub["to"].split(".")[0]
+        name = split_endpoint(sub["to"])[0]
         while not self.closing:
             delivery.store.changed.clear()
             target = self.directory["nodes"].get(name)

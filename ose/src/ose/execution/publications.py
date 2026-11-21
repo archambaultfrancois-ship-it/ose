@@ -1,8 +1,9 @@
 """Topic contracts are independent of the producers currently supplying them."""
+from ose.names import split_endpoint, endpoint_name
 
 def topic_contracts(plan):
     return {**plan.get('external_topics', {}), **{
-        f'{name}.{port}': descriptor for name, node in plan['components'].items()
+        endpoint_name(name, port): descriptor for name, node in plan['components'].items()
         for port, descriptor in node['outputs'].items()}}
 
 
@@ -15,7 +16,7 @@ class Producers:
     def declare(self, owner, topic, root, catalogue):
         if not isinstance(topic, str) or not 0 < len(topic) <= 200 or not isinstance(root, str):
             raise ValueError('invalid topic or root')
-        if any(topic.startswith(name + '.record.') for name in self.plan['components']):
+        if any(topic.startswith(endpoint_name(name, 'record.')) for name in self.plan['components']):
             raise ValueError('recording points are not application outputs')
         if (owner, topic) in self.members:
             raise ValueError('publisher already declared; release it first')
@@ -23,7 +24,7 @@ class Producers:
             raise ValueError('unknown root')
         contract = self.topics.get(topic)
         consumers = [contract] if contract else []
-        consumers += [self.plan['components'][sub['to'].split('.')[0]]['inputs'][sub['to'].split('.')[1]]
+        consumers += [self.plan['components'][split_endpoint(sub['to'])[0]]['inputs'][split_endpoint(sub['to'])[1]]
                       for sub in self.plan['subscriptions'] if sub['from'] == topic]
         for consumer in consumers:
             if consumer['root'] != root:

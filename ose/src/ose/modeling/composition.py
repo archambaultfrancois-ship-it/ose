@@ -1,15 +1,15 @@
 """Resolve reusable subsystem definitions into the ordinary OSE component graph.
 
-Interfaces are aliases, never runtime relays. Source locations and logical paths
-remain separate from portable, deterministic executable identifiers.
+Interfaces are aliases, never runtime relays. Executable identities carry the
+instance path so every runtime service exposes readable component names.
 """
 from copy import deepcopy
-import hashlib
 import json
 from pathlib import Path
 import re
 
 from ose.modeling.model import fields, load
+from ose.names import split_endpoint, endpoint_name
 
 
 MODEL_FIELDS = ('version', 'schemas', 'components', 'subscriptions',
@@ -38,8 +38,8 @@ def definition(path, *, loader=load):
 
 
 def identifier(parts, kind):
-    digest = hashlib.sha256((kind + '\0' + '\0'.join(parts)).encode()).hexdigest()
-    return 'ss_' + digest[:24]
+    name = '.'.join(parts)
+    return name if kind in ('component', 'subscription', 'client') else 'harness_' + kind.replace('-', '_') + '_' + name
 
 
 def _name(value):
@@ -163,8 +163,8 @@ class Resolver:
                 self.blocks[actual] = resolved
         local = {}
         for name, node in model['components'].items():
-            if not name or '.' in name:
-                raise ValueError('component names must be nonempty and contain no dots')
+            if not name or '.' in name or ':' in name:
+                raise ValueError('local component names must be nonempty and contain no dots or colons')
             actual = identifier((*parts, name), 'component') if parts else name
             if actual in self.components:
                 raise ValueError(f'component identifier collision: {actual}')
@@ -243,13 +243,13 @@ class Resolver:
                 source=str(manifest_path), interface=child_interfaces[name])
 
         def endpoint(value, direction):
-            if not isinstance(value, str) or value.count('.') != 1:
+            if not isinstance(value, str) or len(split_endpoint(value)) != 2:
                 raise ValueError(f'{model_path}: invalid endpoint: {value!r}')
-            name, port = value.split('.')
+            name, port = split_endpoint(value)
             if name in local and port in self.components[local[name]][direction]:
                 if self.components[local[name]][direction][port].get('kind') == 'timer':
                     raise ValueError('a timer cannot be exposed or connected')
-                return f'{local[name]}.{port}'
+                return endpoint_name(local[name], port)
             if name in child_interfaces and port in child_interfaces[name][direction]:
                 return child_interfaces[name][direction][port]
             raise ValueError(f'{model_path}: unknown or private {direction} endpoint: {value}')

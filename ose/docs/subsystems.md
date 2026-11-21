@@ -67,9 +67,19 @@ rules over the complete flattened graph.
 All schema and definition paths retain the directory of their declaring file.
 Parameters and external topics in children are instance-prefixed with `/`.
 Local root names remain unchanged. Logical component paths are arrays of instance
-names followed by the component name; their dotted rendering is for navigation.
-Portable internal component and subscription IDs are derived from SHA-256 of
-the kind and path, with collision checks. They remain stable across builds.
+names followed by the component name. Their dotted rendering is the runtime
+component identity: `cell_1.plant`, including in inspect, measure and record.
+Subscription and parameter-client identities also retain their dotted instance
+path. Qualified component endpoints use `:` to separate the port, for example
+`cell_1.plant:frame`; diagnostic points use `cell_1.plant:record.dsp.fft` and
+measurements use `cell_1.plant:temperature`. Existing flat `component.port`
+endpoints remain supported. Source connections through immediate subsystem
+interfaces can keep their existing `instance.public_port` notation.
+
+Generated native-language symbols are private and separate from runtime names.
+Rebuild and restart applications built with hashed `ss_` identities; recreate
+watches, recording selections and permissions that refer to those old identities.
+Historical captures keep their original channel names.
 
 ## Deployment composition
 
@@ -93,7 +103,7 @@ deployments can themselves select their own descendants' deployments.
 
 The selected deployment covers exactly its local components. Internal subscription
 transport/routing bindings, parameter-client permissions and process aliases
-are namespaced and retained. Child client identities use generated IDs. Root
+are namespaced and retained. Child client identities use their dotted instance paths. Root
 application settings control execution, broker, frame limits and process prefix;
 nested deployments must omit those settings, except `execution: "local"`.
 
@@ -206,6 +216,10 @@ exposure and local-component extraction use previewed, undoable commands.
 Extraction preserves registered deployment variants, existing handler paths and
 schema/project substitution contexts through relative references. Source roots
 outside the editor project require `--source-root`.
+
+CLI diagnostics, component lists, logs, recording points and measurements use
+these runtime identities directly, without separate display-name aliases.
+Log component filters accept the dotted runtime names and globs.
 
 Observation metadata includes logical component/subscription paths and public
 message interfaces, without source locations or parameter values. The console

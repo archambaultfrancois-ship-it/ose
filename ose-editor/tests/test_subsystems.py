@@ -18,6 +18,26 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class SubsystemTests(unittest.TestCase):
+    def test_thermal_projection_and_validation_use_qualified_endpoints(self):
+        root = self.root.parent / 'thermal'
+        shutil.copytree(ROOT / 'thermal-workshop', root,
+                        ignore=shutil.ignore_patterns('build', '__pycache__', '.ose-editor', '.ose-ws'))
+        project = Project(root)
+        self.addCleanup(project.close)
+        state = project.projection()
+        self.assertEqual(state['diagnostics'], [])
+        self.assertEqual(state['subsystems']['model.json']['cell_1']['outputs']['frame']['root'],
+                         'SensorFrame')
+        validator = Validator(project, ROOT / 'sdl')
+        self.addCleanup(validator.close)
+        with patch.object(validator.pool, 'submit') as queued:
+            job = validator.start(project.revision)
+        task = queued.call_args.args
+        task[0](*task[1:])
+        result = validator.snapshot(job['id'])
+        self.assertEqual(result['status'], 'passed', result)
+        self.assertIn('analyzer_1-fusion-cell_1', result['contracts'])
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)

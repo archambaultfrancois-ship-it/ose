@@ -1,4 +1,5 @@
 """Multi-topic broker with independent, bounded subscription delivery."""
+from ose.names import split_endpoint, endpoint_name
 import asyncio
 from collections import Counter
 import json
@@ -49,7 +50,7 @@ class Broker(Sessions):
                         continue
                     self.register(port["catalogue"])
                     if direction == "outputs":
-                        self.topics[f"{name}.{port_name}"] = port
+                        self.topics[endpoint_name(name, port_name)] = port
         self.subscriptions = {sub["id"]: sub for sub in plan["subscriptions"]}
         self.subscriptions_by_topic = {}
         for identity, sub in self.subscriptions.items():
@@ -78,7 +79,7 @@ class Broker(Sessions):
         available = self.enabled or self.recording_ready
         outputs = {topic: dict(topic=topic, root=port["root"], catalogue=port["catalogue"], kind="output",
                     generation=self.epoch, multipublisher=True,
-                    available=available and (topic in self.publisher_owners or topic.split(".")[0] in self.peers), endpoint=None)
+                    available=available and (topic in self.publisher_owners or split_endpoint(topic)[0] in self.peers), endpoint=None)
                 for topic, port in self.topics.items()}
         outputs.update({topic: dict(desc, topic=topic, kind="internal", endpoint=None,
             generation=self.generations.get(desc["component"]),
@@ -90,7 +91,7 @@ class Broker(Sessions):
         return outputs
 
     def recording_activation(self, node, active):
-        prefix = f"{node}.record."
+        prefix = endpoint_name(node, "record.")
         return dict(active=sorted(topic[len(prefix):] for topic in active if topic.startswith(prefix)),
                     inputs=sorted(port for port in self.plan["components"][node]["inputs"]
                                   if input_key(self.plan, node, port) in active))
@@ -98,7 +99,7 @@ class Broker(Sessions):
     def component_recording(self, node, op, header, body):
         if node is None:
             raise ValueError("recording component operations require an identified component")
-        prefix = f"{node}.record."
+        prefix = endpoint_name(node, "record.")
         if op == "recording_component_state":
             return self.recording_activation(node, self.recording.active_points())
         if op == "recording_input":
@@ -142,7 +143,7 @@ class Broker(Sessions):
 
     def _notify_node(self, node):
         for identity, sub in self.subscriptions.items():
-            if sub["to"].split(".")[0] == node:
+            if split_endpoint(sub["to"])[0] == node:
                 self.engines[identity].store.notify()
 
     def register(self, text):
@@ -349,7 +350,7 @@ class Broker(Sessions):
                         if header.get('observe_metrics') is True:
                             result['reporting'] = self.demand.register(peer)
                         for identity, sub in self.subscriptions.items():
-                            if sub["to"].split(".")[0] == node and sub["policy"]["buffer"] == "latest" and sub["from"] in self.retained:
+                            if split_endpoint(sub["to"])[0] == node and sub["policy"]["buffer"] == "latest" and sub["from"] in self.retained:
                                 retained = self.retained[sub["from"]]
                                 if self._fits(identity, retained, retained["body"]):
                                     self.engines[identity].store.meta.clear()
@@ -360,7 +361,7 @@ class Broker(Sessions):
                         sub = self.subscriptions[identity]
                         if node is not None or session is not None or data_subscription is not None or target not in self.peers or target not in self.dedicated_data:
                             raise ValueError("invalid data channel attachment")
-                        if sub["to"].split(".")[0] != target or sub["policy"]["transport"] != "tcp" or identity in self.data_peers:
+                        if split_endpoint(sub["to"])[0] != target or sub["policy"]["transport"] != "tcp" or identity in self.data_peers:
                             raise ValueError("invalid subscription data channel")
                         attach_subscription = identity
                     elif op == "ready":
@@ -476,7 +477,7 @@ class Broker(Sessions):
                     accepted = self.components.acknowledge(node, header['version'], header['enabled'])
                     if accepted and header['enabled'] is False:
                         for key, sub in self.subscriptions.items():
-                            if sub['to'].split('.')[0] == node:
+                            if split_endpoint(sub['to'])[0] == node:
                                 for record in self.engines[key].store.records():
                                     self.engines[key].store.remove(record['id'])
                     result = {}
@@ -510,7 +511,7 @@ class Broker(Sessions):
                 if session is not None:
                     if session.identity not in self.publisher_owners.get(topic, set()):
                         raise ClientError("ownership", "declare publisher before publication")
-                elif node is None or topic not in {f"{node}.{p}" for p in self.plan["components"][node]["outputs"]}:
+                elif node is None or topic not in {endpoint_name(node, p) for p in self.plan["components"][node]["outputs"]}:
                     raise ClientError("ownership", "publication is not enabled for this component")
                 if "app_id" in header:
                     validate_app_id(header["app_id"])
@@ -529,7 +530,7 @@ class Broker(Sessions):
         sub = self.subscriptions.get(header["subscription"])
         if sub is None:
             return  # An ACK may race an unsubscribe.
-        if (sub.get("session") != session.identity if session else sub.get("session") is not None or sub["to"].split(".")[0] != node):
+        if (sub.get("session") != session.identity if session else sub.get("session") is not None or split_endpoint(sub["to"])[0] != node):
             raise ValueError("acknowledgement from wrong consumer")
         self.engines[sub["id"]].acknowledge(header["id"])
 
@@ -571,7 +572,7 @@ class Broker(Sessions):
             engine = self.engines.get(identity)
             if engine is None:
                 return identity, "closed"
-            target = sub['to'].split('.')[0]
+            target = split_endpoint(sub['to'])[0]
             if target in self.components.observed and self.components.observed[target] is False:
                 return identity, 'disabled'
             value = (dict(record, target_version=self.components.desired[target]['version'])
@@ -630,7 +631,7 @@ class Broker(Sessions):
 
     async def _send_loop(self, identity, engine):
         sub = self.subscriptions[identity]
-        node = sub["to"].split(".")[0]
+        node = split_endpoint(sub["to"])[0]
         changed = engine.store.changed
         while not self.closing and not sub.get("closing", False):
             available, failed = False, False

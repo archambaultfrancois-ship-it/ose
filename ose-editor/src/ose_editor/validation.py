@@ -15,6 +15,7 @@ import time
 
 from .json_source import JsonSource, dump, loads, web
 from .diagnostics import source_diagnostic
+from ose.names import split_endpoint
 
 
 class Validator:
@@ -219,10 +220,10 @@ class Validator:
                     contracts = {}
                     model_contracts = {}
                     for sub in authored_model.get('subscriptions', []):
-                        target, port = sub['to'].split('.')
+                        target, port = split_endpoint(sub['to'])
                         consumer = authored_model['components'][target]['inputs'][port]
                         if 'from' in sub:
-                            source_component, output_port = sub['from'].split('.')
+                            source_component, output_port = split_endpoint(sub['from'])
                             publisher = authored_model['components'][source_component]['outputs'][output_port]
                         else:
                             publisher = authored_model['external_topics'][sub['from_topic']]

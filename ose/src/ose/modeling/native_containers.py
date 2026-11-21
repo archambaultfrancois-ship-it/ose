@@ -293,7 +293,8 @@ def _finish_rust(name, handler, sdl_root, destination, source, types, lines):
         "fn main() -> container::Result { sdl_ose_component::initialize_transport()?; container::run(handler::Handler::default()) }\n")
     sdk = sdk_root()
     manifest = destination / "Cargo.toml"
-    binary = "ose-component-" + name
+    from ose.names import code_identifier
+    binary = "ose-component-" + code_identifier(name)
     manifest.write_text('[package]\nname="ose-container"\nversion="0.1.0"\nedition="2021"\nautobins=false\n' +
         '[[bin]]\nname=' + json.dumps(binary) + '\npath="src/main.rs"\n[workspace]\n[dependencies]\n' +
         'sdl-runtime={path=' + json.dumps(str(sdl_root / 'runtime/rust')) + '}\n' +

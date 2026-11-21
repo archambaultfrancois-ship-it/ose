@@ -18,6 +18,18 @@ def entry(message='message', level='INFO', logger='runtime'):
 
 
 class LogTests(unittest.TestCase):
+    def test_dotted_runtime_names_filter_and_render_without_display_aliases(self):
+        from ose.logs import render
+        store = LogStore()
+        store.append('cell_1.plant', 'generation', [entry()])
+        record, = store.query(components=['cell_1.*'], scopes=['cell_1.plant'])['items']
+        self.assertEqual(record['component'], 'cell_1.plant')
+        self.assertNotIn('display_component', record)
+        self.assertIn('cell_1.plant', render(record))
+        self.assertNotIn('ss_123', render(record))
+        self.assertEqual(store.query(components=['cell_1.plant'])['items'], [record])
+        self.assertEqual(store.query(components=['cell_1.*'], scopes=['other'])['items'], [])
+
     def test_python_formatting_reports_errors_before_depositing(self):
         output = io.BytesIO()
         session = InputSession(io.BytesIO(frame('I', b'{}')), output, auto_ready=False)

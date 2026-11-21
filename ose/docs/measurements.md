@@ -106,8 +106,10 @@ ose measure --watch                    # continuous readings, stop with Ctrl+C
 ose measure --interval 1 --count 60 --format jsonl
 ```
 
-Patterns are case-sensitive globs and match either `component.local_name` or the
-local name. Multiple patterns select their union. Quote globs to avoid shell
+Patterns are case-sensitive globs and match either the qualified measurement
+name or the local name. Hierarchical components use `component:local_name`, for
+example `cell_1.plant:temperature` or `cell_1.plant:*`; flat components retain
+`component.local_name`. Multiple patterns select their union. Quote globs to avoid shell
 expansion. `--count N` produces N snapshots, including when combined with `--watch`.
 Without either option, one snapshot is produced. `--interval` defaults to one
 second and must be finite and at least 0.1 seconds. It does not change the rate at

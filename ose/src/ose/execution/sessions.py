@@ -1,4 +1,5 @@
 """External sessions and contracts, independent of graph component readiness."""
+from ose.names import split_endpoint
 import asyncio
 import uuid
 from dataclasses import dataclass, field
@@ -58,10 +59,10 @@ class Sessions:
         return [{"topic": topic, "root": port["root"],
                  "catalogue_id": self.codec.identity(port["catalogue"]),
                  "producer_count": len(self.publisher_owners.get(topic, ())) + int(
-                     topic in self.internal_topics and topic.split('.')[0] in self.peers
-                     and self.components.observed[topic.split('.')[0]] is not False),
+                     topic in self.internal_topics and split_endpoint(topic)[0] in self.peers
+                     and self.components.observed[split_endpoint(topic)[0]] is not False),
                  "publisher_connected": topic in self.publisher_owners or
-                 (topic in self.internal_topics and topic.split(".")[0] in self.peers)}
+                 (topic in self.internal_topics and split_endpoint(topic)[0] in self.peers)}
                 for topic, port in sorted(self.topics.items())]
 
     def declare_publisher(self, session, header, body):

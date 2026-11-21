@@ -34,6 +34,8 @@ class WorkshopTests(unittest.IsolatedAsyncioTestCase):
         cls.plan = read_plan(cls.build_dir / 'plan.json')
         cls.ids = {'.'.join(source['path']): name
                    for name, source in cls.plan['composition']['components'].items()}
+        if any(name != path for path, name in cls.ids.items()):
+            raise AssertionError('runtime component identities must be their dotted subsystem paths')
         cls.subscriptions = {'.'.join(source['path']): name
                              for name, source in cls.plan['composition']['subscriptions'].items()}
 
@@ -190,6 +192,8 @@ class WorkshopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(topology['components'][self.ids['cell_1.plant']]['path'], ['cell_1', 'plant'])
         measures = (await client.get('/api/v1/measurements')).json()['items']
         self.assertEqual(len(measures), 83)
+        self.assertTrue(all(point['component'] in self.plan['components'] for point in measures))
+        self.assertTrue(all(point['name'].startswith(point['component'] + ':') for point in measures))
         identity = measures[0]['id']
         response = await client.post('/api/v1/measurement-watches', json={'measurement_ids': [identity]}, headers=csrf)
         self.assertEqual(response.status_code, 200, response.text)
@@ -238,6 +242,16 @@ class WorkshopTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(process.returncode, log_path.read_text())
             await asyncio.sleep(.05)
         self.assertIsNone(app.state.collector.error, app.state.collector.error)
+        self.assertEqual(set(snapshot['components']), set(self.ids))
+        from ose.transport.secure import connect
+        endpoint = json.loads((self.directory / 'endpoint.json').read_text())
+        rpc = await connect(endpoint['host'], endpoint['port'], 1024 * 1024)
+        try:
+            points, _ = await rpc.request('recording_points')
+        finally:
+            await rpc.close()
+        self.assertTrue(any(point['topic'] == 'cell_1.plant:frame' for point in points['points']))
+        self.assertTrue(all('ss_' not in point['topic'] for point in points['points']))
         response = await client.post('/api/v1/flow-watches', json={
             'subscription': self.subscriptions['cell_1.plant-analyzer-input'], 'epoch': snapshot['epoch']}, headers=csrf)
         self.assertEqual(response.status_code, 200, response.text)

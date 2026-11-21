@@ -1,4 +1,5 @@
 """Read current application measurements through the existing status RPC."""
+from ose.names import endpoint_name
 import asyncio
 from datetime import datetime, timezone
 from fnmatch import fnmatchcase
@@ -23,7 +24,7 @@ def sample(snapshot, patterns=('*',)):
             continue
         metrics = desc.get('metrics', desc)
         selected = {name: value for name, value in sorted(validate_snapshot(metrics.get('measurements', {})).items())
-                    if any(fnmatchcase(f'{component}.{name}', pattern) or fnmatchcase(name, pattern)
+                    if any(fnmatchcase(endpoint_name(component, name), pattern) or fnmatchcase(name, pattern)
                            for pattern in patterns)}
         if selected:
             values[component] = selected

@@ -1,4 +1,5 @@
 """One component execution engine, independent of local/distributed transports."""
+from ose.names import split_endpoint, endpoint_name
 import asyncio
 import time
 
@@ -24,7 +25,7 @@ class RealtimeRuntime(ComponentRuntime):
     def setup_execution(self, subscriptions, *, working_directory=None):
         self.working_directory = working_directory
         max_wait = max((sub['policy']['wait_timeout_ms'] for sub in self.plan['subscriptions']
-                        if sub['from'].split('.')[0] == self.name and sub['policy']['overflow'] == 'wait'), default=0)
+                        if split_endpoint(sub['from'])[0] == self.name and sub['policy']['overflow'] == 'wait'), default=0)
         # Control polls wait up to 10 s server-side; keep the RPC budget above
         # that bound and include configured outbound admission waits.
         self.request_timeout = 15 + max_wait / 1000
@@ -32,7 +33,7 @@ class RealtimeRuntime(ComponentRuntime):
         self.reports = ReportSchedule()
         self.component_logs = ComponentLogs(on_change=self.reports.wake)
         self.catalogues, self.compatibility = {}, set()
-        self.buffers = {target.split('.')[1]: buffer for target, buffer in
+        self.buffers = {split_endpoint(target)[1]: buffer for target, buffer in
                         input_buffers(subscriptions, self._changed).items()}
         for port, desc in self.node['inputs'].items():
             if desc.get('kind') != 'timer' and port not in self.buffers:
@@ -144,6 +145,6 @@ class RealtimeRuntime(ComponentRuntime):
         # The transport can wait without retaining a consumed inbox slot.
         for port, envelope, app_id in outputs:
             with self.telemetry.publishing():
-                await self.publish(f'{self.name}.{port}', envelope, app_id=app_id)
+                await self.publish(endpoint_name(self.name, port), envelope, app_id=app_id)
         self.metrics['completed_ticks'] = self.metrics.get('completed_ticks', 0) + 1
         self.reports.mark()

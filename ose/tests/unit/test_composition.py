@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from ose.modeling.composition import resolve
+from ose.modeling.composition import identifier, resolve
 from ose.modeling.validation import validate_graph
 
 
@@ -49,13 +49,17 @@ class CompositionTests(unittest.TestCase):
         model, deployment, metadata, _ = self.run_resolver()
         validate_graph(model, deployment)
         self.assertEqual(len(model['components']), 5)
+        self.assertEqual(set(model['components']), {'local', 'left.filter', 'left.detector',
+                                                   'right.filter', 'right.detector'})
+        self.assertEqual({s['id'] for s in model['subscriptions']},
+                         {'outside', 'local', 'left.internal', 'right.internal'})
         self.assertEqual(len(model['subscriptions']), 4)
         internals = [s for s in model['subscriptions'] if s.get('qos') == {'capacity': 4}]
         self.assertEqual(len(internals), 2)
         self.assertNotEqual(internals[0]['from'], internals[1]['from'])
         for actual, origin in metadata['components'].items():
             if len(origin['path']) == 2:
-                self.assertTrue(actual.isidentifier())
+                self.assertTrue(all(part.isidentifier() for part in actual.split('.')))
                 self.assertEqual(model['components'][actual]['outputs']['out']['schema'],
                                  str(self.root / 'leaf/value.sdl'))
                 self.assertEqual(deployment['components'][actual]['command'][1],
@@ -76,9 +80,45 @@ class CompositionTests(unittest.TestCase):
         model, deployment, metadata, _ = self.run_resolver()
         validate_graph(model, deployment)
         self.assertIn('left.child', metadata['instances'])
+        self.assertIn('left.child.filter', model['components'])
         origin = next(v for v in metadata['components'].values()
                       if v['path'] == ['left', 'child', 'filter'])
         self.assertEqual(origin['model'], str(self.root / 'leaf/model.json'))
+
+    def test_underscored_local_names_do_not_collide_with_hierarchical_names(self):
+        self.model['components']['left_filter'] = self.node
+        self.deployment['components']['left_filter'] = {'command': ['true']}
+        model, deployment, _, _ = self.run_resolver()
+        validate_graph(model, deployment)
+        self.assertIn('left_filter', model['components'])
+        self.assertIn('left.filter', model['components'])
+        outside = next(sub for sub in model['subscriptions'] if sub['id'] == 'outside')
+        self.assertEqual(outside['from'], 'left.detector:out')
+        self.assertEqual(outside['to'], 'right.filter:input')
+
+    def test_subscription_and_client_collisions_are_rejected(self):
+        self.model['subscriptions'][0]['id'] = 'left.internal'
+        with self.assertRaisesRegex(ValueError, 'subscription identifier collision: left.internal'):
+            self.run_resolver()
+        self.model['subscriptions'][0]['id'] = 'outside'
+        self.deployment['parameter_clients'] = {'left.operator': {'read': []}}
+        path = self.leaf.parent / 'deployment.json'
+        deployment = json.loads(path.read_text())
+        deployment['parameter_clients'] = {'operator': {'read': []}}
+        self.write(path, deployment)
+        with self.assertRaisesRegex(ValueError, 'parameter client identity collision'):
+            self.run_resolver()
+
+    def test_dotted_identities_and_explicit_port_separator(self):
+        from ose.names import split_endpoint, endpoint_name, code_identifier
+        self.assertEqual(identifier(('cell_1', 'plant'), 'component'), 'cell_1.plant')
+        self.assertEqual(identifier(('cell_1', 'plant-analyzer-input'), 'subscription'),
+                         'cell_1.plant-analyzer-input')
+        self.assertEqual(split_endpoint('cell_1.plant:frame'), ('cell_1.plant', 'frame'))
+        self.assertEqual(split_endpoint('cell_1.plant:record.dsp.fft'), ('cell_1.plant', 'record.dsp.fft'))
+        self.assertEqual(endpoint_name('cell_1.plant', 'frame'), 'cell_1.plant:frame')
+        self.assertEqual(split_endpoint('source.output'), ('source', 'output'))
+        self.assertTrue(code_identifier('cell_1.plant').isidentifier())
 
     def test_reject_private_access_cycles_and_name_collisions(self):
         original = copy.deepcopy(self.model)

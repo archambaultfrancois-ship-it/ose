@@ -1,4 +1,5 @@
 """Deterministic direct admission, with independent bounded virtual waits."""
+from ose.names import split_endpoint, endpoint_name
 from collections import Counter
 from dataclasses import dataclass
 import hashlib
@@ -25,15 +26,15 @@ class Router:
         self.capture = None
         self.sequence = 0
         self.topic_counts_by_component = Counter()
-        self.component_topics = {f'{name}.{port}': name for name, node in plan['components'].items()
+        self.component_topics = {endpoint_name(name, port): name for name, node in plan['components'].items()
                                  for port in node['outputs']}
         self.external_deliveries = Counter()
         self.schedulers = {}
         inboxes = input_buffers(self.subscriptions.values(), clock=clock.seconds)
         for name, node in plan["components"].items():
-            self.topics.update({f"{name}.{port}": desc for port, desc in node["outputs"].items()})
+            self.topics.update({endpoint_name(name, port): desc for port, desc in node["outputs"].items()})
         for identity, sub in self.subscriptions.items():
-            name, port = sub["to"].split(".")
+            name, port = split_endpoint(sub["to"])
             buffer = inboxes[sub["to"]]
             self.buffers[name][port] = self.by_id[identity] = buffer
             self.by_topic.setdefault(sub["from"], []).append(identity)
@@ -74,7 +75,7 @@ class Router:
         changed = False
         for identity, deadline in list(publication.pending.items()):
             buffer, record = self.by_id[identity], publication.record
-            name, port = self.subscriptions[identity]["to"].split(".")
+            name, port = split_endpoint(self.subscriptions[identity]["to"])
             size = 7 + len(port.encode()) + len(record["catalogue"].encode()) + len(record["payload"])
             from ose.execution.input_ipc import check_record_size
             try:

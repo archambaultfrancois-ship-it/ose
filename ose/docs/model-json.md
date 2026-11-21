@@ -278,8 +278,10 @@ subscription uses this exact name in `from_topic`.
 
 An external topic must not:
 
-- have the same name as an internal output, `component.output`;
-- begin with `component.record.` for a declared component: that namespace is
+- have the same name as an internal output, such as `component.output` or
+  `cell_1.plant:frame`;
+- begin with `component.record.` (flat) or `cell_1.plant:record.` (hierarchical)
+  for a declared component: that namespace is
   reserved for its internal recording points.
 
 Declaring a topic describes its contract. External service access permissions
@@ -359,9 +361,14 @@ Rust uses `ctx.declare_recording_point::<T>` and `ctx.record`. See
 
 ## Names, deployment and global constraints
 
-- Component and port names must be nonempty and contain no dots. An endpoint
-  contains exactly one dot: `component.port`.
-- Generated containers also require valid identifiers. Input names `start`,
+- Source component and subsystem names are local names; resolved subsystem
+  components have dotted runtime identities, such as `cell_1.plant`.
+  Qualified endpoints separate the component from the port with `:`, for example
+  `cell_1.plant:frame`. Legacy flat `component.port` endpoints remain supported.
+  Local port names must be nonempty identifiers without dots or colons.
+- Generated containers use private native-code identifiers for dotted component
+  identities; the runtime context still exposes the dotted component name.
+  Local component names and ports must satisfy the language's identifier rules. Input names `start`,
   `stop` and `tick` are reserved.
 - C and Rust additionally require portable ASCII identifiers starting with a
   letter and excluding reserved words. Collisions with generated symbols may

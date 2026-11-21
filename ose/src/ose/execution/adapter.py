@@ -1,4 +1,5 @@
 """Per-component process: transport delivery, scheduling and bounded IPC."""
+from ose.names import split_endpoint
 import asyncio
 import json
 import sys
@@ -27,7 +28,7 @@ class Adapter(RealtimeRuntime):
         self.component_recording = RemoteRecording(self.codec, self._recording_request, max_frame=plan["max_frame"])
         self.input_recording = InputRecording(self.codec, self.node,
             lambda: self.component_recording.active_inputs, self.component_recording.emit_input)
-        self.subscriptions = {s["id"]: s for s in plan["subscriptions"] if s["to"].split(".")[0] == name}
+        self.subscriptions = {s["id"]: s for s in plan["subscriptions"] if split_endpoint(s["to"])[0] == name}
         self.policies = {identity: SubscriptionPolicy.from_dict(sub["policy"])
                          for identity, sub in self.subscriptions.items()}
         self.metrics = {}
@@ -64,7 +65,7 @@ class Adapter(RealtimeRuntime):
                 policy = self.policies[subscription]
                 if header["topic"] != sub["from"]:
                     raise ValueError("wrong topic")
-                port = sub["to"].split(".")[1]
+                port = split_endpoint(sub["to"])[1]
                 buffer = self.buffers[port]
                 if (address is not None) != (policy.transport == "udp"):
                     raise ValueError("wrong data transport")

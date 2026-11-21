@@ -23,7 +23,7 @@ export function scopedTopology(topology: Topology | null | undefined, scope: str
   if (!topology || !scope || !topology.composition?.instances?.[scope]) return topology
   const members = new Set(subsystemMembers(topology, scope)), visible = new Set(members)
   const subscriptions = Object.fromEntries(Object.entries(topology.subscriptions).filter(([, sub]) => {
-    const source = sub.from_topic ? null : sub.from.split('.')[0], target = sub.to.split('.')[0]
+    const source = sub.from_topic ? null : splitEndpoint(sub.from)[0], target = splitEndpoint(sub.to)[0]
     if (!members.has(target) && (!source || !members.has(source))) return false
     if (source) visible.add(source)
     visible.add(target)
@@ -32,4 +32,10 @@ export function scopedTopology(topology: Topology | null | undefined, scope: str
   const external = new Set(Object.values(subscriptions).map(sub => sub.from_topic).filter(Boolean))
   return { ...topology, components: Object.fromEntries(Object.entries(topology.components).filter(([name]) => visible.has(name))),
     external_topics: Object.fromEntries(Object.entries(topology.external_topics || {}).filter(([name]) => external.has(name))), subscriptions }
+}
+
+export function splitEndpoint(endpoint: string): [string, string] {
+  const separator = endpoint.includes(':') ? ':' : '.'
+  const index = endpoint.indexOf(separator)
+  return index < 0 ? [endpoint, ''] : [endpoint.slice(0, index), endpoint.slice(index + 1)]
 }

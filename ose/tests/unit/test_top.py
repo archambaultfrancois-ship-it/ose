@@ -34,6 +34,33 @@ def options(**values):
 
 
 class ObserverTests(unittest.TestCase):
+    def test_thermal_subsystem_names_and_delivery_alerts_are_readable(self):
+        from pathlib import Path
+        from ose.modeling.composition import resolve
+        root = Path(__file__).resolve().parents[3]
+        model, _, composition, _ = resolve(root / 'thermal-workshop/model.json',
+                                           root / 'thermal-workshop/deployment.json')
+        model['composition'] = composition
+        for sub in model['subscriptions']:
+            sub['policy'] = sub.get('qos', {})
+        observation = describe(model)
+        identity = next(key for key, source in composition['components'].items()
+                        if source['path'] == ['cell_1', 'plant'])
+        link = next(key for key, source in composition['subscriptions'].items()
+                    if source['path'] == ['cell_1', 'plant-analyzer-input'])
+        data = dict(epoch='epoch', observation=observation,
+                    subscriptions={link: dict(depth=8)}, components={})
+        observation['subscriptions'][link]['policy'] = dict(buffer='fifo', capacity=10)
+        report = Observer().sample(data)
+        row = next(row for row in report['components'] if row['name'] == identity)
+        self.assertEqual(row['name'], 'cell_1.plant')
+        self.assertNotIn('display_name', row)
+        self.assertEqual(row['queues'][0]['name'], link)
+        self.assertIn('cell_1.plant-analyzer-input', row['alerts'][0]['message'])
+        text = render(report, details=True, width=240)
+        self.assertIn('cell_1.plant', text)
+        self.assertNotIn('ss_', text)
+
     def test_recent_rates_and_first_sample_unknown(self):
         observer, data = Observer(), status()
         first = observer.sample(data, now=0)["components"][0]

@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { layout, inputSummary, inputDetails, nodeHeight, nodeWidth, type Topology } from '../src/flow-graph'
 import ComponentsPage from '../src/components/ComponentsPage.vue'
 import model from '../../../vibration-watch/model.json'
+import { splitEndpoint } from '../src/hierarchy'
 import { portY } from '../src/flow-graph'
 
 // Resolve the authored hierarchy through OSE, just as the running application
@@ -77,7 +78,7 @@ it.each([false, true])('keeps the real thermal processing chains horizontal with
     expect(edge.path).toMatch(/^M /)
     expect(edge.path).not.toMatch(/NaN|Infinity/)
     if (edge.mode === 'push') {
-      expect(nodes.get(edge.from.split('.')[0])!.x + nodeWidth).toBeLessThan(nodes.get(edge.to.split('.')[0])!.x)
+      expect(nodes.get(splitEndpoint(edge.from)[0])!.x + nodeWidth).toBeLessThan(nodes.get(splitEndpoint(edge.to)[0])!.x)
     }
   }
   for (const a of graph.nodes) {
@@ -266,4 +267,30 @@ it('opens full link details by tapping a line or label, without a hover event', 
   details().querySelector('button')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   await nextTick()
   expect(root.querySelector('.flow-link-details')).toBeNull()
+})
+
+
+it('uses thermal logical names for tables, search, details and links while selecting runtime IDs', async () => {
+  const root = document.createElement('div'); document.body.append(root)
+  const data = { topology: thermal, components: Object.keys(thermal.components).map(name => ({
+    name, state: 'ACTIVE', severity: 'ok', rates: {}, queues: [], alerts: [], counters: {},
+  })) }
+  app = createApp(ComponentsPage, { report: data }); app.mount(root)
+  const names = [...root.querySelectorAll('table[aria-label="Component measurements"] tbody button')].map(b => b.textContent)
+  expect(names).toContain('cell_1.plant')
+  expect(names).toEqual([...names].sort((a, b) => a!.localeCompare(b!)))
+  expect(root.textContent).not.toContain('ss_')
+  const search = root.querySelector('input[placeholder="Name contains…"]') as HTMLInputElement
+  search.value = 'cell_2.plant'; search.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+  const button = root.querySelector('table[aria-label="Component measurements"] tbody button') as HTMLButtonElement
+  expect(button.textContent).toBe('cell_2.plant')
+  expect(root.querySelectorAll('table[aria-label="Component measurements"] tbody button')).toHaveLength(1)
+  button.click(); await nextTick()
+  expect(root.querySelector('.detail h2')?.textContent).toBe('cell_2.plant')
+  expect(root.querySelector('.flow-node.selected')?.getAttribute('aria-label')).toBe('cell_2.plant: ACTIVE')
+  const link = root.querySelector(`[aria-label^="Subscription cell_2.plant-analyzer-input:"]`) as SVGGElement
+  expect(link.getAttribute('aria-label')).toContain('cell_2.plant:frame → cell_2.analyzer:input')
+  link.dispatchEvent(new MouseEvent('click', { bubbles: true })); await nextTick()
+  expect(root.querySelector('.flow-link-details')?.textContent).toContain('cell_2.plant-analyzer-input')
+  expect(root.textContent).not.toContain('ss_')
 })

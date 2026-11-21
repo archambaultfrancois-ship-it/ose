@@ -33,6 +33,26 @@ class ManagedNamesTests(unittest.TestCase):
 
 
 class ManagedBuildTests(unittest.TestCase):
+    def test_dotted_runtime_identity_is_separate_from_generated_code_symbols(self):
+        from ose.names import code_identifier
+        sdl = Path(__file__).resolve().parents[3] / 'sdl'
+        name = 'cell_1.processor'
+        for language, generate, filename, extra in (
+                ('python', generate_python, 'handler.py', ()),
+                ('c', generate_c, 'handler.c', ()),
+                ('rust', generate_rust, 'handler.rs', ()),
+                ('java', generate_java, 'Handler.java', ('Handler',)),
+                ('ada', generate_ada, 'handler.adb', ('Handler',))):
+            with self.subTest(language=language), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                node = {'execution_model': 2, 'inputs': {}, 'outputs': {}}
+                destination = root / 'components' / name
+                generate(name, node, root / filename, sdl, [], destination, *extra)
+                text = '\n'.join(path.read_text() for path in destination.rglob('*') if path.is_file())
+                self.assertIn(name, text)
+                if language in ('rust', 'java', 'ada'):
+                    self.assertIn(code_identifier(name), text)
+
     def test_all_containers_reject_v1_before_generating_sources(self):
         model = dict(version=1, schemas='schema.sdl', subscriptions=[], components={
             'source': dict(inputs={}, outputs={}, trigger=dict(mode='periodic', period_ms=10))})

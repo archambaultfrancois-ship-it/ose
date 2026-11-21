@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { splitEndpoint } from '../hierarchy'
 import { computed, ref } from 'vue'
 import { api, command } from '../api'
 import SchemaView from './SchemaView.vue'
@@ -14,7 +15,7 @@ const visible = computed(() => props.points.filter(p => p.topic.toLowerCase().in
 const groups = computed(() => {
   const groups = new Map<string, any[]>()
   for (const point of visible.value) {
-    const component = point.component || point.topic.split('.')[0]
+    const component = point.component || splitEndpoint(point.topic)[0]
     if (!groups.has(component)) groups.set(component, [])
     groups.get(component)!.push(point)
   }

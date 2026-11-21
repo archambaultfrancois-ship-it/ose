@@ -1,4 +1,5 @@
 """Inline batch capture selection and simulated/live recording lifecycles."""
+from ose.names import endpoint_name
 import asyncio
 from bisect import bisect_left, bisect_right
 import math
@@ -96,7 +97,7 @@ class SimulatedCapture:
         self.points = {topic: dict(desc, topic=topic, kind='external')
                        for topic, desc in plan.get('external_topics', {}).items()}
         for name, node in plan['components'].items():
-            self.points.update({f'{name}.{port}': dict(desc, topic=f'{name}.{port}', kind='output')
+            self.points.update({endpoint_name(name, port): dict(desc, topic=endpoint_name(name, port), kind='output')
                                 for port, desc in node['outputs'].items()})
             self.points.update(input_points(plan, name, 'simulated', True))
         self.filters, self.channels = {}, {}
@@ -104,11 +105,11 @@ class SimulatedCapture:
         self.count = 0
 
     def declare(self, name, local, desc):
-        topic = f'{name}.record.{local}'
+        topic = endpoint_name(name, f'record.{local}')
         self.points[topic] = dict(desc, topic=topic, kind='internal')
 
     def active(self, name):
-        prefix = f'{name}.record.'
+        prefix = endpoint_name(name, 'record.')
         return [key[len(prefix):] for key in self.channels if key.startswith(prefix)]
 
     def open(self):

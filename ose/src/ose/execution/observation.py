@@ -1,4 +1,5 @@
 """Bounded real-time observations, independent of delivery and logical time."""
+from ose.names import split_endpoint
 from collections import deque
 import asyncio
 import math
@@ -198,14 +199,14 @@ def describe(plan):
 def subscription_schema(plan, sub, side="source"):
     """Describe either port contract of a declared subscription on demand."""
     if side == "destination":
-        component, port = sub["to"].split(".")
+        component, port = split_endpoint(sub["to"])
         desc = plan["components"][component]["inputs"][port]
     elif side != "source":
         raise ValueError("subscription schema side must be source or destination")
     elif "from_topic" in sub:
         desc = plan["external_topics"][sub["from_topic"]]
     else:
-        component, port = sub["from"].split(".")
+        component, port = split_endpoint(sub["from"])
         desc = plan["components"][component]["outputs"][port]
     return {"from": sub["from"], "to": sub["to"], "side": side, "root": desc["root"]}, desc["catalogue"].encode()
 

@@ -1,4 +1,5 @@
 """Structural graph validation, independent of SDL and execution."""
+from ose.names import endpoint_name
 import re
 from ose.modeling.model import fields
 from ose.delivery.policies import SubscriptionPolicy, reception_policies
@@ -45,7 +46,7 @@ def validate_graph(model, deployment):
     components = model["components"]
     if not isinstance(components, dict) or not components:
         raise ValueError("components must be a nonempty object")
-    if any(topic.startswith(name + ".record.") for topic in external for name in components):
+    if any(topic.startswith(endpoint_name(name, "record.")) for topic in external for name in components):
         raise ValueError("external topic uses a component's reserved recording namespace")
     if set(deployment["components"]) != set(components):
         raise ValueError("deployment must cover exactly the model components")
@@ -54,8 +55,8 @@ def validate_graph(model, deployment):
     from ose.parameters.model import validate_parameters
     validate_parameters(model, deployment)
     for name, node in components.items():
-        if not name or "." in name:
-            raise ValueError("component names must be nonempty and contain no dots")
+        if not name or ':' in name or any(not part for part in name.split('.')):
+            raise ValueError("component names must contain nonempty path segments and no colons")
         from ose.modeling.activation import component_inputs
         component_inputs(node)
         if not isinstance(node.get("recording_types", {}), dict):
@@ -86,10 +87,12 @@ def validate_graph(model, deployment):
                     raise ValueError(f"{language.title()} output names conflict with generated publication ID methods")
             if not isinstance(container["handler"], str) or not container["handler"]:
                 raise ValueError("container handler must be a nonempty file path")
-            if not name.isidentifier():
+            from ose.names import code_identifier
+            generated_name = code_identifier(name)
+            if not generated_name.isidentifier():
                 raise ValueError("generated component names must be identifiers")
             native_keywords = set(("auto break case char const continue default do double else enum extern float for goto if inline int long register restrict return short signed sizeof static struct switch typedef union unsigned void volatile while _Bool _Complex _Imaginary bool true false complex imaginary I NULL offsetof as crate fn impl in let loop match mod move mut pub ref self Self super trait type unsafe use where async await dyn abstract become box final macro override priv typeof unsized virtual yield try").split())
-            if language != "python" and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name):
+            if language != "python" and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", generated_name):
                 raise ValueError("generated native component names must be ASCII identifiers")
             for direction in ("inputs", "outputs"):
                 for port in node[direction]:
@@ -122,7 +125,7 @@ def validate_graph(model, deployment):
         for command in ([execution["command"]] if "command" in execution else []) + execution.get("build", []):
             if not isinstance(command, list) or not command or not all(isinstance(x, str) for x in command):
                 raise ValueError("commands must be nonempty argv lists")
-    if set(external) & {f"{name}.{port}" for name, node in components.items() for port in node["outputs"]}:
+    if set(external) & {endpoint_name(name, port) for name, node in components.items() for port in node["outputs"]}:
         raise ValueError("external topic conflicts with an internal output")
     ids, subscriptions = set(), []
     if not isinstance(model["subscriptions"], list):
@@ -151,9 +154,10 @@ def validate_graph(model, deployment):
 
 
 def endpoint(value, components, direction):
-    if not isinstance(value, str) or value.count(".") != 1:
+    from ose.names import split_endpoint
+    if not isinstance(value, str) or len(split_endpoint(value)) != 2:
         raise ValueError(f"invalid endpoint: {value}")
-    node, port = value.split(".")
+    node, port = split_endpoint(value)
     if node not in components or port not in components[node][direction]:
         raise ValueError(f"unknown {direction} endpoint: {value}")
     return node, port

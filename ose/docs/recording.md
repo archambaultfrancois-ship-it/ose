@@ -257,8 +257,9 @@ The filename extension does not select the format: pass `mcap` explicitly.
 
 ## Component input points
 
-Each input is an automatic recording point named `component.port`, without an
-extra namespace. Several producers feeding that port share one input point.
+Each input is an automatic recording point named `component.port` for flat
+components, or `cell_1.controller:input` for a hierarchical component, without
+an extra namespace. Several producers feeding that port share one input point.
 `show` includes its sources, reception settings and observation stage:
 
 ```text
@@ -296,7 +297,8 @@ Namespaces are dot-separated ASCII identifiers (`[A-Za-z_][A-Za-z0-9_]*`), with
 nonempty segments and at most 200 bytes in the complete local name. Duplicate
 local names fail initialization; different instances may use the same names.
 Up to 128 points per instance are supported, with descriptions of at most 1024
-UTF-8 bytes. The `.record.` namespace under a graph component is reserved.
+UTF-8 bytes. The `.record.` namespace under a flat graph component, or `:record.` under
+a hierarchical component (e.g. `cell_1.plant:record.dsp.fft`), is reserved.
 
 Python callback context:
 

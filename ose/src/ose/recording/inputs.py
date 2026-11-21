@@ -1,10 +1,11 @@
 """Input observation at tick selection, independent of component SDKs."""
+from ose.names import split_endpoint, endpoint_name
 from ose.delivery.policies import SubscriptionPolicy
 from ose.recording.schema_adapter import SchemaAdapters
 
 
 def input_key(plan, component, port):
-    topic = f"{component}.{port}"
+    topic = endpoint_name(component, port)
     # The public name stays natural; only the wire identity disambiguates a
     # same-named output or external publication point.
     collision = port in plan["components"][component]["outputs"] or topic in plan.get("external_topics", {})
@@ -14,13 +15,13 @@ def input_key(plan, component, port):
 def input_points(plan, component, generation, available, endpoint=None):
     incoming = {}
     for sub in plan["subscriptions"]:
-        if sub["to"].split(".")[0] == component:
-            incoming.setdefault(sub["to"].split(".")[1], []).append(sub)
+        if split_endpoint(sub["to"])[0] == component:
+            incoming.setdefault(split_endpoint(sub["to"])[1], []).append(sub)
     result = {}
     for port, desc in plan["components"][component]["inputs"].items():
         if desc.get("kind") == "timer":
             continue
-        topic = f"{component}.{port}"
+        topic = endpoint_name(component, port)
         subscriptions = incoming.get(port, [])
         policy = SubscriptionPolicy.from_dict(subscriptions[0]["policy"]) if subscriptions else SubscriptionPolicy()
         key = input_key(plan, component, port)

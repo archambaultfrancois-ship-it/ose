@@ -169,7 +169,8 @@ an exclusive lock refuses another console using the same state directory.
   and offline validation. Closing a browser does not stop a capture. Capture
   configuration can be duplicated into a new one-shot object.
 
-Recording inputs use their natural `component.port` names and an `input` category.
+Recording inputs use their runtime endpoint names (`component.port` for flat
+components, `cell_1.controller:input` for hierarchical components) and an `input` category.
 They capture the activating message at callback start, after FIFO overflow or
 latest-state selection. Timer/timeout activations carry no message; passive Pull
 reads are not combined into a callback snapshot. Input/output points with the same name can be selected, filtered and
@@ -222,8 +223,10 @@ identification may be incomplete; update and restart the OSE runtime for the
 full metadata. During a disconnection, the graph keeps its last known topology
 with an explicit offline notice and unavailable component states.
 
-Composed plans also supply logical instance paths. The graph displays these
-names while retaining runtime IDs for selection, metrics, links and diagnostics.
+Composed plans use dotted instance paths as runtime component IDs, such as
+`cell_1.plant`. The graph, component table, logs, measurements and recording
+points use these identities directly. Qualified ports use `:`, for example
+`cell_1.plant:frame`, and measurements use names such as `cell_1.plant:temperature`.
 Use **Subsystem**, **Open** and **Parent subsystem** to navigate nested scopes.
 Immediate neighbors remain visible so crossing subscriptions stay inspectable.
 Older plans keep the flat view; rebuild and restart to obtain composition

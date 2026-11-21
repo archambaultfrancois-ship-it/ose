@@ -5,6 +5,7 @@ import os
 import re
 
 from ose.modeling.composition import definition, resolve
+from ose.names import split_endpoint
 from ose.modeling.model import unique_pairs
 
 from .json_source import JsonSource, dump, loads
@@ -187,7 +188,7 @@ def port_projection(project):
                 for direction in ('inputs', 'outputs'):
                     item[direction] = {}
                     for alias, endpoint in metadata['instances'][name]['interface'][direction].items():
-                        component, port = endpoint.split('.')
+                        component, port = split_endpoint(endpoint)
                         desc = deepcopy(flat['components'][component][direction][port])
                         desc['schema'] = schema_token(project, desc['schema'])
                         item[direction][alias] = desc

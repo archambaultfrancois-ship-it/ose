@@ -13,6 +13,8 @@ ADA_KEYWORDS = set('abort abs abstract accept access aliased all and array at be
 
 
 def validate_names(language, name, node, container):
+    from ose.names import code_identifier
+    name = code_identifier(name)
     if language not in ('java', 'ada'):
         if 'class' in container or 'unit' in container:
             raise ValueError('class/unit only apply to Java/Ada containers')
@@ -99,7 +101,8 @@ def generate_java(name, node, handler, sdl_root, schemas, destination, identity)
     if not runtime.exists():
         runtime.parent.mkdir(parents=True, exist_ok=True)
         runtime.write_bytes((Path(sdl_root) / 'runtime/java/SdlCodec.java').read_bytes())
-    package = 'org.sdlose.generated.' + name
+    from ose.names import code_identifier
+    package = 'org.sdlose.generated.' + code_identifier(name)
     source = destination / 'src' / Path(package.replace('.', '/'))
     source.mkdir(parents=True, exist_ok=True)
     classes = destination / 'classes'

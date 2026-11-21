@@ -1,4 +1,5 @@
 """Resolve and build a graph using only the public SDL generator/runtime."""
+from ose.names import split_endpoint, endpoint_name
 import base64
 import hashlib
 import json
@@ -165,12 +166,15 @@ def compile_plan(model_path, deployment_path, sdl_root, destination, *, profile=
         external_topics[topic] = {**desc, "catalogue": text, "catalogue_id": codec.identity(text)}
     subscriptions = []
     for sub in model["subscriptions"]:
+        sub = {**sub, 'to': endpoint_name(*split_endpoint(sub['to']))}
+        if 'from' in sub:
+            sub['from'] = endpoint_name(*split_endpoint(sub['from']))
         if "from" in sub:
-            source, output = sub["from"].split(".")
+            source, output = split_endpoint(sub["from"])
             publisher = components[source]["outputs"][output]
         else:
             publisher = external_topics[sub["from_topic"]]
-        target, input_port = sub["to"].split(".")
+        target, input_port = split_endpoint(sub["to"])
         consumer = components[target]["inputs"][input_port]
         if publisher["root"] != consumer["root"]:
             raise ValueError("connected port roots must have the same logical name")

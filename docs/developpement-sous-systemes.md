@@ -289,7 +289,12 @@ et les boutons **Open** permettent d'entrer dans les instances et leurs enfants 
 **Parent subsystem** remonte d'un niveau. Les voisins immédiats restent visibles
 pour conserver les liens traversant la frontière. La sélection, les métriques,
 les diagnostics et l'observation des messages continuent d'utiliser les
-identifiants des composants exécutés. Les anciens plans sans métadonnées de
+identifiants des composants exécutés, désormais identiques aux chemins logiques
+(`cell_1.plant`). Le port est séparé par `:`, par exemple
+`cell_1.plant:frame`, et les mesures portent des noms comme
+`cell_1.plant:temperature`. Reconstruire les anciens plans à identifiants `ss_`
+et recréer les sélections ou permissions utilisant ces identifiants.
+Les anciens plans sans métadonnées de
 composition gardent la vue plate.
 
 ## Exploiter les résultats en CI

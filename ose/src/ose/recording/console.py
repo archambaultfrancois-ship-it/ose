@@ -1,4 +1,5 @@
 """Interactive and scriptable recorder console; all commands stay outside models."""
+from ose.names import split_endpoint
 import asyncio
 from datetime import datetime, timezone
 import fnmatch
@@ -197,7 +198,7 @@ class Console:
                               f"Reception: {json.dumps(desc['reception'], sort_keys=True)}\n"
                               "Observation: value selected at tick start\n")
                 self.print(f"{desc.get('topic', name)}: {desc['root']}\nKind: {desc.get('kind', 'output')}\n"
-                           f"Component: {desc.get('component', name.split('.')[0])}\n"
+                           f"Component: {desc.get('component', split_endpoint(name)[0])}\n"
                            f"Description: {desc.get('description', '')}\n"
                            f"{detail}"
                            f"Available: {desc['available']}\nSelected: {name in self.recorder.selected}\n"

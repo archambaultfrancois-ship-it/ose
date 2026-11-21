@@ -77,7 +77,8 @@ ose subsystem test subsystems/cell --build-dir build/cell-test
 Open shared definitions in the editor to change all their instances. In the web
 console, use **Subsystem scope** to inspect a cell, supervision or recording and
 their crossing links. Logical leaf names are now `cell_1.plant`,
-`supervision.fusion`, etc.; execution uses generated stable IDs. Rebuild the plan
+`supervision.fusion`, etc.; these are also the runtime component IDs.
+Ports use `:` after the component path, e.g. `cell_1.plant:frame`. Rebuild the plan
 and recreate watches referring to the old flat component or subscription IDs.
 
 The standalone cell test runs its real C analyzer, injects a supervisory policy,

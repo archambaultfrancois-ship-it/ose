@@ -1,3 +1,4 @@
+import { splitEndpoint } from './hierarchy'
 export type Port = { root?: string; kind?: string; mode?: string; timeout?: number; timer?: { mode?: string; delay?: number; start?: string }; activates?: { message?: string[]; timeout?: string[] } }
 export type Component = { inputs?: Record<string, Port>; outputs?: Record<string, Port> }
 export type Subscription = { from: string; from_topic?: string; to: string; policy?: Record<string, any>; routing?: string }
@@ -39,7 +40,7 @@ export function layout(topology?: Topology | null, ports = false) {
     add({ id: 'external:' + name, name, kind: 'external', height: nodeHeight, root: desc.root, x: 0, y: 0 })
   }
   for (const [id, sub] of Object.entries(topology?.subscriptions || {}).sort(([a], [b]) => a.localeCompare(b))) {
-    const [producer, output] = sub.from.split('.'), consumer = sub.to.split('.')[0]
+    const [producer, output] = splitEndpoint(sub.from), consumer = splitEndpoint(sub.to)[0]
     // Older observation metadata has no external_topics or from_topic fields.
     const external = sub.from_topic !== undefined || byId.has('external:' + sub.from) || !byId.has('component:' + producer)
     const source = (external ? 'external:' + (sub.from_topic ?? sub.from) : 'component:' + producer)
@@ -47,7 +48,7 @@ export function layout(topology?: Topology | null, ports = false) {
     if (!byId.has(target)) continue
     if (!byId.has(source)) add({ id: source, name: sub.from_topic ?? sub.from, kind: 'external', height: nodeHeight, x: 0, y: 0 })
     const root = external ? byId.get(source)?.root : topology?.components[producer]?.outputs?.[output]?.root
-    const input = sub.to.slice(sub.to.indexOf('.') + 1)
+    const input = splitEndpoint(sub.to)[1]
     const mode = byId.get(target)?.inputs?.[input]?.mode === 'pull' ? 'pull' : 'push'
     edges.push({ ...sub, id, source, target, root, mode, feedback: false, path: '', x: 0, y: 0 })
   }
@@ -118,7 +119,7 @@ export function layout(topology?: Topology | null, ports = false) {
     const from = outgoing.get(edge.source)!, to = incoming.get(edge.target)!
     const anchor = (node: FlowNode, output: boolean, qualified: string, siblings: FlowEdge[]) => {
       const names = Object.keys((output ? node.outputs : node.inputs) || {})
-      const index = names.indexOf(qualified.slice(qualified.indexOf('.') + 1))
+      const index = names.indexOf(splitEndpoint(qualified)[1])
       return node.y + (ports && index >= 0 ? portY(index) : node.height * (siblings.indexOf(edge) + 1) / (siblings.length + 1))
     }
     const x1 = source.x + nodeWidth, y1 = anchor(source, true, edge.from, from)

@@ -92,3 +92,14 @@ it('does not read logs while the page is hidden or the user lacks access', async
   await nextTick(); expect(fetch).not.toHaveBeenCalled()
   expect(root.textContent).toContain('do not have permission')
 })
+
+
+it('displays the dotted runtime component identity directly', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ epoch: 'run',
+    items: [{ ...record('1'), component: 'cell_1.plant' }],
+    cursor: '1', more: false, truncated: false, retained: 1,
+  }))))
+  const root = mount()
+  await until(() => root.textContent!.includes('cell_1.plant'))
+  expect(root.textContent).not.toContain('ss_123')
+})

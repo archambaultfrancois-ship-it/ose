@@ -1,4 +1,5 @@
 """Logical watches survive generation changes; bounded segments never join them."""
+from ose.names import endpoint_name
 from collections import deque
 import fnmatch
 import math
@@ -77,7 +78,7 @@ class MeasurementStore:
                 if value is not None and (type(value) not in (int, float) or not math.isfinite(value)):
                     quality, value = "invalid", None
                 self.catalogue[identity] = {"id": identity, "component": component, "local_name": name,
-                    "name": f"{component}.{name}", "value": value if quality == "good" else None,
+                    "name": endpoint_name(component, name), "value": value if quality == "good" else None,
                     "generation": desc.get("generation"), "epoch": snapshot.get("epoch"),
                     "quality": quality, "observed_at": None if simulated else timestamp(wall), "report_age_ms": age,
                     "time_basis": 'simulated' if simulated else 'realtime',

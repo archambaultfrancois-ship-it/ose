@@ -1,4 +1,5 @@
 """Assemble ordinary OSE graphs around one explicit subsystem under test."""
+from ose.names import split_endpoint
 import asyncio
 from copy import deepcopy
 import json
@@ -74,7 +75,7 @@ def assemble(target, profile, directory, sdl_root, *, execution_profile=None, co
         deployment_path = write_json(directory / 'assembly.deployment.json', dict(version=1, components={}))
     model, deployment, metadata, _ = resolve(model_path, deployment_path)
     public = metadata['instances']['sut']['interface']
-    incoming = {s['to'].split('.')[1] for s in original['subscriptions'] if s['to'].startswith('sut.')}
+    incoming = {split_endpoint(s['to'])[1] for s in original['subscriptions'] if s['to'].startswith('sut.')}
     inject = selected.get('inject', [name for name in public['inputs'] if name not in incoming])
     collect = selected.get('collect', list(public['outputs']))
     for label, names, available in (('inject', inject, public['inputs']), ('collect', collect, public['outputs'])):
@@ -84,7 +85,7 @@ def assemble(target, profile, directory, sdl_root, *, execution_profile=None, co
     injected, collected = {}, {}
     for alias in inject:
         endpoint = public['inputs'][alias]
-        component, port = endpoint.split('.')
+        component, port = split_endpoint(endpoint)
         desc = model['components'][component]['inputs'][port]
         topic = 'harness/' + identifier((alias,), 'inject')
         if topic in model.get('external_topics', {}):
@@ -97,7 +98,7 @@ def assemble(target, profile, directory, sdl_root, *, execution_profile=None, co
         injected[alias] = topic
     for alias in collect:
         endpoint = public['outputs'][alias]
-        component, port = endpoint.split('.')
+        component, port = split_endpoint(endpoint)
         desc = model['components'][component]['outputs'][port]
         name = identifier((alias,), 'collector')
         if name in model['components']:

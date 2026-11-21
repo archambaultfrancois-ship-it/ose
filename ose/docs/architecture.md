@@ -44,8 +44,10 @@ Push inputs may declare a positive inactivity `timeout`. Explicit periodic or
 one-shot timer inputs have no SDL contract. There is no component trigger or
 joint-readiness `required` flag. See [model v2 migration](model-v2-migration.md).
 
-Executable component names cannot contain dots; an endpoint is `component.port` and each output
-endpoint is a separate topic. Subscriptions are `{id, from, to, qos?}` entries,
+Subsystem component identities are their dotted paths, such as
+`cell_1.plant`. Their endpoints use `:` before the port, for example
+`cell_1.plant:frame`. Existing flat `component.port` endpoints remain supported.
+Each output endpoint is a separate topic. Subscriptions are `{id, from, to, qos?}` entries,
 with unique IDs, or use `from_topic` for a declared external topic. Multiple
 producers can share an input; subscriptions to that input share their
 [reception settings](delivery.md#shared-input-reception). Timers cannot receive
@@ -53,7 +55,8 @@ subscriptions.
 
 Source models additionally accept `instance.public_port` endpoints. The resolver
 expands their interface aliases before this executable endpoint grammar is used.
-Logical instance paths remain metadata and are separate from executable IDs.
+The resolved component ID is the dotted logical instance path. Source locations
+remain metadata; private native-code symbols are separate from runtime IDs.
 
 Connected roots have the same logical name. Dynamic publisher-to-consumer SDL
 compatibility uses `require_required=True` for schema fields, independently of

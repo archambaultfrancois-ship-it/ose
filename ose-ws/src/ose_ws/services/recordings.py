@@ -1,4 +1,5 @@
 """Independent Recorder instances with durable ownership and protected artifacts."""
+from ose.names import split_endpoint
 import asyncio
 import errno
 import os
@@ -58,7 +59,7 @@ class RecordingManager:
                 await self.discovery.connect()
                 self.points = self.discovery.points
                 for topic, point in self.points.items():
-                    component, _, name = point["topic"].partition(".")
+                    component, name = (split_endpoint(point["topic"]) + ("",))[:2]
                     point.setdefault("component", component)
                     point.setdefault("name", name)
                 self.point_ids = {opaque("point", topic): topic for topic in self.points}

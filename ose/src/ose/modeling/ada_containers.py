@@ -29,7 +29,8 @@ def generate(name, node, handler, sdl_root, schemas, destination, identity):
     if node.get('execution_model') != 2:
         raise ValueError('Ada containers require execution model 2')
     types = merge_schemas(name, 'ada', schemas, destination / 'types')
-    api = 'Ose_' + name; stem = api.lower(); packages = sorted({p for p, _ in types.values()})
+    from ose.names import code_identifier
+    api = 'Ose_' + code_identifier(name); stem = api.lower(); packages = sorted({p for p, _ in types.values()})
     if any(p.lower() in (api.lower(), identity.lower(), 'ose_component', 'ose_recording', 'ose_measurements', 'ose_inputs') for p in packages):
         raise ValueError('Ada schema package conflicts with component API')
     def typ(desc): return '.'.join(types[desc['root']])
@@ -178,7 +179,8 @@ def scaffold(node, container):
     handler = Path(container['handler']); spec = handler.with_suffix('.ads')
     if handler.exists() and spec.exists(): return
     if handler.exists() or spec.exists(): raise ValueError('Ada handler requires both .ads and .adb; refusing to overwrite a partial pair')
-    name = Path(node['command'][0]).parent.name; api = 'Ose_' + name; unit = container['unit']
+    from ose.names import code_identifier
+    name = Path(node['command'][0]).parent.name; api = 'Ose_' + code_identifier(name); unit = container['unit']
     lines = [f'with {api};', f'package {unit} is', '   pragma Elaborate_Body;',
              f'   type Object is new {api}.Handler with null record;']
     bodies = [f'package body {unit} is']
