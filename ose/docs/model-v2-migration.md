@@ -94,7 +94,7 @@ An offset alone never activates it. Its external scenario stays version 1.
 - Simulated: C/Python/Rust branches and an explicit two-way Python join.
 - Shared parameters: two Python timer callbacks retain their parameter APIs.
 - Multilingual: Python timer/join and C/Rust/Java/Ada reference callbacks.
-  The complete five-language example passes with GNAT 12 and JDK 17 targeting
+  The complete five-language example passes with GNAT and JDK 17 targeting
   Java 7 APIs, with identical traces for 1/2/8 workers and live TCP/UDP execution.
 - Vibration-watch: C sensor timers, Rust analyzers, independent Python alarm
   callbacks and observer. Its distinct compatible observer SDL contract,

@@ -3,10 +3,8 @@ PYTHON ?= python3
 CC ?= gcc
 CARGO ?= cargo
 CFLAGS ?= -std=c99 -Wall -Wextra -pedantic -O3
-GNAT_HOME ?= $(HOME)/opt/gnat-21.1
-GNATMAKE ?= $(GNAT_HOME)/bin/gnatmake
-ADA_RTS ?= sjlj
-ADA_FLAGS ?= $(if $(strip $(ADA_RTS)),--RTS=$(ADA_RTS)) -gnat2012 -gnata -gnatn -O3
+GNATMAKE ?= gnatmake
+ADA_FLAGS ?= -gnat2012 -gnata -gnatn -O3
 ADA_GENERATED_DIR := build/generated/ada
 ADA_C_SOURCES := $(wildcard runtime/c/*.c) runtime/ada/sdl_ada_bridge.c
 ADA_C_OBJECTS := $(patsubst %.c,build/ada/%.o,$(ADA_C_SOURCES))
@@ -224,19 +222,17 @@ clean:
 
 .PHONY: bench-python-buffers sdl-python-native sld-matlab-example all clean check test test-c test-rust test-python test-matlab test-java bench bench-c bench-rust bench-python bench-matlab bench-java
 
-# GNAT's native runtime in the supplied installation lacks generic bodies.
-# The complete sjlj runtime is used by default; ADA_RTS=native is supported.
 build/ada/%.o: %.c $(wildcard runtime/c/*.h) runtime/c/sdl_representation.inc
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Iruntime/c -c $< -o $@
 
 build/ada/sdl_ada_tests: tests/ada/run_tests.adb $(wildcard runtime/ada/*.ad?) $(GENERATED_DIR)/.stamp $(ADA_C_OBJECTS)
 	mkdir -p build/ada
-	PATH="$(GNAT_HOME)/bin:$(PATH)" $(GNATMAKE) $(ADA_FLAGS) -Iruntime/ada -I$(ADA_GENERATED_DIR) -D build/ada -o $@ $< -largs $(ADA_C_OBJECTS) -lm
+	$(GNATMAKE) $(ADA_FLAGS) -Iruntime/ada -I$(ADA_GENERATED_DIR) -D build/ada -o $@ $< -largs $(ADA_C_OBJECTS) -lm
 
 build/ada/sdl_ada_bench: tests/ada/bench.adb $(wildcard runtime/ada/*.ad?) $(GENERATED_DIR)/.stamp $(ADA_C_OBJECTS)
 	mkdir -p build/ada
-	PATH="$(GNAT_HOME)/bin:$(PATH)" $(GNATMAKE) $(ADA_FLAGS) -Iruntime/ada -I$(ADA_GENERATED_DIR) -D build/ada -o $@ $< -largs $(ADA_C_OBJECTS) -lm
+	$(GNATMAKE) $(ADA_FLAGS) -Iruntime/ada -I$(ADA_GENERATED_DIR) -D build/ada -o $@ $< -largs $(ADA_C_OBJECTS) -lm
 
 test-ada: build/ada/sdl_ada_tests
 	$(RUN_TEST) ./build/ada/sdl_ada_tests
@@ -246,7 +242,7 @@ bench-ada: build/ada/sdl_ada_bench
 
 build/ada/sdl_ada_bench_fixed: tests/ada/bench_fixed.adb $(wildcard runtime/ada/*.ad?) $(GENERATED_DIR)/.stamp $(ADA_C_OBJECTS)
 	mkdir -p build/ada
-	PATH="$(GNAT_HOME)/bin:$(PATH)" $(GNATMAKE) $(ADA_FLAGS) -Iruntime/ada -I$(ADA_GENERATED_DIR) -D build/ada -o $@ $< -largs $(ADA_C_OBJECTS) -lm
+	$(GNATMAKE) $(ADA_FLAGS) -Iruntime/ada -I$(ADA_GENERATED_DIR) -D build/ada -o $@ $< -largs $(ADA_C_OBJECTS) -lm
 
 bench-ada-fixed: build/ada/sdl_ada_bench_fixed
 	./build/ada/sdl_ada_bench_fixed

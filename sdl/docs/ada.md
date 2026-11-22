@@ -16,17 +16,12 @@ aliases of their original generated types. The runtime is `runtime/ada/sdl_runti
 `runtime/ada/sdl_ada_bridge.c` and the C runtime sources in `runtime/c`.
 No generated C bindings are needed for Ada applications.
 
-The Makefile uses `GNAT_HOME=~/opt/gnat-21.1` and `ADA_RTS=sjlj` by default.
-The native runtime in that installation lacks generic container bodies, while
-its sjlj runtime is complete. For another installation, for example:
-
-```sh
-make test-ada GNAT_HOME=/opt/gnat ADA_RTS=native
-```
-
-`ADA_FLAGS` defaults to `--RTS=$(ADA_RTS) -gnat2012 -gnata -gnatn -O3`. Range and
-overflow checks stay enabled. Linking requires the C runtime objects, the bridge
-object, and `-lm`; the Makefile demonstrates the complete `gnatmake` command.
+The Makefile uses `gnatmake` from the shell's `PATH`. Source your toolchain
+environment before building, or set `GNATMAKE` to the compiler command to use.
+`ADA_FLAGS` can also be exported in the shell; its Makefile default is
+`-gnat2012 -gnata -gnatn -O3`. Range and overflow checks stay enabled.
+Linking requires the C runtime objects, the bridge object, and `-lm`; the
+Makefile demonstrates the complete `gnatmake` command.
 Use the same runtime when compiling and linking every Ada unit.
 
 The [ABC equation sample](../examples/abc-ada/README.md) demonstrates three Ada

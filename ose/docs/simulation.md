@@ -34,7 +34,7 @@ timeout already selected in the same wave; the timeout and subsequent message
 callback may therefore both run at that timestamp. This ordering is independent
 of worker count. Optional microsteps extend these wave rules to activating
 feedback cycles without changing the model or protocols.
-Ada v2 wrappers pass their [qualification suite](ada-inputs.md) with GNAT 12.
+Ada v2 wrappers pass their [qualification suite](ada-inputs.md) with GNAT.
 The full five-language example produces identical traces with 1/2/8 workers;
 the all-Ada feedback example matches the other SDKs with 1/4 workers.
 

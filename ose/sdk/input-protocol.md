@@ -10,7 +10,7 @@ There is no combined input snapshot and no `on_tick` callback. The initial
 implementation generates Python, Rust, C, Java and Ada containers for local real-time or
 simulated runs; see the [Rust callback API](../docs/rust-inputs.md) and
 [C callback API](../docs/c-inputs.md) and [Java callback API](../docs/java-inputs.md).
-The [Ada callback API](../docs/ada-inputs.md) is qualified with GNAT 12. Java's
+The [Ada callback API](../docs/ada-inputs.md) is qualified with GNAT. Java's
 default source/API/bytecode target is qualified using JDK 17; execution on an
 actual JVM 7 is deferred and does not block removal of obsolete paths.
 

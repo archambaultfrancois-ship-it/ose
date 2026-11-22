@@ -32,7 +32,7 @@ All five component SDKs are qualified in local execution and parallel simulation
 Distributed qualification covers Python/C workers, broker/direct routes, TLS,
 retries and generation fencing on loopback. It does not qualify physical
 multi-machine execution or Ada-specific distributed worker runs. Linux checks use
-GNAT 12 and JDK 17 targeting Java 7 APIs/bytecode; execution on an actual JVM 7
+GNAT and JDK 17 targeting Java 7 APIs/bytecode; execution on an actual JVM 7
 is deferred. Android has no GNAT in the qualification environment, and JDK 21
 requires an explicit `OSE_JAVA_LOCAL_RELEASE=8` override for local Java builds;
 that override does not qualify the default Java 7 target.

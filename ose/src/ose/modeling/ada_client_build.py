@@ -22,7 +22,6 @@ def build_ada(sdl_root, destination, main=None, include_dirs=()):
         subprocess.run(tool('CC', 'cc') + ['-std=c11', '-O2', '-Wall', '-Wextra', '-I' + str(runtime / 'c'), '-I' + str(sdk / 'client/c'), '-c', str(source), '-o', str(obj)], check=True)
     includes = [sdk / 'client/ada', sdk / 'ada', runtime / 'ada', *map(Path, include_dirs)]
     flags = shlex.split(os.environ.get('ADA_FLAGS', '-gnat2012 -gnata -O2'))
-    if os.environ.get('ADA_RTS'): flags.append('--RTS=' + os.environ['ADA_RTS'])
     if main is None:
         main = destination / 'client_probe.adb'
         main.write_text('with Ose_Client;\nprocedure Client_Probe is\n   C : Ose_Client.Client;\nbegin null; end Client_Probe;\n')

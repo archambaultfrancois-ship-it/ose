@@ -112,10 +112,10 @@ repeated/Packed fields and UTF-8 `Unbounded_String` values. Optional fields
 have an explicit presence flag. Messages containing Packed fields use generated
 Ada codecs for matching layouts; schema evolution retains C dynamic decoding through an opaque context
 with automatic lifetime management. See [Ada API and build instructions](docs/ada.md).
-`make test-ada bench-ada` uses `~/opt/gnat-21.1` by default, with `-O3` and
-range checks enabled. Override `GNAT_HOME`, `GNATMAKE` or `ADA_RTS` as needed.
-With a standard system GNAT installation, use `GNAT_HOME=/usr GNATMAKE=gnatmake
-ADA_RTS=` to select its default runtime without a `--RTS` flag.
+`make test-ada bench-ada` uses `gnatmake` from the shell's `PATH`, with `-O3`
+and range checks enabled by default. Source the desired toolchain environment
+before building; `GNATMAKE` and `ADA_FLAGS` can be exported to select the command
+and compilation options.
 
 The catalogue filter service evaluates arithmetic and logical predicates
 on message objects or selected wire values, including nested fields and arrays.

@@ -49,7 +49,7 @@ def cases_files(cases):
         +'Wire_States:constant array(Expressions\'Range) of Integer:=('+','.join(str(b) for _,_,b in cases)+');\nend Filter_Cases;\n')
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--gnatmake',default=os.environ.get('GNATMAKE','/home/t0005140/opt/gnat-21.1/bin/gnatmake'));parser.add_argument('--matlab');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--gnatmake',default=os.environ.get('GNATMAKE','gnatmake'));parser.add_argument('--matlab');args=parser.parse_args()
     run([sys.executable,'sdlc/generator.py','-c','-rust','-python','-java','-ada','-matlab','tests/fixtures/filter',OUT/'generated'])
     run([sys.executable,'sdlc/generator.py','-matlab','tests/fixtures/filter_review',OUT/'review-generated'])
     sys.path[:0]=[str(ROOT/'runtime/filter/python'),str(OUT/'release'),str(ROOT/'runtime/python'),str(OUT/'generated/python')]
@@ -91,7 +91,7 @@ def main():
     ada=OUT/'ada';ada.mkdir(exist_ok=True);objects=[]
     for source in sorted((ROOT/'runtime/c').glob('*.c'))+[ROOT/'runtime/ada/sdl_ada_bridge.c']:
         obj=ada/(source.stem+'.o');run(cc+['-std=c99','-O3','-Iruntime/c','-c',source,'-o',obj]);objects.append(obj)
-    run([args.gnatmake,*(['--RTS=' + os.environ.get('ADA_RTS', 'sjlj')] if os.environ.get('ADA_RTS', 'sjlj') else []),'-gnat2012','-gnata','-gnatn','-O3','-Iruntime/ada','-Iruntime/filter/ada','-I'+str(OUT/'generated/ada'),'-I'+str(OUT),'-D',ada,'-o',ada/'filter-check','tests/filter/ada/filter_checks.adb','-largs',*objects,*link,'-lm'])
+    run(shlex.split(args.gnatmake)+shlex.split(os.environ.get('ADA_FLAGS','-gnat2012 -gnata -gnatn -O3'))+['-Iruntime/ada','-Iruntime/filter/ada','-I'+str(OUT/'generated/ada'),'-I'+str(OUT),'-D',ada,'-o',ada/'filter-check','tests/filter/ada/filter_checks.adb','-largs',*objects,*link,'-lm'])
     run([ada/'filter-check'])
     mex='matlab-mex' if args.matlab else 'mex'
     setup="addpath('build/filter/generated/matlab');addpath('runtime/filter/matlab');addpath('build/filter/"+mex+"');addpath('build/filter');addpath('tests/filter/matlab');filter_checks;"

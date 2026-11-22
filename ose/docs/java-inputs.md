@@ -3,8 +3,7 @@
 Application model v2 generates Java, Python, C, Rust and Ada components for the local
 real-time engine, distributed workers and local parallel simulator. Java uses [CH/2](../sdk/input-protocol.md),
 with one typed reference per activating input, explicit timers and passive Pull
-inboxes. Ada [component callbacks](ada-inputs.md) are qualified locally with GNAT
-12. See [distributed execution](distributed.md) for the worker lifecycle
+inboxes. Ada [component callbacks](ada-inputs.md) are qualified locally with GNAT. See [distributed execution](distributed.md) for the worker lifecycle
 and transport qualification scope.
 
 For component `a`, extend `org.sdlose.generated.a.API.Handler`. The builder

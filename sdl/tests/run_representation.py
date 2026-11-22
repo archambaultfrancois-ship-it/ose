@@ -215,7 +215,7 @@ def run(command,cwd=None,env=None):
 
 
 def main():
- parser=argparse.ArgumentParser();parser.add_argument('--gnatmake',default='gnatmake');parser.add_argument('--matlab');args=parser.parse_args()
+ parser=argparse.ArgumentParser();parser.add_argument('--gnatmake',default=os.environ.get('GNATMAKE','gnatmake'));parser.add_argument('--matlab');args=parser.parse_args()
  with tempfile.TemporaryDirectory(prefix='sdl-representation-') as tmp:
   work=Path(tmp);generated=work/'generated'
   run([sys.executable,str(ROOT/'sdlc/generator.py'),'-c','-rust','-python','-java','-ada','-matlab',str(ROOT/'tests/fixtures/representation'),str(generated)])
@@ -243,7 +243,7 @@ def main():
   run(cc+['-std=c99','-fPIC','-shared','-I'+str(ROOT/'runtime/c')]+[str(p) for p in (ROOT/'runtime/c').glob('*.c')]+[str(ROOT/'runtime/ada/sdl_ada_bridge.c'),'-lm','-o',str(library)],env=env)
   (work/'representation_check.adb').write_text(expand(ADA))
   gnat=shlex.split(args.gnatmake)
-  run(gnat+[*(['--RTS=' + os.environ.get('ADA_RTS', 'sjlj')] if os.environ.get('ADA_RTS', 'sjlj') else []),'-gnat2012','-gnata','-I'+str(ROOT/'runtime/ada'),'-I'+str(generated/'ada'),'representation_check.adb','-largs','-L'+str(work),'-lrepresentation','-Wl,-rpath,'+str(work)],cwd=work)
+  run(gnat+shlex.split(os.environ.get('ADA_FLAGS','-gnat2012 -gnata'))+['-I'+str(ROOT/'runtime/ada'),'-I'+str(generated/'ada'),'representation_check.adb','-largs','-L'+str(work),'-lrepresentation','-Wl,-rpath,'+str(work)],cwd=work)
   run([str(work/'representation_check')]);print('Ada representation and unsigned oracles passed.',flush=True)
  return 0
 

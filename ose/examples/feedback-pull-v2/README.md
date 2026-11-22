@@ -44,7 +44,7 @@ both directions. JDK 21 local builds require explicit `OSE_JAVA_LOCAL_RELEASE=8`
 these builds do not verify Java 7 compatibility.
 
 `deployment-ada.json` and `deployment-ada-python.json` provide Ada components for
-the same example. The all-Ada deployment compiles with GNAT 12.2.0 and produces
+the same example. The all-Ada deployment compiles with GNAT and produces
 the same trace as the Python/C/Rust/Java reference with 1 and 4 workers: six
 callbacks, six publications and quiescence, SHA-256
 `796b451975944f54c7b029e2f007806efae542fb6f4b029d39d099abd5e03002`.

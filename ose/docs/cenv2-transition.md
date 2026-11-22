@@ -103,7 +103,7 @@ Implemented in this branch:
 - Public application-ID publication and callback metadata in external Python,
   C, Rust, Java and Ada clients. Native examples preserve IDs when replying.
   All five bindings are tested, including native Ada TCP/UDP with absent, zero,
-  greater-than-2^53 and maximum uint64 IDs under GNAT 12.
+  greater-than-2^53 and maximum uint64 IDs under GNAT.
 - Rust component CH/2 callbacks, typed Pull access, output permissions and timer
   control, using the same local engines as Python. Native/mixed Rust/Python
   feedback, dynamic SDL decoding and shared context services are exercised.
@@ -119,7 +119,7 @@ Implemented in this branch:
 - Ada CH/2 runtime and generated APIs, owned typed references, Pull selectors,
   optional uint64 IDs and timer controls. All 23 strict GNAT cases pass, including
   local execution, parallel simulation and both directions of mixed Ada/Python
-  feedback. The complete five-language example passes with GNAT 12 and JDK 17.
+  feedback. The complete five-language example passes with GNAT and JDK 17.
   See [Ada input callbacks](ada-inputs.md).
 
 Network transport now uses CENV/2 exclusively. Rebuild native libraries and upgrade
@@ -193,7 +193,7 @@ Qualification for this batch:
   18 cases; its two Ada cases are not selected in the Android batch. The two Java
   cases fail with Android's JDK 21 because `--release 7` is unsupported, and both
   pass under Linux/JDK 17 with the default Java 7 API target.
-- Four targeted Linux/GNAT 12 cases pass: the five-language application with
+- Four targeted Linux/GNAT cases pass: the five-language application with
   identical traces for 1/2/8 workers and live TCP/UDP execution, Ada feedback with
   1/4 workers, Ada shared services and Ada recording activation.
 - Wheel and source archives build. Archive contents include the CH/2 modules and
@@ -215,7 +215,7 @@ The installed-wheel check now compiles real timer handlers and executes one CH/2
 callback per selected language, at exactly 10 ms, then reaches quiescence. It
 checks installed SDK resources and builds the Java/Ada external clients as
 selected. It passes for Python/C/Rust on Android and all five languages on Linux
-with GNAT 12, Rust 1.85 and JDK 17 targeting Java 7 APIs. Actual JVM 7 execution
+with GNAT, Rust 1.85 and JDK 17 targeting Java 7 APIs. Actual JVM 7 execution
 remains deferred.
 
 The web console now presents input counts/modes instead of a global trigger,
@@ -294,7 +294,7 @@ Validation records for this batch are in `ose/build/retirement-managed-unit-fina
 `--release 7`. Actual JVM 7 execution remains deferred.
 
 The final managed checks pass 35 Java cases (JDK 17, default `--release 7`)
-and 31 Ada cases (GNAT 12.2.0), including Python interoperation and deterministic
+and 31 Ada cases (GNAT), including Python interoperation and deterministic
 feedback. The five-language application again produces identical simulation
 traces for 1/2/8 workers and passes real-time TCP/UDP; the migrated external Ada
 parameter case also passes (`retirement-mixed-linux.log`, whose combined command
@@ -410,7 +410,7 @@ The migrated RAM, broker, control and CLI/contract cases also pass 22 tests
 Qualification logs are `ose/build/retirement-native-sdk-unit.log`,
 `retirement-sdk-c-parser.log`, `retirement-sdk-rust-unit.log`,
 `retirement-native-sdk-integration.log` and `retirement-native-sdk-linux.log`.
-The Linux run uses Rust 1.85.1, GNAT 12.2.0 and JDK 17 with `--release 7`;
+The Linux run uses Rust 1.85.1, GNAT and JDK 17 with `--release 7`;
 actual JVM 7 execution remains deferred. It rebuilds the five-language
 application and checks Ada's shared C framing/parameter services as well.
 
@@ -625,7 +625,7 @@ of step 9 is implemented in the common native core. External-client application-
 APIs are implemented and exercised in all five bindings.
 Rust, C and Java component CH/2 callbacks are implemented. The Java 7 source/API/
 bytecode target is verified with JDK 17; actual Java 7 JVM execution is deferred.
-Ada's CH/2 API/runtime/generator compile and execute with GNAT 12. V2 distributed
+Ada's CH/2 API/runtime/generator compile and execute with GNAT. V2 distributed
 scheduling is implemented and exercised with Python and C processes; transport
 tests cover broker/direct routes, mutual TLS, retries and generation fencing.
 Editor source validation/refactoring and visual activation/Push/Pull/timer controls
@@ -816,7 +816,7 @@ broker/direct routing, legacy replay, native Python/C/Rust schema projection,
 rotation and independently identical simulation traces with 1/4 workers.
 
 SDK execution qualification now uses an isolated Debian 12 arm64 environment
-under PRoot-Distro on the Android host: Python 3.11.2, GNAT 12.2.0, GCC 12,
+under PRoot-Distro on the Android host: Python 3.11.2, GNAT, GCC 12,
 OpenJDK 17.0.21 with the default Java 7 target, and Rust 1.85.1. GNAT uses
 `-gnat2012 -gnata -O2`; later builds use two parallel compiler jobs. No local Java
 release override is set. Results:
@@ -866,7 +866,7 @@ make test-inputs-v2
 make test-rust-inputs-v2
 make test-c-inputs-v2
 make test-java-inputs-v2
-make test-ada-inputs-v2  # Requires GNAT; qualified with GNAT 12.2.0 on Linux.
+make test-ada-inputs-v2  # Requires GNAT; qualified with GNAT on Linux.
 make test-distributed-inputs-v2
 make test-example-inputs-v2  # Set OSE_JAVA_LOCAL_RELEASE=8 explicitly on JDK 21.
 make test-cenv2

@@ -33,7 +33,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--backends', nargs='+', choices=BACKENDS, default=list(BACKENDS[:-1]))
     parser.add_argument('--no-build', action='store_true')
-    parser.add_argument('--gnatmake', default=os.environ.get('GNATMAKE', '/home/t0005140/opt/gnat-21.1/bin/gnatmake'))
+    parser.add_argument('--gnatmake', default=os.environ.get('GNATMAKE', 'gnatmake'))
     parser.add_argument('--matlab', default=os.environ.get('MATLAB', 'matlab'))
     parser.add_argument('--report', type=Path, default=OUT / 'benchmarks.json')
     args = parser.parse_args()
@@ -69,7 +69,7 @@ def main():
         for source in c_sources + [ROOT / 'runtime/ada/sdl_ada_bridge.c']:
             obj = ada / (source.stem + '.o')
             run(cc + ['-std=c99', '-O3', '-Iruntime/c', '-c', source, '-o', obj]); objects.append(obj)
-        run([args.gnatmake, *(['--RTS=' + os.environ.get('ADA_RTS', 'sjlj')] if os.environ.get('ADA_RTS', 'sjlj') else []), '-gnat2012', '-gnata', '-gnatn', '-O3', '-Iruntime/ada', '-Iruntime/filter/ada',
+        run(shlex.split(args.gnatmake) + shlex.split(os.environ.get('ADA_FLAGS', '-gnat2012 -gnata -gnatn -O3')) + ['-Iruntime/ada', '-Iruntime/filter/ada',
              '-I' + str(OUT / 'generated/ada'), '-D', ada, '-o', ada / 'filter-bench', 'tests/filter/ada/filter_bench.adb',
              '-largs', *objects, *link, '-lm'], OUT / 'bench-ada-build.log')
         commands['ada'] = [ada / 'filter-bench']

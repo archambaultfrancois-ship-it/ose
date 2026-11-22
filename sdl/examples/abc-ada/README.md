@@ -49,14 +49,9 @@ Other examples:
 | `0 0 1` | No solution |
 
 Requires Python 3 for generation, a C99 compiler, GNAT with tasking and
-`GNAT.Sockets`, and Unix-domain sockets. The Makefile uses
-`GNAT_HOME=~/opt/gnat-21.1`, `ADA_RTS=sjlj` and `-O3` by default. The supplied
-GNAT installation's native runtime lacks generic container bodies; its sjlj
-runtime is complete. With another GNAT installation, override the settings:
-
-```sh
-make GNAT_HOME=/opt/gnat ADA_RTS=native run
-```
+`GNAT.Sockets`, and Unix-domain sockets. The Makefile uses `gnatmake` from the shell's `PATH`
+and `-O3` by default. Source the desired toolchain environment before building,
+or export `GNATMAKE` and `ADA_FLAGS` to select the compiler command and options.
 
 `make generate` produces Ada bindings under `build/generated/ada`.
 `make clean` removes generated files, object files and the executable.

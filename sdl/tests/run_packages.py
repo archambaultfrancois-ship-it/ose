@@ -181,7 +181,7 @@ end Package_Check;
 
 def main():
    parser = argparse.ArgumentParser()
-   parser.add_argument('--gnatmake', default=str(Path.home() / 'opt/gnat-21.1/bin/gnatmake'))
+   parser.add_argument('--gnatmake', default=os.environ.get('GNATMAKE', 'gnatmake'))
    parser.add_argument('--matlab')
    args = parser.parse_args()
    BUILD.mkdir(parents=True, exist_ok=True)
@@ -226,8 +226,8 @@ def main():
    for path in list((ROOT / 'runtime/c').glob('*.c')) + [ROOT / 'runtime/ada/sdl_ada_bridge.c']:
       obj = ada / (path.stem + '.o'); objects.append(str(obj))
       run(shlex.split(os.environ.get('CC', 'cc')) + ['-std=c99', '-Iruntime/c', '-c', str(path), '-o', str(obj)])
-   env = dict(os.environ, CCACHE_DISABLE='1'); env['PATH'] = str(Path(args.gnatmake).parent) + ':' + env['PATH']
-   run([args.gnatmake, *(['--RTS=' + os.environ.get('ADA_RTS', 'sjlj')] if os.environ.get('ADA_RTS', 'sjlj') else []), '-gnat2012', '-gnata', '-Iruntime/ada', '-I' + str(GENERATED / 'ada'),
+   env = dict(os.environ, CCACHE_DISABLE='1')
+   run(shlex.split(args.gnatmake) + shlex.split(os.environ.get('ADA_FLAGS', '-gnat2012 -gnata')) + ['-Iruntime/ada', '-I' + str(GENERATED / 'ada'),
       '-D', str(ada), '-o', str(ada / 'check'), str(BUILD / 'package_check.adb'), '-largs'] + objects + ['-lm'], env=env)
    run([str(ada / 'check')])
 

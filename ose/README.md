@@ -18,7 +18,7 @@ execution or local parallel simulation; see the [feedback example](examples/feed
 Network exchanges use [binary CENV/2](docs/cenv2.md); upgrade all peers together.
 See [Rust input callbacks](docs/rust-inputs.md), [C input callbacks](docs/c-inputs.md)
 and [Java input callbacks](docs/java-inputs.md). [Ada input callbacks](docs/ada-inputs.md)
-are qualified with GNAT 12 on Linux. Actual JVM 7 execution remains deferred;
+are qualified with GNAT on Linux. Actual JVM 7 execution remains deferred;
 the Java 7 source/API target is qualified with JDK 17.
 
 Linux processes and SDK threads have short, stable names for `top` and `ps`.

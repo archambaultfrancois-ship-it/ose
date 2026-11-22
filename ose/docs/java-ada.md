@@ -6,7 +6,7 @@ Delivery uses bounded RAM queues. No persistence is introduced.
 
 Java and Ada use model v2 CH/2 input callbacks, explicit timers and Pull
 inboxes in local real-time or simulated execution. See the qualified
-[Java API](java-inputs.md) and [Ada API](ada-inputs.md). Ada passes with GNAT 12;
+[Java API](java-inputs.md) and [Ada API](ada-inputs.md). Ada passes with GNAT;
 Java's source/API/bytecode target passes with JDK 17 `--release 7`, while an actual
 JVM 7 run is deferred and does not block obsolete-code retirement.
 
@@ -50,7 +50,7 @@ Java or Ada compiler. `build` creates missing handlers and compiles executable
 containers. Existing handlers are never overwritten. An incomplete Ada
 specification/body pair is rejected.
 
-Use `JAVA`, `JAVAC`, `JAR`, `JAVA_HOME`, `GNATMAKE`, `ADA_FLAGS`, `ADA_RTS`, `CC`,
+Use `JAVA`, `JAVAC`, `JAR`, `JAVA_HOME`, `GNATMAKE`, `ADA_FLAGS`, `CC`,
 and `CARGO` to select tools. No component build downloads a toolchain or contacts
 a dependency registry. `SDL_ROOT` selects the separate SDL checkout.
 `JAVA_HOME` supplies the default `java`, `javac`, and `jar` executables; explicit

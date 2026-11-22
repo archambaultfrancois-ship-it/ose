@@ -1,10 +1,8 @@
 PYTHON ?= python3
 CC ?= cc
 CFLAGS ?= -std=c99 -Wall -Wextra -pedantic -O3
-GNAT_HOME ?= $(HOME)/opt/gnat-21.1
-GNATMAKE ?= $(GNAT_HOME)/bin/gnatmake
-ADA_RTS ?= sjlj
-ADA_FLAGS ?= $(if $(strip $(ADA_RTS)),--RTS=$(ADA_RTS)) -gnat2012 -gnata -gnatn -O3
+GNATMAKE ?= gnatmake
+ADA_FLAGS ?= -gnat2012 -gnata -gnatn -O3
 
 ROOT := ../..
 BUILD_DIR := build
@@ -33,7 +31,7 @@ $(BUILD_DIR)/c/sdl_ada_bridge.o: $(ROOT)/runtime/ada/sdl_ada_bridge.c $(wildcard
 
 $(BINARY): $(GENERATED_DIR)/.stamp $(wildcard ada/*.ad?) $(wildcard $(ROOT)/runtime/ada/*.ad?) $(C_OBJECTS)
 	mkdir -p $(BUILD_DIR)/ada
-	PATH="$(GNAT_HOME)/bin:$(PATH)" $(GNATMAKE) $(ADA_FLAGS) -Iada -I$(ROOT)/runtime/ada -I$(ADA_GENERATED_DIR) -D $(BUILD_DIR)/ada -o $@ ada/main.adb -largs $(C_OBJECTS) -lm
+	$(GNATMAKE) $(ADA_FLAGS) -Iada -I$(ROOT)/runtime/ada -I$(ADA_GENERATED_DIR) -D $(BUILD_DIR)/ada -o $@ ada/main.adb -largs $(C_OBJECTS) -lm
 
 run: $(BINARY)
 	./$(BINARY)

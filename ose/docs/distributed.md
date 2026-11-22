@@ -67,7 +67,7 @@ The [feedback example](../examples/feedback-pull-v2/README.md) includes a distri
 deployment. `make test-distributed-inputs-v2` exercises real Python and C processes,
 broker/direct routes, mutual TLS, retries and generation fencing on loopback.
 Rust, Java and Ada use the same worker path and are qualified separately through
-local CH/2 tests (GNAT 12 for Ada). Their native distributed worker combinations
+local CH/2 tests (GNAT for Ada). Their native distributed worker combinations
 have not been separately exercised by this qualification.
 
 ## Independent publishers

@@ -3,7 +3,7 @@
 Application model v2 generates C, Rust, Python, Java and Ada containers for the local
 real-time engine, distributed workers and local parallel simulator. C containers use [CH/2](../sdk/input-protocol.md)
 and compile as C99 with warnings treated as errors. [Ada CH/2 callbacks](ada-inputs.md)
-are qualified locally with GNAT 12. See [distributed execution](distributed.md) for
+are qualified locally with GNAT. See [distributed execution](distributed.md) for
 the worker lifecycle and transport qualification scope.
 
 `component.h` declares one typed `Input_<port>` reference per input and one

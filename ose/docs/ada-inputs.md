@@ -1,7 +1,6 @@
 # Ada component input callbacks
 
-Ada model v2 sources and generated CH/2 wrappers compile and execute with GNAT
-12.2.0 in an isolated Debian 12 arm64 environment. All 23 strict CH/2 cases pass:
+Ada model v2 sources and generated CH/2 wrappers compile and execute with GNAT in an isolated Debian 12 arm64 environment. All 23 strict CH/2 cases pass:
 all-Ada and bidirectional Ada/Python feedback, local TCP/UDP, parallel simulation,
 Pull consumption and failure cancellation. The complete five-language example
 also passes with identical traces for 1/2/8 workers and live TCP/UDP execution.
@@ -135,6 +134,6 @@ exactly with 1 and 4 workers: six callbacks, six publications, quiescent stop,
 SHA-256 `796b451975944f54c7b029e2f007806efae542fb6f4b029d39d099abd5e03002`.
 
 The Android host itself has no GNAT. Qualification used Debian 12 under
-PRoot-Distro, Python 3.11.2 and GNAT 12.2.0 with `-gnat2012 -gnata -O2` (later
+PRoot-Distro, Python 3.11.2 and GNAT with `-gnat2012 -gnata -O2` (later
 builds use two parallel compiler jobs). These results do not qualify physical
 multi-machine deployments, other Ada runtimes or real-time delivery deadlines.

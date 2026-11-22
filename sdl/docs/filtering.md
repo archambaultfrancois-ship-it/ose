@@ -145,7 +145,7 @@ The combined wrappers add both costs. This is a workload target: expression
 complexity can exceed codec work considerably. Timings do not gate unit tests.
 
 Development measurements on Linux/WSL2, with release/O3 native builds, JDK 7,
-GNAT 21.1 and MATLAB R2017a, give the following ratios for the small arithmetic
+GNAT and MATLAB R2017a, give the following ratios for the small arithmetic
 predicate `x*x+y*y<=25`:
 
 | Backend | Object filter / encode | Wire filter / decode |
